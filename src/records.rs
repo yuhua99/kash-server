@@ -14,7 +14,7 @@ use crate::models::{
 };
 use crate::utils::{
     db_error, db_error_with_context, get_user_database, validate_category_exists,
-    validate_records_limit, validate_string_length,
+    validate_records_limit, validate_string_length, validate_offset,
 };
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -145,6 +145,7 @@ pub async fn get_records(
     let user_db = get_user_database(&user.id).await?;
 
     let limit = validate_records_limit(query.limit)?;
+    let offset = validate_offset(query.offset)?;
 
     let conn = user_db.read().await;
 
@@ -168,9 +169,9 @@ pub async fn get_records(
     };
 
     // Get records
-    let records_query = "SELECT id, name, amount, category_id, timestamp FROM records WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT ?";
+    let records_query = "SELECT id, name, amount, category_id, timestamp FROM records WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC LIMIT ? OFFSET ?";
     let mut rows = conn
-        .query(records_query, (start_time, end_time, limit))
+        .query(records_query, (start_time, end_time, limit, offset))
         .await
         .map_err(|_| db_error_with_context("failed to query records"))?;
 

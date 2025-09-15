@@ -56,6 +56,7 @@ pub struct GetRecordsQuery {
     pub start_time: Option<i64>,
     pub end_time: Option<i64>,
     pub limit: Option<u32>,
+    pub offset: Option<u32>,
 }
 
 #[derive(Serialize)]
