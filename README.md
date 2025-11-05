@@ -28,20 +28,14 @@ my-budget-server/
 ├── users.db                     # Main user database
 ├── data/                        # Individual user databases
 │   └── user_*.db
-├── src/
-│   ├── main.rs                  # Main application + routing
-│   ├── auth.rs                  # Authentication & session handling
-│   ├── records.rs               # Expense records API + prediction
-│   ├── categories.rs            # Category management API
-│   ├── database.rs              # Database connections & operations
-│   ├── lib.rs                   # Library exports
-│   └── models.rs                # Data structures & models
-├── tests/
-│   ├── common/                  # Shared test utilities
-│   ├── records_test.rs          # Records integration tests
-│   └── helper_functions_test.rs # Helper function tests
-└── benches/
-    └── records_bench.rs         # Performance benchmarks
+└── src/
+    ├── main.rs                  # Main application + routing
+    ├── auth.rs                  # Authentication & session handling
+    ├── records.rs               # Expense records API + prediction
+    ├── categories.rs            # Category management API
+    ├── database.rs              # Database connections & operations
+    ├── lib.rs                   # Library exports
+    └── models.rs                # Data structures & models
 ```
 
 The server will start on `http://localhost:3000` by default.
@@ -56,37 +50,5 @@ SERVER_PORT=3000
 DATABASE_PATH=./data
 SESSION_SECRET=use openssl rand -hex 64 to generate your secret
 ```
-
-## 🧪 Testing & Benchmarks
-
-### Testing
-The project includes comprehensive integration tests covering the records API functionality:
-
-- **Integration Tests**: Full API testing with time-range filtering, pagination, and ordering
-- **Unit Tests**: Database operations and helper function testing  
-- **Test Coverage**: CRUD operations, data integrity, and edge cases
-- **Isolated Testing**: Each test uses temporary databases for complete isolation
-
-**Run Tests:**
-```bash
-cargo test                    # Run all tests
-cargo test records_test       # Run specific test file
-cargo test helper_functions   # Run helper function tests
-```
-
-### Benchmarks
-Performance benchmarks using Criterion.rs for statistical analysis:
-
-- **Database Operations**: Records creation and retrieval performance
-- **Statistical Analysis**: Mean, median, and standard deviation metrics
-- **HTML Reports**: Visual performance reports generated automatically
-
-**Run Benchmarks:**
-```bash
-cargo bench                   # Run all benchmarks
-cargo bench records_bench     # Run records benchmarks
-```
-
-Benchmark reports are generated in `target/criterion/` with detailed HTML visualizations.
 
 **Built with ❤️ for personal budget management**
