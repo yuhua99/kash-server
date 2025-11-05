@@ -1,4 +1,4 @@
-# My Budget Server
+# Kash Server
 
 A personal expense tracking backend server built with Rust and Axum, designed to be deployed as a RESTful API for budget management applications.
 
