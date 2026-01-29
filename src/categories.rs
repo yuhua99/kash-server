@@ -6,16 +6,17 @@ use axum::{
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::database::Db;
+use crate::db_pool::{TransactionError, with_transaction};
 use crate::models::{
     Category, CreateCategoryPayload, GetCategoriesQuery, GetCategoriesResponse,
     UpdateCategoryPayload,
 };
 use crate::utils::{
-    db_error, db_error_with_context, get_user_database, validate_categories_limit, validate_offset,
-    validate_string_length,
+    db_error, db_error_with_context, get_user_database_from_pool, validate_categories_limit,
+    validate_offset, validate_string_length,
 };
 
 pub fn validate_category_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -68,8 +69,43 @@ pub async fn validate_category_not_in_use(
     Ok(())
 }
 
+/// Error type for category creation that can be converted to handler response
+enum CreateCategoryError {
+    Transaction(TransactionError),
+    DbCheck,
+    DbInsert,
+    Conflict,
+}
+
+impl From<TransactionError> for CreateCategoryError {
+    fn from(e: TransactionError) -> Self {
+        CreateCategoryError::Transaction(e)
+    }
+}
+
+impl From<CreateCategoryError> for (StatusCode, String) {
+    fn from(e: CreateCategoryError) -> Self {
+        match e {
+            CreateCategoryError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            CreateCategoryError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            CreateCategoryError::DbCheck => {
+                db_error_with_context("failed to check existing category")
+            }
+            CreateCategoryError::DbInsert => db_error_with_context("category creation failed"),
+            CreateCategoryError::Conflict => (
+                StatusCode::CONFLICT,
+                "Category name already exists (case-insensitive)".to_string(),
+            ),
+        }
+    }
+}
+
 pub async fn create_category(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Json(payload): Json<CreateCategoryPayload>,
 ) -> Result<(StatusCode, Json<Category>), (StatusCode, String)> {
@@ -79,58 +115,57 @@ pub async fn create_category(
     // Input validation and sanitization
     validate_category_name(&payload.name)?;
     let category_name = payload.name.trim().to_string();
+    let is_income = payload.is_income;
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
-    // Use a single write connection for the entire transaction
-    let conn = user_db.write().await;
+    // Execute within a transaction for atomicity
+    let category = with_transaction(&user_db, |conn| {
+        let name = category_name.clone();
+        Box::pin(async move {
+            // Check if category name already exists (case-insensitive)
+            let mut existing_rows = conn
+                .query(
+                    "SELECT id FROM categories WHERE LOWER(name) = LOWER(?)",
+                    [name.as_str()],
+                )
+                .await
+                .map_err(|_| CreateCategoryError::DbCheck)?;
 
-    // Check if category name already exists (case-insensitive)
-    let mut existing_rows = conn
-        .query(
-            "SELECT id FROM categories WHERE LOWER(name) = LOWER(?)",
-            [category_name.as_str()],
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to check existing category"))?;
+            if existing_rows
+                .next()
+                .await
+                .map_err(|_| CreateCategoryError::DbCheck)?
+                .is_some()
+            {
+                return Err(CreateCategoryError::Conflict);
+            }
 
-    if existing_rows
-        .next()
-        .await
-        .map_err(|_| db_error())?
-        .is_some()
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            "Category name already exists (case-insensitive)".to_string(),
-        ));
-    }
+            // Create category
+            let category_id = Uuid::new_v4().to_string();
+            conn.execute(
+                "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
+                (category_id.as_str(), name.as_str(), is_income),
+            )
+            .await
+            .map_err(|_| CreateCategoryError::DbInsert)?;
 
-    // Create category
-    let category_id = Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-        (
-            category_id.as_str(),
-            category_name.as_str(),
-            payload.is_income,
-        ),
-    )
+            Ok(Category {
+                id: category_id,
+                name,
+                is_income,
+            })
+        })
+    })
     .await
-    .map_err(|_| db_error_with_context("category creation failed"))?;
-
-    let category = Category {
-        id: category_id,
-        name: category_name,
-        is_income: payload.is_income,
-    };
+    .map_err(|e: CreateCategoryError| -> (StatusCode, String) { e.into() })?;
 
     Ok((StatusCode::CREATED, Json(category)))
 }
 
 pub async fn get_categories(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Query(query): Query<GetCategoriesQuery>,
 ) -> Result<(StatusCode, Json<GetCategoriesResponse>), (StatusCode, String)> {
@@ -152,7 +187,7 @@ pub async fn get_categories(
     }
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
     let conn = user_db.read().await;
 
     // Get total count with search filter
@@ -219,7 +254,7 @@ pub async fn get_categories(
 }
 
 pub async fn update_category(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Path(category_id): Path<String>,
     Json(payload): Json<UpdateCategoryPayload>,
@@ -239,7 +274,7 @@ pub async fn update_category(
     };
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
     let conn = user_db.write().await;
 
     // First, check if the category exists and belongs to the user
@@ -305,7 +340,7 @@ pub async fn update_category(
 }
 
 pub async fn delete_category(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Path(category_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -313,7 +348,7 @@ pub async fn delete_category(
     let user = get_current_user(&session).await?;
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
     // Check if category exists and belongs to user first
     {

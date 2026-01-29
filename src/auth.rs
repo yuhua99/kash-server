@@ -6,6 +6,7 @@ use axum::{Json, extract::State, http::StatusCode};
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::constants::*;
 use crate::database::Db;
 use crate::models::{LoginPayload, PublicUser, RegisterPayload, User};
@@ -14,7 +15,7 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
-        .unwrap()
+        .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?
         .to_string();
     let id = Uuid::new_v4().to_string();
     let conn = db.write().await;
@@ -32,7 +33,7 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
 }
 
 pub async fn register(
-    State(db): State<Db>,
+    State(app_state): State<AppState>,
     Json(payload): Json<RegisterPayload>,
 ) -> Result<(StatusCode, Json<PublicUser>), (StatusCode, String)> {
     // Input validation
@@ -73,7 +74,7 @@ pub async fn register(
         ));
     }
 
-    let user = create_user(&db, &payload.username, &payload.password)
+    let user = create_user(&app_state.main_db, &payload.username, &payload.password)
         .await
         .map_err(|e| {
             if e.to_string().contains("UNIQUE constraint failed") {
@@ -118,7 +119,7 @@ fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
 }
 
 pub async fn login(
-    State(db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Json(payload): Json<LoginPayload>,
 ) -> Result<(StatusCode, Json<PublicUser>), (StatusCode, String)> {
@@ -136,7 +137,7 @@ pub async fn login(
         ));
     }
 
-    let user_data = get_user_by_username(&db, &payload.username)
+    let user_data = get_user_by_username(&app_state.main_db, &payload.username)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 

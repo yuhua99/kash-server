@@ -6,15 +6,15 @@ use axum::{
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::database::Db;
 use crate::models::{
     CreateRecordPayload, GetRecordsQuery, GetRecordsResponse, Record, UpdateRecordPayload,
 };
 use crate::utils::{
-    db_error, db_error_with_context, get_user_database, validate_category_exists,
-    validate_records_limit, validate_string_length, validate_offset,
+    db_error, db_error_with_context, get_user_database_from_pool, validate_category_exists,
+    validate_offset, validate_records_limit, validate_string_length,
 };
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -88,7 +88,7 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
 }
 
 pub async fn create_record(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Json(payload): Json<CreateRecordPayload>,
 ) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
@@ -101,8 +101,8 @@ pub async fn create_record(
     validate_category_id(&payload.category_id)?;
     validate_timestamp(payload.timestamp)?;
 
-    // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    // Get user's database from pool
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
     // Validate that the category exists
     validate_category_exists(&user_db, &payload.category_id).await?;
@@ -136,13 +136,13 @@ pub async fn create_record(
 }
 
 pub async fn get_records(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Query(query): Query<GetRecordsQuery>,
 ) -> Result<(StatusCode, Json<GetRecordsResponse>), (StatusCode, String)> {
     let user = get_current_user(&session).await?;
 
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
@@ -190,7 +190,7 @@ pub async fn get_records(
 }
 
 pub async fn update_record(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Path(record_id): Path<String>,
     Json(payload): Json<UpdateRecordPayload>,
@@ -224,7 +224,7 @@ pub async fn update_record(
     }
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
     // Validate that the category exists if being updated
     if let Some(ref category_id) = payload.category_id {
@@ -292,7 +292,7 @@ pub async fn update_record(
 }
 
 pub async fn delete_record(
-    State(_main_db): State<Db>,
+    State(app_state): State<AppState>,
     session: Session,
     Path(record_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
@@ -300,7 +300,7 @@ pub async fn delete_record(
     let user = get_current_user(&session).await?;
 
     // Get user's database
-    let user_db = get_user_database(&user.id).await?;
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
 
     let conn = user_db.write().await;
 

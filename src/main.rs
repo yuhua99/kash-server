@@ -7,17 +7,17 @@ use time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::Key};
 
-pub mod auth;
-pub mod categories;
-pub mod config;
-pub mod constants;
-pub mod database;
-pub mod models;
-pub mod records;
-pub mod utils;
-
-use config::Config;
-use constants::*;
+// Import everything from the library crate (no duplicate module declarations)
+use my_budget_server::{
+    AppState,
+    DbPool,
+    auth,
+    categories,
+    config::Config,
+    constants::*,
+    database,
+    records,
+};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
@@ -33,6 +33,12 @@ async fn main() -> Result<()> {
     let main_db = database::init_main_db(&config.data_path)
         .await
         .map_err(|e| format!("Failed to initialize main database: {}", e))?;
+
+    // Create database connection pool
+    let db_pool = DbPool::new(config.data_path.clone());
+
+    // Create application state
+    let app_state = AppState { main_db, db_pool };
 
     // Create session store
     let store = MemoryStore::default();
@@ -59,8 +65,12 @@ async fn main() -> Result<()> {
     let frontend_origin =
         std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
 
+    let frontend_origin_header = frontend_origin
+        .parse::<axum::http::HeaderValue>()
+        .map_err(|e| format!("Invalid FRONTEND_ORIGIN '{}': {}", frontend_origin, e))?;
+
     let cors = CorsLayer::new()
-        .allow_origin(frontend_origin.parse::<axum::http::HeaderValue>().unwrap())
+        .allow_origin(frontend_origin_header)
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
@@ -99,7 +109,7 @@ async fn main() -> Result<()> {
         )
         .layer(cors)
         .layer(session_layer)
-        .with_state(main_db);
+        .with_state(app_state);
 
     // Create TCP listener with proper error handling
     let bind_address = config.bind_address();

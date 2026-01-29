@@ -3,7 +3,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::RwLock;
 
 use crate::constants::*;
-use crate::database::get_user_db;
+use crate::db_pool::DbPool;
 
 static CACHED_DATABASE_PATH: OnceLock<String> = OnceLock::new();
 
@@ -13,11 +13,13 @@ pub fn get_database_path() -> &'static str {
     })
 }
 
-pub async fn get_user_database(
+/// Get a user database connection from the pool
+/// This replaces the old implementation that created a new connection each time
+pub async fn get_user_database_from_pool(
+    pool: &DbPool,
     user_id: &str,
 ) -> Result<Arc<RwLock<libsql::Connection>>, (StatusCode, String)> {
-    let data_path = get_database_path();
-    get_user_db(data_path, user_id).await.map_err(|_| {
+    pool.get_user_db(user_id).await.map_err(|_| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ERR_DATABASE_ACCESS.to_string(),

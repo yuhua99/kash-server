@@ -47,6 +47,7 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     let conn = db.connect()?;
 
     conn.execute(CREATE_USERS_TABLE, ()).await?;
+
     Ok(Arc::new(RwLock::new(conn)))
 }
 
