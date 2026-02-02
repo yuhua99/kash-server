@@ -1,0 +1,19 @@
+[application]
+name = "my-budget"
+default_platform = "web"
+asset_dir = "assets"
+
+[web.app]
+title = "My Budget"
+
+[web.resource]
+style = ["main.css"]
+script = []
+
+[web.resource.dev]
+style = []
+script = []
+
+[web.watcher]
+reload_html = true
+watch_path = ["src", "assets"]

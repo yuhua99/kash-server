@@ -9,14 +9,7 @@ use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::
 
 // Import everything from the library crate (no duplicate module declarations)
 use my_budget_server::{
-    AppState,
-    DbPool,
-    auth,
-    categories,
-    config::Config,
-    constants::*,
-    database,
-    records,
+    AppState, DbPool, auth, categories, config::Config, constants::*, database, records,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -63,7 +56,7 @@ async fn main() -> Result<()> {
 
     // Configure CORS to allow frontend requests
     let frontend_origin =
-        std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:5173".to_string());
+        std::env::var("FRONTEND_ORIGIN").unwrap_or_else(|_| "http://localhost:8080".to_string());
 
     let frontend_origin_header = frontend_origin
         .parse::<axum::http::HeaderValue>()
