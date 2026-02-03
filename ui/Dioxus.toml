@@ -7,10 +7,6 @@ asset_dir = "assets"
 title = "My Budget"
 
 [web.resource]
-style = ["main.css"]
-script = []
-
-[web.resource.dev]
 style = []
 script = []
 

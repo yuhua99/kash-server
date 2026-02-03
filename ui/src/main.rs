@@ -10,6 +10,8 @@ use components::{Section, Shell};
 use models::{Category, PublicUser};
 use views::{AuthScreen, CategoriesView, DashboardView, SettingsView, StatsView, TransactionsView};
 
+const MAIN_CSS: Asset = asset!("/assets/main.css");
+
 fn main() {
     dioxus::launch(App);
 }
@@ -62,53 +64,53 @@ fn App() -> Element {
         categories.set(cats);
     };
 
-    // Show loading while checking auth
-    if checking_auth() {
-        return rsx! {
+    let content = if checking_auth() {
+        rsx! {
             div { class: "auth-container",
                 div { class: "loading", "LOADING..." }
             }
-        };
-    }
+        }
+    } else if let Some(current_user) = user() {
+        rsx! {
+            Shell {
+                user: current_user.clone(),
+                current_section: current_section(),
+                on_section_change: handle_section_change,
+                on_logout: handle_logout,
 
-    // Show auth screen if not logged in
-    let Some(current_user) = user() else {
-        return rsx! {
-            AuthScreen { on_login: handle_login }
-        };
-    };
-
-    // Main app shell
-    rsx! {
-        Shell {
-            user: current_user.clone(),
-            current_section: current_section(),
-            on_section_change: handle_section_change,
-            on_logout: handle_logout,
-
-            match current_section() {
-                Section::Dashboard => rsx! {
-                    DashboardView { categories: categories() }
-                },
-                Section::Stats => rsx! {
-                    StatsView { categories: categories() }
-                },
-                Section::Transactions => rsx! {
-                    TransactionsView { categories: categories() }
-                },
-                Section::Categories => rsx! {
-                    CategoriesView {
-                        categories: categories(),
-                        on_categories_change: handle_categories_change
-                    }
-                },
-                Section::Settings => rsx! {
-                    SettingsView {
-                        username: current_user.username.clone(),
-                        on_logout: handle_logout
-                    }
-                },
+                match current_section() {
+                    Section::Dashboard => rsx! {
+                        DashboardView { categories: categories() }
+                    },
+                    Section::Stats => rsx! {
+                        StatsView { categories: categories() }
+                    },
+                    Section::Transactions => rsx! {
+                        TransactionsView { categories: categories() }
+                    },
+                    Section::Categories => rsx! {
+                        CategoriesView {
+                            categories: categories(),
+                            on_categories_change: handle_categories_change
+                        }
+                    },
+                    Section::Settings => rsx! {
+                        SettingsView {
+                            username: current_user.username.clone(),
+                            on_logout: handle_logout
+                        }
+                    },
+                }
             }
         }
+    } else {
+        rsx! {
+            AuthScreen { on_login: handle_login }
+        }
+    };
+
+    rsx! {
+        document::Link { rel: "stylesheet", href: MAIN_CSS }
+        {content}
     }
 }
