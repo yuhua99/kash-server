@@ -2,32 +2,7 @@ use dioxus::prelude::*;
 
 use crate::api;
 use crate::models::{Category, Record};
-
-fn format_amount(amount: f64) -> String {
-    if amount >= 0.0 {
-        format!("+{:.2}", amount)
-    } else {
-        format!("{:.2}", amount)
-    }
-}
-
-fn get_month_name(month: u32) -> &'static str {
-    match month {
-        1 => "JAN",
-        2 => "FEB",
-        3 => "MAR",
-        4 => "APR",
-        5 => "MAY",
-        6 => "JUN",
-        7 => "JUL",
-        8 => "AUG",
-        9 => "SEP",
-        10 => "OCT",
-        11 => "NOV",
-        12 => "DEC",
-        _ => "???",
-    }
-}
+use crate::utils::{format_amount, get_month_name, parse_date_to_end_of_day, parse_date_to_timestamp, timestamp_to_year_month};
 
 #[component]
 pub fn StatsView(categories: Vec<Category>) -> Element {
@@ -44,17 +19,13 @@ pub fn StatsView(categories: Vec<Category>) -> Element {
         let start_time = if start_date().is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(&start_date(), "%Y-%m-%d")
-                .ok()
-                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+            parse_date_to_timestamp(&start_date())
         };
 
         let end_time = if end_date().is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(&end_date(), "%Y-%m-%d")
-                .ok()
-                .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp())
+            parse_date_to_end_of_day(&end_date())
         };
 
         spawn(async move {
@@ -120,9 +91,7 @@ pub fn StatsView(categories: Vec<Category>) -> Element {
     // Monthly trend (last 6 months)
     let mut monthly_data: std::collections::BTreeMap<(i32, u32), (f64, f64)> = std::collections::BTreeMap::new();
     for record in &filtered_records {
-        use chrono::{Datelike, TimeZone, Utc};
-        let dt = Utc.timestamp_opt(record.timestamp, 0).unwrap();
-        let key = (dt.year(), dt.month());
+        let key = timestamp_to_year_month(record.timestamp);
         let entry = monthly_data.entry(key).or_insert((0.0, 0.0));
         if record.amount > 0.0 {
             entry.0 += record.amount;

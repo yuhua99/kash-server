@@ -3,20 +3,7 @@ use dioxus::prelude::*;
 use crate::api;
 use crate::components::Overlay;
 use crate::models::{Category, CreateRecordPayload, Record, UpdateRecordPayload};
-
-fn format_date(timestamp: i64) -> String {
-    use chrono::{TimeZone, Utc};
-    let dt = Utc.timestamp_opt(timestamp, 0).unwrap();
-    dt.format("%Y-%m-%d").to_string()
-}
-
-fn format_amount(amount: f64) -> String {
-    if amount >= 0.0 {
-        format!("+{:.2}", amount)
-    } else {
-        format!("{:.2}", amount)
-    }
-}
+use crate::utils::{format_amount, format_date_full, parse_date_to_end_of_day, parse_date_to_timestamp};
 
 #[component]
 pub fn TransactionsView(categories: Vec<Category>) -> Element {
@@ -38,17 +25,13 @@ pub fn TransactionsView(categories: Vec<Category>) -> Element {
         let start_time = if start_date().is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(&start_date(), "%Y-%m-%d")
-                .ok()
-                .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+            parse_date_to_timestamp(&start_date())
         };
 
         let end_time = if end_date().is_empty() {
             None
         } else {
-            chrono::NaiveDate::parse_from_str(&end_date(), "%Y-%m-%d")
-                .ok()
-                .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc().timestamp())
+            parse_date_to_end_of_day(&end_date())
         };
 
         spawn(async move {
@@ -151,7 +134,7 @@ pub fn TransactionsView(categories: Vec<Category>) -> Element {
                                 class: "transaction-row",
                                 key: "{record.id}",
                                 onclick: move |_| editing_record.set(Some(record_clone.clone())),
-                                span { class: "date", "{format_date(record.timestamp)}" }
+                                span { class: "date", "{format_date_full(record.timestamp)}" }
                                 span { class: "name", "{record.name}" }
                                 span { class: "category", "{cat_name}" }
                                 span {
@@ -260,9 +243,8 @@ fn AddTransactionOverlay(
             -amount_val.abs()
         };
 
-        let timestamp = chrono::NaiveDate::parse_from_str(&date(), "%Y-%m-%d")
-            .map(|d| d.and_hms_opt(12, 0, 0).unwrap().and_utc().timestamp())
-            .unwrap_or_else(|_| chrono::Utc::now().timestamp());
+        let timestamp = parse_date_to_timestamp(&date())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);
@@ -357,13 +339,7 @@ fn EditTransactionOverlay(
     let mut name = use_signal(|| record.name.clone());
     let mut amount = use_signal(|| record.amount.abs().to_string());
     let mut category_id = use_signal(|| record.category_id.clone());
-    let mut date = use_signal(|| {
-        use chrono::{TimeZone, Utc};
-        Utc.timestamp_opt(record.timestamp, 0)
-            .unwrap()
-            .format("%Y-%m-%d")
-            .to_string()
-    });
+    let mut date = use_signal(|| format_date_full(record.timestamp));
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
 
@@ -402,9 +378,8 @@ fn EditTransactionOverlay(
             -amount_val.abs()
         };
 
-        let timestamp = chrono::NaiveDate::parse_from_str(&date(), "%Y-%m-%d")
-            .map(|d| d.and_hms_opt(12, 0, 0).unwrap().and_utc().timestamp())
-            .unwrap_or_else(|_| chrono::Utc::now().timestamp());
+        let timestamp = parse_date_to_timestamp(&date())
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);

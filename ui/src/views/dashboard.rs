@@ -3,38 +3,7 @@ use dioxus::prelude::*;
 use crate::api;
 use crate::components::Overlay;
 use crate::models::{Category, CreateRecordPayload, Record};
-
-fn get_month_range(year: i32, month: u32) -> (i64, i64) {
-    use chrono::{TimeZone, Utc};
-    let start = Utc.with_ymd_and_hms(year, month, 1, 0, 0, 0).unwrap();
-    let end = if month == 12 {
-        Utc.with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0).unwrap()
-    } else {
-        Utc.with_ymd_and_hms(year, month + 1, 1, 0, 0, 0).unwrap()
-    };
-    (start.timestamp(), end.timestamp() - 1)
-}
-
-fn format_month(year: i32, month: u32) -> String {
-    let month_names = [
-        "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
-    ];
-    format!("{} {}", month_names[(month - 1) as usize], year)
-}
-
-fn format_date(timestamp: i64) -> String {
-    use chrono::{TimeZone, Utc};
-    let dt = Utc.timestamp_opt(timestamp, 0).unwrap();
-    dt.format("%m/%d").to_string()
-}
-
-fn format_amount(amount: f64) -> String {
-    if amount >= 0.0 {
-        format!("+{:.2}", amount)
-    } else {
-        format!("{:.2}", amount)
-    }
-}
+use crate::utils::{format_amount, format_date_short, format_month, get_month_range, parse_date_to_timestamp};
 
 #[component]
 pub fn DashboardView(categories: Vec<Category>) -> Element {
@@ -140,7 +109,7 @@ pub fn DashboardView(categories: Vec<Category>) -> Element {
                                 let cat_name = cat.map(|c| c.name.as_str()).unwrap_or("—");
                                 rsx! {
                                     div { class: "transaction-row", key: "{record.id}",
-                                        span { class: "date", "{format_date(record.timestamp)}" }
+                                        span { class: "date", "{format_date_short(record.timestamp)}" }
                                         span { class: "name", "{record.name}" }
                                         span { class: "category", "{cat_name}" }
                                         span {
@@ -282,7 +251,9 @@ fn AddTransactionOverlay(
             -amount_val.abs()
         };
 
-        let timestamp = chrono::Utc::now().timestamp();
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let timestamp = parse_date_to_timestamp(&today)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);

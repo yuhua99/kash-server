@@ -9,6 +9,29 @@ enum AuthMode {
     Register,
 }
 
+impl AuthMode {
+    fn toggle(self) -> Self {
+        match self {
+            AuthMode::Login => AuthMode::Register,
+            AuthMode::Register => AuthMode::Login,
+        }
+    }
+
+    fn title(&self) -> &'static str {
+        match self {
+            AuthMode::Login => "LOGIN",
+            AuthMode::Register => "REGISTER",
+        }
+    }
+
+    fn switch_text(&self) -> &'static str {
+        match self {
+            AuthMode::Login => "SWITCH TO REGISTER",
+            AuthMode::Register => "SWITCH TO LOGIN",
+        }
+    }
+}
+
 #[component]
 pub fn AuthScreen(on_login: EventHandler<PublicUser>) -> Element {
     let mut mode = use_signal(|| AuthMode::Login);
@@ -64,20 +87,10 @@ pub fn AuthScreen(on_login: EventHandler<PublicUser>) -> Element {
         });
     };
 
-    let title = match mode() {
-        AuthMode::Login => "LOGIN",
-        AuthMode::Register => "REGISTER",
-    };
-
-    let switch_text = match mode() {
-        AuthMode::Login => "SWITCH TO REGISTER",
-        AuthMode::Register => "SWITCH TO LOGIN",
-    };
-
     rsx! {
         div { class: "auth-container",
             div { class: "auth-block",
-                h1 { "{title}" }
+                h1 { "{mode().title()}" }
 
                 if let Some(err) = error() {
                     div { class: "error-message", "{err}" }
@@ -110,7 +123,7 @@ pub fn AuthScreen(on_login: EventHandler<PublicUser>) -> Element {
                         class: "primary w-full",
                         r#type: "submit",
                         disabled: loading(),
-                        if loading() { "LOADING..." } else { "{title}" }
+                        { if loading() { "LOADING..." } else { mode().title() } }
                     }
                 }
 
@@ -118,13 +131,10 @@ pub fn AuthScreen(on_login: EventHandler<PublicUser>) -> Element {
                     button {
                         class: "btn-text",
                         onclick: move |_| {
-                            mode.set(match mode() {
-                                AuthMode::Login => AuthMode::Register,
-                                AuthMode::Register => AuthMode::Login,
-                            });
+                            mode.set(mode().toggle());
                             error.set(None);
                         },
-                        "{switch_text}"
+                        "{mode().switch_text()}"
                     }
                 }
             }

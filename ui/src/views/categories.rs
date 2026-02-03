@@ -4,6 +4,11 @@ use crate::api;
 use crate::components::Overlay;
 use crate::models::{Category, CreateCategoryPayload, UpdateCategoryPayload};
 
+fn sort_categories(mut categories: Vec<Category>) -> Vec<Category> {
+    categories.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    categories
+}
+
 #[component]
 pub fn CategoriesView(
     categories: Vec<Category>,
@@ -50,8 +55,7 @@ pub fn CategoriesView(
                         on_save: move |cat| {
                             let mut current = categories.clone();
                             current.push(cat);
-                            current.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-                            on_categories_change.call(current);
+                            on_categories_change.call(sort_categories(current));
                             show_add_overlay.set(false);
                         }
                     }
@@ -68,12 +72,11 @@ pub fn CategoriesView(
                         category: cat.clone(),
                         on_close: move |_| editing_category.set(None),
                         on_save: move |updated: Category| {
-                            let mut current: Vec<Category> = categories_for_save
+                            let current: Vec<Category> = categories_for_save
                                 .iter()
                                 .map(|c| if c.id == updated.id { updated.clone() } else { c.clone() })
                                 .collect();
-                            current.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-                            on_categories_change.call(current);
+                            on_categories_change.call(sort_categories(current));
                             editing_category.set(None);
                         },
                         on_delete: move |id: String| {

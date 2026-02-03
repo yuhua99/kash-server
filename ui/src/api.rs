@@ -1,8 +1,22 @@
+use urlencoding::encode;
 use wasm_bindgen::JsCast;
 
 use crate::models::*;
 
 const API_BASE: &str = "http://localhost:3000";
+
+fn build_query_params(params: &[(&str, Option<String>)]) -> String {
+    let query_parts: Vec<String> = params
+        .iter()
+        .filter_map(|(key, value)| value.as_ref().map(|v| format!("{}={}", encode(key), encode(v))))
+        .collect();
+
+    if query_parts.is_empty() {
+        String::new()
+    } else {
+        format!("?{}", query_parts.join("&"))
+    }
+}
 
 // Helper to make requests with credentials
 async fn request<T: serde::de::DeserializeOwned>(
@@ -113,26 +127,14 @@ pub async fn get_records(
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<GetRecordsResponse, String> {
-    let mut url = format!("{}/records", API_BASE);
-    let mut params = vec![];
-
-    if let Some(st) = start_time {
-        params.push(format!("start_time={}", st));
-    }
-    if let Some(et) = end_time {
-        params.push(format!("end_time={}", et));
-    }
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-
-    if !params.is_empty() {
-        url = format!("{}?{}", url, params.join("&"));
-    }
-
+    let params = [
+        ("start_time", start_time.map(|v| v.to_string())),
+        ("end_time", end_time.map(|v| v.to_string())),
+        ("limit", limit.map(|v| v.to_string())),
+        ("offset", offset.map(|v| v.to_string())),
+    ];
+    let query = build_query_params(&params);
+    let url = format!("{}/records{}", API_BASE, query);
     request("GET", &url, None).await
 }
 
@@ -157,23 +159,13 @@ pub async fn get_categories(
     offset: Option<u32>,
     search: Option<&str>,
 ) -> Result<GetCategoriesResponse, String> {
-    let mut url = format!("{}/categories", API_BASE);
-    let mut params = vec![];
-
-    if let Some(l) = limit {
-        params.push(format!("limit={}", l));
-    }
-    if let Some(o) = offset {
-        params.push(format!("offset={}", o));
-    }
-    if let Some(s) = search {
-        params.push(format!("search={}", s));
-    }
-
-    if !params.is_empty() {
-        url = format!("{}?{}", url, params.join("&"));
-    }
-
+    let params = [
+        ("limit", limit.map(|v| v.to_string())),
+        ("offset", offset.map(|v| v.to_string())),
+        ("search", search.map(|v| v.to_string())),
+    ];
+    let query = build_query_params(&params);
+    let url = format!("{}/categories{}", API_BASE, query);
     request("GET", &url, None).await
 }
 
