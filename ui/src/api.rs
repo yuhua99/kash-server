@@ -122,14 +122,14 @@ pub async fn logout() -> Result<(), String> {
 // Records API
 
 pub async fn get_records(
-    start_time: Option<i64>,
-    end_time: Option<i64>,
+    start_date: Option<String>,
+    end_date: Option<String>,
     limit: Option<u32>,
     offset: Option<u32>,
 ) -> Result<GetRecordsResponse, String> {
     let params = [
-        ("start_time", start_time.map(|v| v.to_string())),
-        ("end_time", end_time.map(|v| v.to_string())),
+        ("start_date", start_date),
+        ("end_date", end_date),
         ("limit", limit.map(|v| v.to_string())),
         ("offset", offset.map(|v| v.to_string())),
     ];

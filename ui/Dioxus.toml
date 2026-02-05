@@ -10,6 +10,11 @@ title = "My Budget"
 style = []
 script = []
 
+[web.resource.dev]
+style = []
+script = []
+
+
 [web.watcher]
 reload_html = true
 watch_path = ["src", "assets"]

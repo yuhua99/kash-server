@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS records (
     name        TEXT    NOT NULL,
     amount      REAL    NOT NULL,
     category_id TEXT    NOT NULL,
-    timestamp   INTEGER NOT NULL
+    date        TEXT    NOT NULL
 );
 "#;
 
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS categories (
 "#;
 
 const CREATE_RECORDS_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_records_timestamp ON records(timestamp);
+CREATE INDEX IF NOT EXISTS idx_records_date ON records(date);
 "#;
 
 const CREATE_CATEGORIES_INDEX: &str = r#"

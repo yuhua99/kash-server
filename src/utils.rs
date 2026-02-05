@@ -61,6 +61,23 @@ pub fn validate_string_length(
     Ok(())
 }
 
+pub fn validate_date(value: &str) -> Result<(), (StatusCode, String)> {
+    if value.trim().is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Date cannot be empty".to_string(),
+        ));
+    }
+
+    let format = time::format_description::parse("[year]-[month]-[day]")
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid date format".to_string()))?;
+
+    time::Date::parse(value.trim(), &format)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid date format".to_string()))?;
+
+    Ok(())
+}
+
 pub async fn validate_category_exists(
     user_db: &Arc<RwLock<libsql::Connection>>,
     category_id: &str,

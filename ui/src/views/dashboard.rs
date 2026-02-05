@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 use crate::api;
 use crate::components::Overlay;
 use crate::models::{Category, CreateRecordPayload, Record};
-use crate::utils::{format_amount, format_date_short, format_month, get_month_range, parse_date_to_timestamp};
+use crate::utils::{format_amount, format_date_short, format_month, get_month_range, today_date};
 
 #[component]
 pub fn DashboardView(categories: Vec<Category>) -> Element {
@@ -109,7 +109,7 @@ pub fn DashboardView(categories: Vec<Category>) -> Element {
                                 let cat_name = cat.map(|c| c.name.as_str()).unwrap_or("—");
                                 rsx! {
                                     div { class: "transaction-row", key: "{record.id}",
-                                        span { class: "date", "{format_date_short(record.timestamp)}" }
+                                        span { class: "date", "{format_date_short(&record.date)}" }
                                         span { class: "name", "{record.name}" }
                                         span { class: "category", "{cat_name}" }
                                         span {
@@ -200,6 +200,8 @@ fn AddTransactionOverlay(
     let mut name = use_signal(String::new);
     let mut amount = use_signal(String::new);
     let mut category_id = use_signal(String::new);
+    let mut is_income_type = use_signal(|| false);
+    let mut date = use_signal(today_date);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
 
@@ -208,12 +210,13 @@ fn AddTransactionOverlay(
         let categories = categories.clone();
         move || {
             if category_id().is_empty() && !categories.is_empty() {
+                is_income_type.set(categories[0].is_income);
                 category_id.set(categories[0].id.clone());
             }
         }
     });
 
-    let categories_for_submit = categories.clone();
+    let categories_for_type_change = categories.clone();
     let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
         e.stop_propagation();
@@ -238,22 +241,11 @@ fn AddTransactionOverlay(
             return;
         }
 
-        // Determine if this is income or expense based on category
-        let is_income = categories_for_submit
-            .iter()
-            .find(|c| c.id == cat_id)
-            .map(|c| c.is_income)
-            .unwrap_or(false);
-
-        let final_amount = if is_income {
+        let final_amount = if is_income_type() {
             amount_val.abs()
         } else {
             -amount_val.abs()
         };
-
-        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let timestamp = parse_date_to_timestamp(&today)
-            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);
@@ -263,7 +255,7 @@ fn AddTransactionOverlay(
                 name: name_val,
                 amount: final_amount,
                 category_id: cat_id,
-                timestamp,
+                date: date(),
             })
             .await;
 
@@ -280,6 +272,12 @@ fn AddTransactionOverlay(
         });
     };
 
+    let filtered_categories: Vec<Category> = categories
+        .iter()
+        .filter(|cat| cat.is_income == is_income_type())
+        .cloned()
+        .collect();
+
     rsx! {
         Overlay { title: "ADD TRANSACTION".to_string(), on_close: on_close,
             if let Some(err) = error() {
@@ -287,16 +285,6 @@ fn AddTransactionOverlay(
             }
 
             form { onsubmit: handle_submit,
-                div { class: "form-group",
-                    label { "NAME" }
-                    input {
-                        r#type: "text",
-                        value: "{name}",
-                        oninput: move |e| name.set(e.value()),
-                        disabled: loading(),
-                    }
-                }
-
                 div { class: "form-group",
                     label { "AMOUNT" }
                     input {
@@ -309,14 +297,54 @@ fn AddTransactionOverlay(
                 }
 
                 div { class: "form-group",
+                    label { "TYPE" }
+                    select {
+                        value: if is_income_type() { "income" } else { "expense" },
+                        onchange: move |e| {
+                            let next_is_income = e.value() == "income";
+                            is_income_type.set(next_is_income);
+                            if let Some(cat) = categories_for_type_change
+                                .iter()
+                                .find(|c| c.is_income == next_is_income)
+                            {
+                                category_id.set(cat.id.clone());
+                            }
+                        },
+                        disabled: loading(),
+                        option { value: "expense", "EXPENSE" }
+                        option { value: "income", "INCOME" }
+                    }
+                }
+
+                div { class: "form-group",
                     label { "CATEGORY" }
                     select {
                         value: "{category_id}",
                         onchange: move |e| category_id.set(e.value()),
                         disabled: loading(),
-                        for cat in categories.iter() {
+                        for cat in filtered_categories.iter() {
                             option { value: "{cat.id}", "{cat.name}" }
                         }
+                    }
+                }
+
+                div { class: "form-group",
+                    label { "DATE" }
+                    input {
+                        r#type: "date",
+                        value: "{date}",
+                        onchange: move |e| date.set(e.value()),
+                        disabled: loading(),
+                    }
+                }
+
+                div { class: "form-group",
+                    label { "NAME" }
+                    input {
+                        r#type: "text",
+                        value: "{name}",
+                        oninput: move |e| name.set(e.value()),
+                        disabled: loading(),
                     }
                 }
 

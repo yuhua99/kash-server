@@ -24,7 +24,7 @@ pub struct Record {
     pub name: String,
     pub amount: f64,
     pub category_id: String,
-    pub timestamp: i64,
+    pub date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +32,7 @@ pub struct CreateRecordPayload {
     pub name: String,
     pub amount: f64,
     pub category_id: String,
-    pub timestamp: i64,
+    pub date: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,7 +40,7 @@ pub struct UpdateRecordPayload {
     pub name: Option<String>,
     pub amount: Option<f64>,
     pub category_id: Option<String>,
-    pub timestamp: Option<i64>,
+    pub date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

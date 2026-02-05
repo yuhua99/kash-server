@@ -2,7 +2,7 @@ use dioxus::prelude::*;
 
 use crate::api;
 use crate::models::{Category, Record};
-use crate::utils::{format_amount, get_month_name, parse_date_to_end_of_day, parse_date_to_timestamp, timestamp_to_year_month};
+use crate::utils::{date_to_year_month, format_amount, get_month_name};
 
 #[component]
 pub fn StatsView(categories: Vec<Category>) -> Element {
@@ -16,21 +16,23 @@ pub fn StatsView(categories: Vec<Category>) -> Element {
     let mut search = use_signal(String::new);
 
     let fetch_records = move || {
-        let start_time = if start_date().is_empty() {
+        let start_date_value = if start_date().is_empty() {
             None
         } else {
-            parse_date_to_timestamp(&start_date())
+            Some(start_date())
         };
 
-        let end_time = if end_date().is_empty() {
+        let end_date_value = if end_date().is_empty() {
             None
         } else {
-            parse_date_to_end_of_day(&end_date())
+            Some(end_date())
         };
 
         spawn(async move {
             loading.set(true);
-            if let Ok(response) = api::get_records(start_time, end_time, Some(1000), None).await {
+            if let Ok(response) =
+                api::get_records(start_date_value, end_date_value, Some(1000), None).await
+            {
                 records.set(response.records);
             }
             loading.set(false);
@@ -91,12 +93,13 @@ pub fn StatsView(categories: Vec<Category>) -> Element {
     // Monthly trend (last 6 months)
     let mut monthly_data: std::collections::BTreeMap<(i32, u32), (f64, f64)> = std::collections::BTreeMap::new();
     for record in &filtered_records {
-        let key = timestamp_to_year_month(record.timestamp);
-        let entry = monthly_data.entry(key).or_insert((0.0, 0.0));
-        if record.amount > 0.0 {
-            entry.0 += record.amount;
-        } else {
-            entry.1 += record.amount.abs();
+        if let Some(key) = date_to_year_month(&record.date) {
+            let entry = monthly_data.entry(key).or_insert((0.0, 0.0));
+            if record.amount > 0.0 {
+                entry.0 += record.amount;
+            } else {
+                entry.1 += record.amount.abs();
+            }
         }
     }
 

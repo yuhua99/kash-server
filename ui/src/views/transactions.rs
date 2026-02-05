@@ -3,7 +3,7 @@ use dioxus::prelude::*;
 use crate::api;
 use crate::components::Overlay;
 use crate::models::{Category, CreateRecordPayload, Record, UpdateRecordPayload};
-use crate::utils::{format_amount, format_date_full, parse_date_to_end_of_day, parse_date_to_timestamp};
+use crate::utils::{format_amount, format_date_full, today_date};
 
 #[component]
 pub fn TransactionsView(categories: Vec<Category>) -> Element {
@@ -22,21 +22,23 @@ pub fn TransactionsView(categories: Vec<Category>) -> Element {
     let mut editing_record = use_signal(|| None::<Record>);
 
     let fetch_records = move || {
-        let start_time = if start_date().is_empty() {
+        let start_date_value = if start_date().is_empty() {
             None
         } else {
-            parse_date_to_timestamp(&start_date())
+            Some(start_date())
         };
 
-        let end_time = if end_date().is_empty() {
+        let end_date_value = if end_date().is_empty() {
             None
         } else {
-            parse_date_to_end_of_day(&end_date())
+            Some(end_date())
         };
 
         spawn(async move {
             loading.set(true);
-            if let Ok(response) = api::get_records(start_time, end_time, Some(100), None).await {
+            if let Ok(response) =
+                api::get_records(start_date_value, end_date_value, Some(100), None).await
+            {
                 records.set(response.records);
                 total_count.set(response.total_count);
             }
@@ -134,7 +136,7 @@ pub fn TransactionsView(categories: Vec<Category>) -> Element {
                                 class: "transaction-row",
                                 key: "{record.id}",
                                 onclick: move |_| editing_record.set(Some(record_clone.clone())),
-                                span { class: "date", "{format_date_full(record.timestamp)}" }
+                                span { class: "date", "{format_date_full(&record.date)}" }
                                 span { class: "name", "{record.name}" }
                                 span { class: "category", "{cat_name}" }
                                 span {
@@ -198,7 +200,8 @@ fn AddTransactionOverlay(
     let mut name = use_signal(String::new);
     let mut amount = use_signal(String::new);
     let mut category_id = use_signal(String::new);
-    let mut date = use_signal(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    let mut is_income_type = use_signal(|| false);
+    let mut date = use_signal(today_date);
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
 
@@ -206,12 +209,13 @@ fn AddTransactionOverlay(
         let categories = categories.clone();
         move || {
             if category_id().is_empty() && !categories.is_empty() {
+                is_income_type.set(categories[0].is_income);
                 category_id.set(categories[0].id.clone());
             }
         }
     });
 
-    let categories_for_submit = categories.clone();
+    let categories_for_type_change = categories.clone();
     let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
         e.stop_propagation();
@@ -231,20 +235,11 @@ fn AddTransactionOverlay(
             return;
         }
 
-        let is_income = categories_for_submit
-            .iter()
-            .find(|c| c.id == cat_id)
-            .map(|c| c.is_income)
-            .unwrap_or(false);
-
-        let final_amount = if is_income {
+        let final_amount = if is_income_type() {
             amount_val.abs()
         } else {
             -amount_val.abs()
         };
-
-        let timestamp = parse_date_to_timestamp(&date())
-            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);
@@ -254,7 +249,7 @@ fn AddTransactionOverlay(
                 name: name_val,
                 amount: final_amount,
                 category_id: cat_id,
-                timestamp,
+                date: date(),
             })
             .await;
 
@@ -267,6 +262,12 @@ fn AddTransactionOverlay(
         });
     };
 
+    let filtered_categories: Vec<Category> = categories
+        .iter()
+        .filter(|cat| cat.is_income == is_income_type())
+        .cloned()
+        .collect();
+
     rsx! {
         Overlay { title: "ADD TRANSACTION".to_string(), on_close: on_close,
             if let Some(err) = error() {
@@ -274,16 +275,6 @@ fn AddTransactionOverlay(
             }
 
             form { onsubmit: handle_submit,
-                div { class: "form-group",
-                    label { "NAME" }
-                    input {
-                        r#type: "text",
-                        value: "{name}",
-                        oninput: move |e| name.set(e.value()),
-                        disabled: loading(),
-                    }
-                }
-
                 div { class: "form-group",
                     label { "AMOUNT" }
                     input {
@@ -296,12 +287,32 @@ fn AddTransactionOverlay(
                 }
 
                 div { class: "form-group",
+                    label { "TYPE" }
+                    select {
+                        value: if is_income_type() { "income" } else { "expense" },
+                        onchange: move |e| {
+                            let next_is_income = e.value() == "income";
+                            is_income_type.set(next_is_income);
+                            if let Some(cat) = categories_for_type_change
+                                .iter()
+                                .find(|c| c.is_income == next_is_income)
+                            {
+                                category_id.set(cat.id.clone());
+                            }
+                        },
+                        disabled: loading(),
+                        option { value: "expense", "EXPENSE" }
+                        option { value: "income", "INCOME" }
+                    }
+                }
+
+                div { class: "form-group",
                     label { "CATEGORY" }
                     select {
                         value: "{category_id}",
                         onchange: move |e| category_id.set(e.value()),
                         disabled: loading(),
-                        for cat in categories.iter() {
+                        for cat in filtered_categories.iter() {
                             option { value: "{cat.id}", "{cat.name}" }
                         }
                     }
@@ -313,6 +324,16 @@ fn AddTransactionOverlay(
                         r#type: "date",
                         value: "{date}",
                         onchange: move |e| date.set(e.value()),
+                        disabled: loading(),
+                    }
+                }
+
+                div { class: "form-group",
+                    label { "NAME" }
+                    input {
+                        r#type: "text",
+                        value: "{name}",
+                        oninput: move |e| name.set(e.value()),
                         disabled: loading(),
                     }
                 }
@@ -339,14 +360,21 @@ fn EditTransactionOverlay(
     let mut name = use_signal(|| record.name.clone());
     let mut amount = use_signal(|| record.amount.abs().to_string());
     let mut category_id = use_signal(|| record.category_id.clone());
-    let mut date = use_signal(|| format_date_full(record.timestamp));
+    let mut is_income_type = use_signal(|| {
+        categories
+            .iter()
+            .find(|c| c.id == record.category_id)
+            .map(|c| c.is_income)
+            .unwrap_or(record.amount >= 0.0)
+    });
+    let mut date = use_signal(|| record.date.clone());
     let mut error = use_signal(|| None::<String>);
     let mut loading = use_signal(|| false);
 
     let record_id = record.id.clone();
     let record_id_for_delete = record.id.clone();
 
-    let categories_for_submit = categories.clone();
+    let categories_for_type_change = categories.clone();
     let handle_submit = move |e: Event<FormData>| {
         e.prevent_default();
         e.stop_propagation();
@@ -366,20 +394,11 @@ fn EditTransactionOverlay(
             return;
         }
 
-        let is_income = categories_for_submit
-            .iter()
-            .find(|c| c.id == cat_id)
-            .map(|c| c.is_income)
-            .unwrap_or(false);
-
-        let final_amount = if is_income {
+        let final_amount = if is_income_type() {
             amount_val.abs()
         } else {
             -amount_val.abs()
         };
-
-        let timestamp = parse_date_to_timestamp(&date())
-            .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         loading.set(true);
         error.set(None);
@@ -392,7 +411,7 @@ fn EditTransactionOverlay(
                     name: Some(name_val),
                     amount: Some(final_amount),
                     category_id: Some(cat_id),
-                    timestamp: Some(timestamp),
+                    date: Some(date()),
                 },
             )
             .await;
@@ -419,6 +438,12 @@ fn EditTransactionOverlay(
         });
     };
 
+    let filtered_categories: Vec<Category> = categories
+        .iter()
+        .filter(|cat| cat.is_income == is_income_type())
+        .cloned()
+        .collect();
+
     rsx! {
         Overlay { title: "EDIT TRANSACTION".to_string(), on_close: on_close,
             if let Some(err) = error() {
@@ -426,16 +451,6 @@ fn EditTransactionOverlay(
             }
 
             form { onsubmit: handle_submit,
-                div { class: "form-group",
-                    label { "NAME" }
-                    input {
-                        r#type: "text",
-                        value: "{name}",
-                        oninput: move |e| name.set(e.value()),
-                        disabled: loading(),
-                    }
-                }
-
                 div { class: "form-group",
                     label { "AMOUNT" }
                     input {
@@ -448,12 +463,32 @@ fn EditTransactionOverlay(
                 }
 
                 div { class: "form-group",
+                    label { "TYPE" }
+                    select {
+                        value: if is_income_type() { "income" } else { "expense" },
+                        onchange: move |e| {
+                            let next_is_income = e.value() == "income";
+                            is_income_type.set(next_is_income);
+                            if let Some(cat) = categories_for_type_change
+                                .iter()
+                                .find(|c| c.is_income == next_is_income)
+                            {
+                                category_id.set(cat.id.clone());
+                            }
+                        },
+                        disabled: loading(),
+                        option { value: "expense", "EXPENSE" }
+                        option { value: "income", "INCOME" }
+                    }
+                }
+
+                div { class: "form-group",
                     label { "CATEGORY" }
                     select {
                         value: "{category_id}",
                         onchange: move |e| category_id.set(e.value()),
                         disabled: loading(),
-                        for cat in categories.iter() {
+                        for cat in filtered_categories.iter() {
                             option { value: "{cat.id}", "{cat.name}" }
                         }
                     }
@@ -465,6 +500,16 @@ fn EditTransactionOverlay(
                         r#type: "date",
                         value: "{date}",
                         onchange: move |e| date.set(e.value()),
+                        disabled: loading(),
+                    }
+                }
+
+                div { class: "form-group",
+                    label { "NAME" }
+                    input {
+                        r#type: "text",
+                        value: "{name}",
+                        oninput: move |e| name.set(e.value()),
                         disabled: loading(),
                     }
                 }

@@ -1,4 +1,4 @@
-use chrono::{Datelike, NaiveDate, TimeZone, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 
 pub fn format_amount(amount: f64) -> String {
     if amount >= 0.0 {
@@ -8,32 +8,20 @@ pub fn format_amount(amount: f64) -> String {
     }
 }
 
-pub fn format_date_short(timestamp: i64) -> String {
-    let dt = Utc
-        .timestamp_opt(timestamp, 0)
-        .single()
-        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
-    dt.format("%m/%d").to_string()
+fn parse_date(date_str: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d").ok()
 }
 
-pub fn format_date_full(timestamp: i64) -> String {
-    let dt = Utc
-        .timestamp_opt(timestamp, 0)
-        .single()
-        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
-    dt.format("%Y-%m-%d").to_string()
+pub fn format_date_short(date_str: &str) -> String {
+    parse_date(date_str)
+        .map(|d| d.format("%m/%d").to_string())
+        .unwrap_or_else(|| date_str.to_string())
 }
 
-pub fn parse_date_to_timestamp(date_str: &str) -> Option<i64> {
-    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(0, 0, 0).map(|dt| dt.and_utc().timestamp()))
-}
-
-pub fn parse_date_to_end_of_day(date_str: &str) -> Option<i64> {
-    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
-        .ok()
-        .and_then(|d| d.and_hms_opt(23, 59, 59).map(|dt| dt.and_utc().timestamp()))
+pub fn format_date_full(date_str: &str) -> String {
+    parse_date(date_str)
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_else(|| date_str.to_string())
 }
 
 pub fn get_month_name(month: u32) -> &'static str {
@@ -58,32 +46,32 @@ pub fn format_month(year: i32, month: u32) -> String {
     format!("{} {}", get_month_name(month), year)
 }
 
-pub fn get_month_range(year: i32, month: u32) -> (i64, i64) {
+pub fn get_month_range(year: i32, month: u32) -> (String, String) {
     debug_assert!(
         (1..=12).contains(&month),
         "month must be between 1 and 12, got {}",
         month
     );
-    let start = Utc
-        .with_ymd_and_hms(year, month, 1, 0, 0, 0)
-        .single()
-        .unwrap();
-    let end = if month == 12 {
-        Utc.with_ymd_and_hms(year + 1, 1, 1, 0, 0, 0)
-            .single()
-            .unwrap()
+    let start = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
+    let (next_year, next_month) = if month == 12 {
+        (year + 1, 1)
     } else {
-        Utc.with_ymd_and_hms(year, month + 1, 1, 0, 0, 0)
-            .single()
-            .unwrap()
+        (year, month + 1)
     };
-    (start.timestamp(), end.timestamp() - 1)
+    let end = NaiveDate::from_ymd_opt(next_year, next_month, 1)
+        .unwrap()
+        .pred_opt()
+        .unwrap();
+    (
+        start.format("%Y-%m-%d").to_string(),
+        end.format("%Y-%m-%d").to_string(),
+    )
 }
 
-pub fn timestamp_to_year_month(timestamp: i64) -> (i32, u32) {
-    let dt = Utc
-        .timestamp_opt(timestamp, 0)
-        .single()
-        .unwrap_or_else(|| Utc.timestamp_opt(0, 0).single().unwrap());
-    (dt.year(), dt.month())
+pub fn date_to_year_month(date_str: &str) -> Option<(i32, u32)> {
+    parse_date(date_str).map(|d| (d.year(), d.month()))
+}
+
+pub fn today_date() -> String {
+    Utc::now().date_naive().format("%Y-%m-%d").to_string()
 }
