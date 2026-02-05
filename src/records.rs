@@ -6,7 +6,6 @@ use axum::{
 use tower_sessions::Session;
 use uuid::Uuid;
 
-use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
 use crate::models::{
@@ -16,6 +15,7 @@ use crate::utils::{
     db_error, db_error_with_context, get_user_database_from_pool, validate_category_exists,
     validate_date, validate_offset, validate_records_limit, validate_string_length,
 };
+use crate::{AppState, DbPool};
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
     validate_string_length(name, "Record name", MAX_RECORD_NAME_LENGTH)
@@ -61,22 +61,19 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
     })
 }
 
-pub async fn create_record(
-    State(app_state): State<AppState>,
-    session: Session,
-    Json(payload): Json<CreateRecordPayload>,
-) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
-    // Get current user from session
-    let user = get_current_user(&session).await?;
-
+pub async fn create_record_for_user(
+    db_pool: &DbPool,
+    user_id: &str,
+    payload: CreateRecordPayload,
+) -> Result<Record, (StatusCode, String)> {
     // Input validation
     validate_record_name(&payload.name)?;
     validate_record_amount(payload.amount)?;
     validate_category_id(&payload.category_id)?;
     validate_date(&payload.date)?;
 
-    // Get user's database from pool
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
+    // Get user's database
+    let user_db = get_user_database_from_pool(db_pool, user_id).await?;
 
     // Validate that the category exists
     validate_category_exists(&user_db, &payload.category_id).await?;
@@ -98,13 +95,24 @@ pub async fn create_record(
     .await
     .map_err(|_| db_error_with_context("record creation failed"))?;
 
-    let record = Record {
+    Ok(Record {
         id: record_id,
         name: payload.name.trim().to_string(),
         amount: payload.amount,
         category_id: payload.category_id.trim().to_string(),
         date: payload.date.trim().to_string(),
-    };
+    })
+}
+
+pub async fn create_record(
+    State(app_state): State<AppState>,
+    session: Session,
+    Json(payload): Json<CreateRecordPayload>,
+) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
+    // Get current user from session
+    let user = get_current_user(&session).await?;
+
+    let record = create_record_for_user(&app_state.db_pool, &user.id, payload).await?;
 
     Ok((StatusCode::CREATED, Json(record)))
 }

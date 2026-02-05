@@ -15,7 +15,7 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()
         .hash_password(password.as_bytes(), &salt)
-        .map_err(|e| anyhow::anyhow!("Password hashing failed: {}", e))?
+        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
     let id = Uuid::new_v4().to_string();
     let conn = db.write().await;
@@ -118,26 +118,26 @@ fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
         .is_ok())
 }
 
-pub async fn login(
-    State(app_state): State<AppState>,
-    session: Session,
-    Json(payload): Json<LoginPayload>,
-) -> Result<(StatusCode, Json<PublicUser>), (StatusCode, String)> {
+pub async fn authenticate_user(
+    db: &Db,
+    username: &str,
+    password: &str,
+) -> Result<PublicUser, (StatusCode, String)> {
     // Input validation
-    if payload.username.trim().is_empty() {
+    if username.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             "Username cannot be empty".to_string(),
         ));
     }
-    if payload.password.is_empty() {
+    if password.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
             "Password cannot be empty".to_string(),
         ));
     }
 
-    let user_data = get_user_by_username(&app_state.main_db, &payload.username)
+    let user_data = get_user_by_username(db, username)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -146,12 +146,25 @@ pub async fn login(
         None => return Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string())),
     };
 
-    let is_valid = verify_password(&payload.password, &user.password_hash)
+    let is_valid = verify_password(password, &user.password_hash)
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     if !is_valid {
         return Err((StatusCode::UNAUTHORIZED, "Invalid credentials".to_string()));
     }
+
+    Ok(PublicUser {
+        id: user.id,
+        username: user.username,
+    })
+}
+
+pub async fn login(
+    State(app_state): State<AppState>,
+    session: Session,
+    Json(payload): Json<LoginPayload>,
+) -> Result<(StatusCode, Json<PublicUser>), (StatusCode, String)> {
+    let user = authenticate_user(&app_state.main_db, &payload.username, &payload.password).await?;
 
     // Set user session
     session
@@ -163,13 +176,7 @@ pub async fn login(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok((
-        StatusCode::OK,
-        Json(PublicUser {
-            id: user.id,
-            username: user.username,
-        }),
-    ))
+    Ok((StatusCode::OK, Json(user)))
 }
 
 pub async fn get_current_user(session: &Session) -> Result<PublicUser, (StatusCode, String)> {

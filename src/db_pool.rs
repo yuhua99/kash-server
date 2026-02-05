@@ -133,7 +133,7 @@ impl DbPool {
         conn.execute("BEGIN TRANSACTION", ()).await?;
 
         // Execute the provided function
-        match f(&*conn).await {
+        match f(&conn).await {
             Ok(result) => {
                 // Success - commit transaction
                 conn.execute("COMMIT", ()).await?;
@@ -166,7 +166,7 @@ where
         .map_err(|_| TransactionError::Begin)?;
 
     // Execute the provided function
-    match f(&*conn).await {
+    match f(&conn).await {
         Ok(result) => {
             // Success - commit transaction
             conn.execute("COMMIT", ())

@@ -49,6 +49,24 @@ SERVER_HOST=0.0.0.0
 SERVER_PORT=3000
 DATABASE_PATH=./data
 SESSION_SECRET=use openssl rand -hex 64 to generate your secret
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o-mini
+BOT_TIMEZONE=Asia/Taipei
+```
+
+## 🤖 Telegram Bot (Optional)
+
+Run the bot binary:
+
+```bash
+cargo run --bin telegram_bot
+```
+
+In Telegram, link your account:
+
+```
+/link <username> <password>
 ```
 
 **Built with ❤️ for personal budget management**

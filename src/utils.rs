@@ -63,10 +63,7 @@ pub fn validate_string_length(
 
 pub fn validate_date(value: &str) -> Result<(), (StatusCode, String)> {
     if value.trim().is_empty() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Date cannot be empty".to_string(),
-        ));
+        return Err((StatusCode::BAD_REQUEST, "Date cannot be empty".to_string()));
     }
 
     let format = time::format_description::parse("[year]-[month]-[day]")
