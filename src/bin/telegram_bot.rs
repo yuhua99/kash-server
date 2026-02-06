@@ -1,8 +1,11 @@
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
+use std::sync::Arc;
 use teloxide::prelude::*;
 use time::{Duration, OffsetDateTime};
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use my_budget_server::auth;
@@ -21,6 +24,22 @@ const DEFAULT_TIMEZONE: &str = "Asia/Taipei";
 const SIMILAR_RECORDS_DAYS: i64 = 180;
 const SIMILAR_RECORDS_LIMIT: usize = 5;
 const SIMILAR_AMOUNT_RATIO: f64 = 0.2;
+const RECORD_CONTEXT_LIMIT: usize = 30;
+const PENDING_ACTION_TTL_SECONDS: i64 = 180;
+
+const EDIT_REQUEST_KEYWORDS: [&str; 4] = ["edit", "update", "change", "rename"];
+const DELETE_REQUEST_KEYWORDS: [&str; 3] = ["delete", "remove", "erase"];
+const CONFIRM_WORDS: [&str; 8] = [
+    "yes", "confirm", "ok", "okay", "ok do it", "do it", "apply", "proceed",
+];
+const CANCEL_WORDS: [&str; 6] = [
+    "cancel",
+    "stop",
+    "never mind",
+    "nevermind",
+    "don't do it",
+    "dont do it",
+];
 
 #[derive(Clone)]
 struct BotState {
@@ -30,6 +49,7 @@ struct BotState {
     openai_api_key: String,
     openai_model: String,
     timezone: String,
+    pending_actions: Arc<RwLock<HashMap<i64, Vec<PendingAction>>>>,
 }
 
 #[derive(Clone)]
@@ -65,6 +85,70 @@ struct AiRecordResult {
     clarification: String,
 }
 
+#[derive(Clone, Deserialize)]
+struct AiEditResult {
+    target_type: String,
+    target_id: String,
+    target_name: String,
+    category_id: String,
+    category_name: String,
+    new_name: Option<String>,
+    new_amount: Option<f64>,
+    new_category_id: Option<String>,
+    new_category_name: Option<String>,
+    new_date: Option<String>,
+    needs_clarification: bool,
+    clarification: String,
+}
+
+#[derive(Clone)]
+struct PendingAction {
+    id: String,
+    user_id: String,
+    expires_at: i64,
+    summary: String,
+    action: PendingActionType,
+}
+
+#[derive(Clone)]
+enum PendingActionType {
+    RecordEdit {
+        record_id: String,
+        patch: PendingRecordPatch,
+    },
+    CategoryEdit {
+        category_id: String,
+        new_name: String,
+    },
+}
+
+#[derive(Clone)]
+struct PendingRecordPatch {
+    name: Option<String>,
+    amount: Option<f64>,
+    category_id: Option<String>,
+    date: Option<String>,
+}
+
+impl PendingRecordPatch {
+    fn is_empty(&self) -> bool {
+        self.name.is_none()
+            && self.amount.is_none()
+            && self.category_id.is_none()
+            && self.date.is_none()
+    }
+}
+
+enum Decision {
+    Confirm(Option<String>),
+    Cancel(Option<String>),
+}
+
+enum DecisionSelection {
+    Selected(PendingAction),
+    Reply(String),
+}
+
 #[tokio::main]
 async fn main() -> Result<(), BotError> {
     dotenv::dotenv().ok();
@@ -91,6 +175,7 @@ async fn main() -> Result<(), BotError> {
         openai_api_key,
         openai_model,
         timezone,
+        pending_actions: Arc::new(RwLock::new(HashMap::new())),
     };
 
     let handler = Update::filter_message().endpoint(handle_message);
@@ -104,6 +189,8 @@ async fn main() -> Result<(), BotError> {
 }
 
 async fn handle_message(bot: Bot, msg: Message, state: BotState) -> Result<(), BotError> {
+    cleanup_expired_pending_actions(&state).await;
+
     let text = match msg.text() {
         Some(text) => text.trim().to_string(),
         None => return Ok(()),
@@ -115,6 +202,23 @@ async fn handle_message(bot: Bot, msg: Message, state: BotState) -> Result<(), B
 
     if text.starts_with("/link") {
         return handle_link(&bot, msg, &state).await;
+    }
+
+    if let Some(decision) = parse_decision(&text) {
+        return handle_decision(&bot, msg, &state, decision).await;
+    }
+
+    if looks_like_delete_request(&text) {
+        bot.send_message(
+            msg.chat.id,
+            "Delete is manual-only. Please use your app/API delete endpoint.",
+        )
+        .await?;
+        return Ok(());
+    }
+
+    if looks_like_edit_request(&text) {
+        return handle_edit_message(&bot, msg, &state, &text).await;
     }
 
     handle_record_message(&bot, msg, &state, &text).await
@@ -290,9 +394,13 @@ async fn handle_record_message(
                 "Other"
             };
 
-            let created =
-                get_or_create_category(&state.db_pool, &user_id, fallback_name, ai_record.is_income)
-                    .await;
+            let created = get_or_create_category(
+                &state.db_pool,
+                &user_id,
+                fallback_name,
+                ai_record.is_income,
+            )
+            .await;
             match created {
                 Ok(category) => {
                     let category_id = category.id.clone();
@@ -327,6 +435,269 @@ async fn handle_record_message(
     let summary = build_record_summary(&record, &categories);
     bot.send_message(msg.chat.id, summary).await?;
     Ok(())
+}
+
+fn looks_like_edit_request(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    EDIT_REQUEST_KEYWORDS
+        .iter()
+        .any(|keyword| lowered.contains(keyword))
+}
+
+fn looks_like_delete_request(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    DELETE_REQUEST_KEYWORDS
+        .iter()
+        .any(|keyword| lowered.contains(keyword))
+}
+
+fn parse_decision(text: &str) -> Option<Decision> {
+    let trimmed = text.trim();
+    let lowered = trimmed.to_ascii_lowercase();
+
+    let mut parts = trimmed.split_whitespace();
+    let command = parts.next().unwrap_or_default().to_ascii_lowercase();
+
+    if command == "/confirm" || command.starts_with("/confirm@") {
+        let action_id = parts.next().map(str::to_string);
+        return Some(Decision::Confirm(action_id));
+    }
+
+    if command == "/cancel" || command.starts_with("/cancel@") {
+        let action_id = parts.next().map(str::to_string);
+        return Some(Decision::Cancel(action_id));
+    }
+
+    if CONFIRM_WORDS.iter().any(|word| lowered == *word) {
+        return Some(Decision::Confirm(None));
+    }
+
+    if CANCEL_WORDS.iter().any(|word| lowered == *word) {
+        return Some(Decision::Cancel(None));
+    }
+
+    None
+}
+
+async fn cleanup_expired_pending_actions(state: &BotState) {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut pending = state.pending_actions.write().await;
+    pending.retain(|_, actions| {
+        actions.retain(|action| action.expires_at > now);
+        !actions.is_empty()
+    });
+}
+
+fn format_pending_actions(actions: &[PendingAction]) -> String {
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    let mut lines = vec![
+        "Multiple pending edits found. Please specify one with /confirm <id> or /cancel <id>:"
+            .to_string(),
+    ];
+
+    for action in actions {
+        let remain = (action.expires_at - now).max(0);
+        lines.push(format!(
+            "- {} (expires in {}s): {}",
+            action.id, remain, action.summary
+        ));
+    }
+
+    lines.join("\n")
+}
+
+fn select_pending_action(
+    pending: &mut HashMap<i64, Vec<PendingAction>>,
+    telegram_user_id: i64,
+    target_action_id: Option<String>,
+) -> DecisionSelection {
+    let Some(actions) = pending.get_mut(&telegram_user_id) else {
+        return DecisionSelection::Reply("No pending edits to confirm or cancel.".to_string());
+    };
+
+    let index = if let Some(action_id) = target_action_id {
+        actions.iter().position(|action| action.id == action_id)
+    } else if actions.len() == 1 {
+        Some(0)
+    } else {
+        None
+    };
+
+    let Some(index) = index else {
+        return DecisionSelection::Reply(format_pending_actions(actions));
+    };
+
+    let action = actions.swap_remove(index);
+    if actions.is_empty() {
+        pending.remove(&telegram_user_id);
+    }
+    DecisionSelection::Selected(action)
+}
+
+async fn handle_decision(
+    bot: &Bot,
+    msg: Message,
+    state: &BotState,
+    decision: Decision,
+) -> Result<(), BotError> {
+    let telegram_user_id = match telegram_user_id(&msg) {
+        Ok(value) => value,
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    let target_action_id = match &decision {
+        Decision::Confirm(action_id) | Decision::Cancel(action_id) => action_id.clone(),
+    };
+
+    let selection = {
+        let mut pending = state.pending_actions.write().await;
+        select_pending_action(&mut pending, telegram_user_id, target_action_id)
+    };
+
+    let selected = match selection {
+        DecisionSelection::Reply(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+        DecisionSelection::Selected(action) => action,
+    };
+
+    match decision {
+        Decision::Cancel(_) => {
+            bot.send_message(
+                msg.chat.id,
+                format!("Cancelled pending edit {}.", selected.id),
+            )
+            .await?;
+        }
+        Decision::Confirm(_) => {
+            let message = match execute_pending_action(state, &selected).await {
+                Ok(message) | Err(message) => message,
+            };
+            bot.send_message(msg.chat.id, message).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn handle_edit_message(
+    bot: &Bot,
+    msg: Message,
+    state: &BotState,
+    text: &str,
+) -> Result<(), BotError> {
+    let telegram_user_id = match telegram_user_id(&msg) {
+        Ok(value) => value,
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    let user_id = match fetch_linked_user_id(&state.main_db, telegram_user_id).await {
+        Ok(Some(user_id)) => user_id,
+        Ok(None) => {
+            send_help(bot, msg.chat.id).await?;
+            return Ok(());
+        }
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    let categories = match load_categories(&state.db_pool, &user_id).await {
+        Ok(categories) => categories,
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    let recent_records =
+        match load_recent_records(&state.db_pool, &user_id, RECORD_CONTEXT_LIMIT).await {
+            Ok(records) => records,
+            Err(message) => {
+                bot.send_message(msg.chat.id, message).await?;
+                return Ok(());
+            }
+        };
+
+    let edit = match extract_edit(state, text, &categories, &recent_records).await {
+        Ok(edit) => edit,
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    if edit.needs_clarification {
+        let clarification = if edit.clarification.trim().is_empty() {
+            "Please describe one specific edit target and change."
+        } else {
+            edit.clarification.trim()
+        };
+        bot.send_message(msg.chat.id, clarification).await?;
+        return Ok(());
+    }
+
+    let pending_action = match build_pending_action_from_edit(
+        &state.db_pool,
+        &user_id,
+        &edit,
+        &recent_records,
+        &categories,
+    )
+    .await
+    {
+        Ok(action) => action,
+        Err(message) => {
+            bot.send_message(msg.chat.id, message).await?;
+            return Ok(());
+        }
+    };
+
+    let action_id = pending_action.id.clone();
+    let expires_in = pending_action.expires_at - OffsetDateTime::now_utc().unix_timestamp();
+    let summary = pending_action.summary.clone();
+    {
+        let mut pending = state.pending_actions.write().await;
+        pending
+            .entry(telegram_user_id)
+            .or_insert_with(Vec::new)
+            .push(pending_action);
+    }
+
+    let response = format!(
+        "Pending edit {} (expires in {}s): {}\nReply with confirm/cancel, or /confirm {} / /cancel {}.",
+        action_id,
+        expires_in.max(0),
+        summary,
+        action_id,
+        action_id
+    );
+    bot.send_message(msg.chat.id, response).await?;
+    Ok(())
+}
+
+async fn build_pending_action_from_edit(
+    db_pool: &DbPool,
+    user_id: &str,
+    edit: &AiEditResult,
+    recent_records: &[Record],
+    categories: &[CategoryInfo],
+) -> Result<PendingAction, String> {
+    match edit.target_type.trim().to_ascii_lowercase().as_str() {
+        "record" => {
+            build_pending_record_edit(db_pool, user_id, edit, recent_records, categories).await
+        }
+        "category" => build_pending_category_edit(user_id, edit, categories),
+        _ => Err("Please specify whether you want to edit one record or one category.".to_string()),
+    }
 }
 
 async fn upsert_telegram_link(
@@ -457,6 +828,404 @@ async fn load_similar_records(
     Ok(records)
 }
 
+async fn load_recent_records(
+    db_pool: &DbPool,
+    user_id: &str,
+    limit: usize,
+) -> Result<Vec<Record>, String> {
+    let user_db = get_user_database_from_pool(db_pool, user_id)
+        .await
+        .map_err(|(_, message)| message)?;
+    let conn = user_db.read().await;
+
+    let mut rows = conn
+        .query(
+            "SELECT id, name, amount, category_id, date FROM records ORDER BY date DESC LIMIT ?",
+            [limit as i64],
+        )
+        .await
+        .map_err(|_| "Failed to query recent records".to_string())?;
+
+    let mut records = Vec::new();
+    while let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| "Failed to query recent records".to_string())?
+    {
+        let record =
+            records::extract_record_from_row(row).map_err(|(_, message)| message.to_string())?;
+        records.push(record);
+    }
+
+    Ok(records)
+}
+
+fn resolve_record_id_by_name(records: &[Record], target_name: &str) -> Result<String, String> {
+    let trimmed_name = target_name.trim();
+    if trimmed_name.is_empty() {
+        return Err("Please specify which record to edit.".to_string());
+    }
+
+    let matches: Vec<&Record> = records
+        .iter()
+        .filter(|record| record.name.eq_ignore_ascii_case(trimmed_name))
+        .collect();
+    match matches.len() {
+        0 => Err("Record not found. Please include record id.".to_string()),
+        1 => Ok(matches[0].id.clone()),
+        _ => Err(
+            "Multiple records match that name. Please resend the edit request with a specific record id."
+                .to_string(),
+        ),
+    }
+}
+
+async fn fetch_record_by_id(
+    db_pool: &DbPool,
+    user_id: &str,
+    record_id: &str,
+) -> Result<Record, String> {
+    let user_db = get_user_database_from_pool(db_pool, user_id)
+        .await
+        .map_err(|(_, message)| message)?;
+    let conn = user_db.read().await;
+    let mut rows = conn
+        .query(
+            "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
+            [record_id],
+        )
+        .await
+        .map_err(|_| "Failed to query existing record".to_string())?;
+
+    if let Some(row) = rows
+        .next()
+        .await
+        .map_err(|_| "Failed to query existing record".to_string())?
+    {
+        records::extract_record_from_row(row).map_err(|(_, message)| message)
+    } else {
+        Err("Record not found.".to_string())
+    }
+}
+
+async fn build_pending_record_edit(
+    db_pool: &DbPool,
+    user_id: &str,
+    edit: &AiEditResult,
+    records: &[Record],
+    categories: &[CategoryInfo],
+) -> Result<PendingAction, String> {
+    let trimmed_id = edit.target_id.trim();
+    let existing = if !trimmed_id.is_empty() {
+        fetch_record_by_id(db_pool, user_id, trimmed_id).await?
+    } else {
+        let record_id = resolve_record_id_by_name(records, &edit.target_name)?;
+        records
+            .iter()
+            .find(|record| record.id == record_id)
+            .cloned()
+            .ok_or_else(|| "Record not found.".to_string())?
+    };
+    let record_id = existing.id.clone();
+
+    let new_name = edit
+        .new_name
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(name) = &new_name {
+        records::validate_record_name(name).map_err(|(_, message)| message)?;
+    }
+
+    if let Some(amount) = edit.new_amount {
+        records::validate_record_amount(amount).map_err(|(_, message)| message)?;
+    }
+
+    let new_date = edit
+        .new_date
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    if let Some(date) = &new_date {
+        validate_date(date).map_err(|(_, message)| message)?;
+    }
+
+    let provided_category_id = edit.new_category_id.as_deref().unwrap_or("");
+    let provided_category_name = edit.new_category_name.as_deref().unwrap_or("");
+    let new_category_id =
+        resolve_category_id(categories, provided_category_id, provided_category_name);
+    if (!provided_category_id.trim().is_empty() || !provided_category_name.trim().is_empty())
+        && new_category_id.is_none()
+    {
+        return Err("Category not found for record update.".to_string());
+    }
+
+    let patch = PendingRecordPatch {
+        name: new_name.clone(),
+        amount: edit.new_amount,
+        category_id: new_category_id.clone(),
+        date: new_date.clone(),
+    };
+
+    if patch.is_empty() {
+        return Err(
+            "No record field changes detected. Please specify at least one field to edit."
+                .to_string(),
+        );
+    }
+
+    let mut parts = Vec::new();
+    if let Some(name) = &patch.name {
+        parts.push(format!("name: '{}' -> '{}'", existing.name, name));
+    }
+    if let Some(amount) = patch.amount {
+        parts.push(format!("amount: {} -> {}", existing.amount, amount));
+    }
+    if let Some(category_id) = &patch.category_id {
+        let old_name = categories
+            .iter()
+            .find(|category| category.id == existing.category_id)
+            .map(|category| category.name.as_str())
+            .unwrap_or("Unknown");
+        let new_name = categories
+            .iter()
+            .find(|category| category.id == *category_id)
+            .map(|category| category.name.as_str())
+            .unwrap_or("Unknown");
+        parts.push(format!("category: '{}' -> '{}'", old_name, new_name));
+    }
+    if let Some(date) = &patch.date {
+        parts.push(format!("date: {} -> {}", existing.date, date));
+    }
+
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    Ok(PendingAction {
+        id: Uuid::new_v4().to_string(),
+        user_id: user_id.to_string(),
+        expires_at: now + PENDING_ACTION_TTL_SECONDS,
+        summary: format!("record {}: {}", record_id, parts.join(", ")),
+        action: PendingActionType::RecordEdit { record_id, patch },
+    })
+}
+
+fn build_pending_category_edit(
+    user_id: &str,
+    edit: &AiEditResult,
+    categories: &[CategoryInfo],
+) -> Result<PendingAction, String> {
+    let target_id = if edit.target_id.trim().is_empty() {
+        edit.category_id.trim()
+    } else {
+        edit.target_id.trim()
+    };
+    let target_name = if edit.target_name.trim().is_empty() {
+        edit.category_name.trim()
+    } else {
+        edit.target_name.trim()
+    };
+
+    let category_id = resolve_category_id(categories, target_id, target_name).ok_or_else(|| {
+        "Category not found. Please include category id or exact name.".to_string()
+    })?;
+    let category = categories
+        .iter()
+        .find(|item| item.id == category_id)
+        .ok_or_else(|| "Category not found.".to_string())?;
+    let new_name = edit
+        .new_name
+        .as_ref()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "Category edit only supports updating name.".to_string())?;
+
+    validate_category_name(&new_name).map_err(|(_, message)| message)?;
+    if category.name == new_name {
+        return Err("Category name is unchanged.".to_string());
+    }
+    if categories
+        .iter()
+        .any(|item| item.id != category.id && item.name.eq_ignore_ascii_case(&new_name))
+    {
+        return Err("Category name already exists (case-insensitive).".to_string());
+    }
+
+    let now = OffsetDateTime::now_utc().unix_timestamp();
+    Ok(PendingAction {
+        id: Uuid::new_v4().to_string(),
+        user_id: user_id.to_string(),
+        expires_at: now + PENDING_ACTION_TTL_SECONDS,
+        summary: format!(
+            "category {}: name '{}' -> '{}'",
+            category.id, category.name, new_name
+        ),
+        action: PendingActionType::CategoryEdit {
+            category_id: category.id.clone(),
+            new_name,
+        },
+    })
+}
+
+async fn execute_pending_action(
+    state: &BotState,
+    pending: &PendingAction,
+) -> Result<String, String> {
+    if pending.expires_at <= OffsetDateTime::now_utc().unix_timestamp() {
+        return Err(
+            "This confirmation expired after 3 minutes. Please request the edit again.".to_string(),
+        );
+    }
+
+    match &pending.action {
+        PendingActionType::RecordEdit { record_id, patch } => {
+            apply_record_edit(&state.db_pool, &pending.user_id, record_id, patch).await?;
+            Ok(format!("Confirmed and updated {}.", pending.summary))
+        }
+        PendingActionType::CategoryEdit {
+            category_id,
+            new_name,
+        } => {
+            apply_category_name_edit(&state.db_pool, &pending.user_id, category_id, new_name)
+                .await?;
+            Ok(format!("Confirmed and updated {}.", pending.summary))
+        }
+    }
+}
+
+async fn apply_record_edit(
+    db_pool: &DbPool,
+    user_id: &str,
+    record_id: &str,
+    patch: &PendingRecordPatch,
+) -> Result<(), String> {
+    if patch.is_empty() {
+        return Err("No record fields provided for update.".to_string());
+    }
+
+    if let Some(name) = &patch.name {
+        records::validate_record_name(name).map_err(|(_, message)| message)?;
+    }
+    if let Some(amount) = patch.amount {
+        records::validate_record_amount(amount).map_err(|(_, message)| message)?;
+    }
+    if let Some(date) = &patch.date {
+        validate_date(date).map_err(|(_, message)| message)?;
+    }
+
+    let user_db = get_user_database_from_pool(db_pool, user_id)
+        .await
+        .map_err(|(_, message)| message)?;
+    if let Some(category_id) = &patch.category_id {
+        my_budget_server::utils::validate_category_exists(&user_db, category_id)
+            .await
+            .map_err(|(_, message)| message)?;
+    }
+
+    let conn = user_db.write().await;
+    let mut existing_rows = conn
+        .query(
+            "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
+            [record_id],
+        )
+        .await
+        .map_err(|_| "Failed to query existing record".to_string())?;
+
+    let existing = if let Some(row) = existing_rows
+        .next()
+        .await
+        .map_err(|_| "Failed to query existing record".to_string())?
+    {
+        records::extract_record_from_row(row).map_err(|(_, message)| message)?
+    } else {
+        return Err("Record not found.".to_string());
+    };
+
+    let updated_name = patch.name.as_deref().unwrap_or(&existing.name);
+    let updated_amount = patch.amount.unwrap_or(existing.amount);
+    let updated_category_id = patch
+        .category_id
+        .as_deref()
+        .unwrap_or(&existing.category_id);
+    let updated_date = patch.date.as_deref().unwrap_or(&existing.date);
+
+    let affected_rows = conn
+        .execute(
+            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ?",
+            (
+                updated_name,
+                updated_amount,
+                updated_category_id,
+                updated_date,
+                record_id,
+            ),
+        )
+        .await
+        .map_err(|_| "Failed to update record".to_string())?;
+    if affected_rows == 0 {
+        return Err("Record not found or no changes made.".to_string());
+    }
+
+    Ok(())
+}
+
+async fn apply_category_name_edit(
+    db_pool: &DbPool,
+    user_id: &str,
+    category_id: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    validate_category_name(new_name).map_err(|(_, message)| message)?;
+
+    let user_db = get_user_database_from_pool(db_pool, user_id)
+        .await
+        .map_err(|(_, message)| message)?;
+    let conn = user_db.write().await;
+
+    let mut existing_rows = conn
+        .query(
+            "SELECT id, name, is_income FROM categories WHERE id = ?",
+            [category_id],
+        )
+        .await
+        .map_err(|_| "Failed to query existing category".to_string())?;
+    if existing_rows
+        .next()
+        .await
+        .map_err(|_| "Failed to query existing category".to_string())?
+        .is_none()
+    {
+        return Err("Category not found.".to_string());
+    }
+
+    let mut conflict_rows = conn
+        .query(
+            "SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND id != ?",
+            (new_name, category_id),
+        )
+        .await
+        .map_err(|_| "Failed to check category name conflict".to_string())?;
+    if conflict_rows
+        .next()
+        .await
+        .map_err(|_| "Failed to check category name conflict".to_string())?
+        .is_some()
+    {
+        return Err("Category name already exists (case-insensitive).".to_string());
+    }
+
+    let affected_rows = conn
+        .execute(
+            "UPDATE categories SET name = ? WHERE id = ?",
+            (new_name, category_id),
+        )
+        .await
+        .map_err(|_| "Failed to update category".to_string())?;
+    if affected_rows == 0 {
+        return Err("Category not found or no changes made.".to_string());
+    }
+
+    Ok(())
+}
+
 async fn get_or_create_category(
     db_pool: &DbPool,
     user_id: &str,
@@ -541,6 +1310,90 @@ fn build_record_summary(record: &Record, categories: &[CategoryInfo]) -> String 
         "Recorded: {} / {} / {} / {} (id: {})",
         record.name, record.amount, category_name, record.date, record.id
     )
+}
+
+async fn extract_edit(
+    state: &BotState,
+    message: &str,
+    categories: &[CategoryInfo],
+    records: &[Record],
+) -> Result<AiEditResult, String> {
+    let category_list = if categories.is_empty() {
+        "(none)".to_string()
+    } else {
+        categories
+            .iter()
+            .map(|category| {
+                format!(
+                    "- {} | {} | is_income={}",
+                    category.id, category.name, category.is_income
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let record_list = if records.is_empty() {
+        "(none)".to_string()
+    } else {
+        records
+            .iter()
+            .map(|record| {
+                format!(
+                    "- {} | {} | amount={} | category_id={} | date={}",
+                    record.id, record.name, record.amount, record.category_id, record.date
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let input = format!(
+        "You are a finance assistant. Extract one edit operation from the user's message.\n\nUser message:\n{}\n\nCategories:\n{}\n\nRecent records:\n{}\n\nRules:\n- target_type must be one of: record, category, none.\n- Only one target is allowed. If multiple edits are requested, set needs_clarification=true.\n- Never perform delete operations. If user asks delete, set needs_clarification=true.\n- For category edits, only name change is allowed.\n- For record edits, any of name/amount/category/date may be changed.\n- If unknown target, set needs_clarification=true with a short clarification message.\n",
+        message, category_list, record_list
+    );
+
+    let schema = json!({
+        "type": "object",
+        "properties": {
+            "target_type": { "type": "string" },
+            "target_id": { "type": "string" },
+            "target_name": { "type": "string" },
+            "category_id": { "type": "string" },
+            "category_name": { "type": "string" },
+            "new_name": { "type": ["string", "null"] },
+            "new_amount": { "type": ["number", "null"] },
+            "new_category_id": { "type": ["string", "null"] },
+            "new_category_name": { "type": ["string", "null"] },
+            "new_date": { "type": ["string", "null"] },
+            "needs_clarification": { "type": "boolean" },
+            "clarification": { "type": "string" }
+        },
+        "required": [
+            "target_type",
+            "target_id",
+            "target_name",
+            "category_id",
+            "category_name",
+            "new_name",
+            "new_amount",
+            "new_category_id",
+            "new_category_name",
+            "new_date",
+            "needs_clarification",
+            "clarification"
+        ],
+        "additionalProperties": false
+    });
+
+    call_openai_json(
+        &state.http,
+        &state.openai_api_key,
+        &state.openai_model,
+        "edit",
+        input,
+        schema,
+    )
+    .await
 }
 
 async fn classify_message(
