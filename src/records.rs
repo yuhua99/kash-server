@@ -35,6 +35,39 @@ pub fn validate_category_id(category_id: &str) -> Result<(), (StatusCode, String
     validate_string_length(category_id, "Category ID", MAX_CATEGORY_NAME_LENGTH)
 }
 
+fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
+    if is_income {
+        amount.abs()
+    } else {
+        -amount.abs()
+    }
+}
+
+async fn get_category_is_income(
+    conn: &libsql::Connection,
+    category_id: &str,
+) -> Result<bool, (StatusCode, String)> {
+    let mut rows = conn
+        .query(
+            "SELECT is_income FROM categories WHERE id = ?",
+            [category_id],
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to query category type"))?;
+
+    if let Some(row) = rows.next().await.map_err(|_| db_error())? {
+        let is_income: bool = row
+            .get(0)
+            .map_err(|_| db_error_with_context("invalid category data"))?;
+        Ok(is_income)
+    } else {
+        Err((
+            StatusCode::BAD_REQUEST,
+            "Category does not exist".to_string(),
+        ))
+    }
+}
+
 pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, String)> {
     let id: String = row
         .get(0)
@@ -75,8 +108,16 @@ pub async fn create_record_for_user(
     // Get user's database
     let user_db = get_user_database_from_pool(db_pool, user_id).await?;
 
+    let category_id = payload.category_id.trim().to_string();
+
     // Validate that the category exists
-    validate_category_exists(&user_db, &payload.category_id).await?;
+    validate_category_exists(&user_db, &category_id).await?;
+
+    let is_income = {
+        let conn = user_db.read().await;
+        get_category_is_income(&conn, &category_id).await?
+    };
+    let normalized_amount = normalize_amount_by_category(payload.amount, is_income);
 
     // Create record
     let record_id = Uuid::new_v4().to_string();
@@ -87,8 +128,8 @@ pub async fn create_record_for_user(
         (
             record_id.as_str(),
             payload.name.trim(),
-            payload.amount,
-            payload.category_id.trim(),
+            normalized_amount,
+            category_id.as_str(),
             payload.date.trim(),
         ),
     )
@@ -98,8 +139,8 @@ pub async fn create_record_for_user(
     Ok(Record {
         id: record_id,
         name: payload.name.trim().to_string(),
-        amount: payload.amount,
-        category_id: payload.category_id.trim().to_string(),
+        amount: normalized_amount,
+        category_id,
         date: payload.date.trim().to_string(),
     })
 }
@@ -244,11 +285,16 @@ pub async fn update_record(
 
     // Build the updated record with new values or keep existing ones
     let updated_name = payload.name.as_deref().unwrap_or(&existing_record.name);
-    let updated_amount = payload.amount.unwrap_or(existing_record.amount);
     let updated_category_id = payload
         .category_id
         .as_deref()
         .unwrap_or(&existing_record.category_id);
+    let updated_amount = if let Some(amount) = payload.amount {
+        let is_income = get_category_is_income(&conn, updated_category_id).await?;
+        normalize_amount_by_category(amount, is_income)
+    } else {
+        existing_record.amount
+    };
     let updated_date = payload.date.unwrap_or(existing_record.date);
 
     // Update the record and verify it was actually modified

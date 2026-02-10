@@ -444,6 +444,14 @@ fn looks_like_edit_request(text: &str) -> bool {
         .any(|keyword| lowered.contains(keyword))
 }
 
+fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
+    if is_income {
+        amount.abs()
+    } else {
+        -amount.abs()
+    }
+}
+
 fn looks_like_delete_request(text: &str) -> bool {
     let lowered = text.to_ascii_lowercase();
     DELETE_REQUEST_KEYWORDS
@@ -1140,11 +1148,34 @@ async fn apply_record_edit(
     };
 
     let updated_name = patch.name.as_deref().unwrap_or(&existing.name);
-    let updated_amount = patch.amount.unwrap_or(existing.amount);
     let updated_category_id = patch
         .category_id
         .as_deref()
         .unwrap_or(&existing.category_id);
+    let updated_amount = if let Some(amount) = patch.amount {
+        let mut category_rows = conn
+            .query(
+                "SELECT is_income FROM categories WHERE id = ?",
+                [updated_category_id],
+            )
+            .await
+            .map_err(|_| "Failed to query category type".to_string())?;
+
+        let is_income: bool = if let Some(row) = category_rows
+            .next()
+            .await
+            .map_err(|_| "Failed to query category type".to_string())?
+        {
+            row.get(0)
+                .map_err(|_| "Invalid category data".to_string())?
+        } else {
+            return Err("Category not found.".to_string());
+        };
+
+        normalize_amount_by_category(amount, is_income)
+    } else {
+        existing.amount
+    };
     let updated_date = patch.date.as_deref().unwrap_or(&existing.date);
 
     let affected_rows = conn
