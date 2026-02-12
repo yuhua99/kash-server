@@ -1,4 +1,5 @@
 use teloxide::prelude::*;
+use teloxide::types::ChatAction;
 use time::OffsetDateTime;
 
 use my_budget_server::auth;
@@ -66,8 +67,10 @@ pub async fn handle_message(bot: Bot, msg: Message, state: BotState) -> Result<(
     let history = get_context_messages(&state, context_key).await;
 
     let response = if looks_like_edit_request(&text) {
+        send_typing(&bot, msg.chat.id).await;
         handle_edit_message(&bot, msg.chat.id, &state, &text, tg_user_id, &history).await?
     } else {
+        send_typing(&bot, msg.chat.id).await;
         handle_record_message(&bot, msg.chat.id, &state, &text, tg_user_id, &history).await?
     };
 
@@ -75,6 +78,10 @@ pub async fn handle_message(bot: Bot, msg: Message, state: BotState) -> Result<(
     push_context_turn(&state, context_key, &text, &response).await;
 
     Ok(())
+}
+
+async fn send_typing(bot: &Bot, chat_id: ChatId) {
+    let _ = bot.send_chat_action(chat_id, ChatAction::Typing).await;
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +198,8 @@ async fn handle_record_message(
 
         category_hint = Some(hint);
     }
+
+    send_typing(bot, chat_id).await;
 
     let batch = match extract_records(
         state,
@@ -348,6 +357,8 @@ async fn handle_edit_message(
                 return Ok(message);
             }
         };
+
+    send_typing(bot, chat_id).await;
 
     let edit = match extract_edit(state, text, &categories, &recent_records, history).await {
         Ok(edit) => edit,
