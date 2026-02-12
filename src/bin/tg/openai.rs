@@ -3,12 +3,17 @@ use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
 
-use crate::constants::SIMILAR_RECORDS_DAYS;
+use crate::constants::{DEFAULT_WHISPER_MODEL, SIMILAR_RECORDS_DAYS};
 use crate::models::{
     AiBatchRecordResult, AiCategoryHint, AiEditResult, BotState, CategoryInfo, SimilarRecord,
 };
 
 use my_budget_server::models::Record;
+
+#[derive(Deserialize)]
+struct WhisperTranscriptionResponse {
+    text: String,
+}
 
 // ---------------------------------------------------------------------------
 // Classify message (quick category + amount hint)
@@ -72,6 +77,7 @@ pub async fn classify_message(
 pub async fn extract_records(
     state: &BotState,
     message: &str,
+    image_data_url: Option<&str>,
     categories: &[CategoryInfo],
     similar_records: &[SimilarRecord],
     hint: Option<&AiCategoryHint>,
@@ -115,6 +121,7 @@ pub async fn extract_records(
         Current date (YYYY-MM-DD): {now_date}\n\n\
         Rules:\n\
         - Extract every record the user mentions into the \"records\" array. If the user lists multiple items with amounts, include each one as a separate record.\n\
+        - The user may attach a receipt/invoice photo. If an image is provided, read it and extract all valid records you can infer from it.\n\
         - Return each record's date in YYYY-MM-DD format.\n\
         - If a similar record name matches, reuse its exact name.\n\
         - Choose the best matching category_id from the categories list. If no category fits, set needs_clarification=true and ask the user which category to use.\n\
@@ -134,9 +141,27 @@ pub async fn extract_records(
         "content": system_prompt
     }));
     input_messages.extend_from_slice(history);
+    let user_content = match image_data_url {
+        Some(image_data_url) => {
+            let mut blocks = Vec::new();
+            blocks.push(json!({
+                "type": "input_image",
+                "image_url": image_data_url,
+            }));
+            if !message.trim().is_empty() {
+                blocks.push(json!({
+                    "type": "input_text",
+                    "text": message,
+                }));
+            }
+            json!(blocks)
+        }
+        None => json!(message),
+    };
+
     input_messages.push(json!({
         "role": "user",
-        "content": message
+        "content": user_content
     }));
 
     let schema = json!({
@@ -175,6 +200,44 @@ pub async fn extract_records(
         schema,
     )
     .await
+}
+
+pub async fn transcribe_voice(
+    http: &Client,
+    api_key: &str,
+    audio_bytes: Vec<u8>,
+    file_name: &str,
+) -> Result<String, String> {
+    let file_part = reqwest::multipart::Part::bytes(audio_bytes)
+        .file_name(file_name.to_string())
+        .mime_str("audio/ogg")
+        .map_err(|_| "Failed to prepare audio upload".to_string())?;
+
+    let form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", DEFAULT_WHISPER_MODEL.to_string())
+        .text("response_format", "json".to_string());
+
+    let response = http
+        .post("https://api.openai.com/v1/audio/transcriptions")
+        .bearer_auth(api_key)
+        .multipart(form)
+        .send()
+        .await
+        .map_err(|_| "Failed to contact OpenAI transcription API".to_string())?;
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(format!("OpenAI transcription error: {} {}", status, text));
+    }
+
+    let payload: WhisperTranscriptionResponse = response
+        .json()
+        .await
+        .map_err(|_| "Failed to parse transcription response".to_string())?;
+
+    Ok(payload.text.trim().to_string())
 }
 
 // ---------------------------------------------------------------------------

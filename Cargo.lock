@@ -1669,6 +1669,7 @@ dependencies = [
  "anyhow",
  "argon2",
  "axum 0.8.4",
+ "base64 0.22.1",
  "dotenv",
  "libsql",
  "password-hash",
