@@ -1,72 +1,94 @@
 # Kash Server
 
-A personal expense tracking backend server built with Rust and Axum, designed to be deployed as a RESTful API for budget management applications.
+A personal expense tracking backend built with Rust and Axum. It exposes REST APIs for budget management and includes an optional AI-powered Telegram assistant.
 
-## 🚀 Features
+## Features
 
-- **User Authentication**: Secure registration and login with session-based authentication
-- **Personal Data Isolation**: Each user gets their own Turso database for complete data privacy
-- **Expense Management**: Full CRUD operations for expense records with categorization
-- **Smart Predictions**: Automatic expense name suggestions based on similar past records
-- **Category Management**: Flexible expense categorization system
-- **RESTful API**: Clean REST endpoints for easy frontend integration
+- Session-based authentication with secure password hashing (Argon2)
+- Per-user database isolation (libsql/Turso-backed local files)
+- Record and category management APIs
+- Strict record validation (including non-zero amount validation)
+- AI-assisted parsing for records from text, voice, and receipt photos
+- Telegram edit workflow with confirm/cancel before applying updates
 
-## 🛠️ Tech Stack
+## Tech Stack
 
-- **Framework**: Rust + Axum
-- **Database**: Turso (per-user isolation)
-- **Authentication**: Session-based with tower-sessions
-- **Password Security**: Argon2 hashing
-- **Architecture**: RESTful API
+- Rust (edition 2024)
+- Axum + tower-sessions
+- libsql
+- teloxide
+- OpenAI Responses API + Whisper transcription
 
-## 📂 Project Structure
+## Project Structure
 
 ```
-my-budget-server/
+kash-server/
 ├── Cargo.toml
-├── .env
-├── users.db                     # Main user database
-├── data/                        # Individual user databases
-│   └── user_*.db
+├── .env.example
+├── data/                        # Per-user databases
 └── src/
-    ├── main.rs                  # Main application + routing
-    ├── auth.rs                  # Authentication & session handling
-    ├── records.rs               # Expense records API + prediction
-    ├── categories.rs            # Category management API
-    ├── database.rs              # Database connections & operations
-    ├── lib.rs                   # Library exports
-    └── models.rs                # Data structures & models
+    ├── main.rs                  # HTTP server entrypoint
+    ├── auth.rs                  # Register/login/logout/me handlers
+    ├── records.rs               # Record CRUD + validation
+    ├── categories.rs            # Category CRUD
+    ├── db_pool.rs               # User DB pooling
+    ├── database.rs              # Schema and DB initialization
+    ├── config.rs                # Environment config loading
+    ├── constants.rs             # App constants and limits
+    ├── utils.rs                 # Shared helpers
+    ├── models.rs                # Shared API/domain models
+    └── bin/tg/
+        ├── main.rs              # Telegram bot entrypoint
+        ├── handlers.rs          # Text/voice/photo and edit handlers
+        ├── openai.rs            # OpenAI extraction/transcription
+        └── ...                  # Bot support modules
 ```
 
-The server will start on `http://localhost:3000` by default.
+## Configuration
 
-## 🔧 Configuration
-
-Create a `.env` file in the project root:
+Copy `.env.example` to `.env` and fill required secrets:
 
 ```env
 SERVER_HOST=0.0.0.0
 SERVER_PORT=3000
 DATABASE_PATH=./data
-SESSION_SECRET=use openssl rand -hex 64 to generate your secret
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-OPENAI_API_KEY=your_openai_api_key
+SESSION_SECRET=GENERATE_YOURS_USING_OPENSSL_RAND_HEX_64
+PRODUCTION=false
+
+TELEGRAM_BOT_TOKEN=
+OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
+OPENAI_REASONING_EFFORT=low
 BOT_TIMEZONE=Asia/Taipei
 ```
 
-## 🤖 Telegram Bot (Optional)
+## Run
 
-Run the bot binary:
+Run the API server:
 
 ```bash
-cargo run --bin telegram_bot
+cargo run
 ```
 
-In Telegram, link your account:
+Run the Telegram bot:
 
+```bash
+cargo run --bin tg
 ```
+
+By default, the server listens on `http://localhost:3000`.
+
+## Telegram Usage
+
+Link your Telegram account:
+
+```text
 /link <username> <password>
 ```
 
-**Built with ❤️ for personal budget management**
+Then send any of the following:
+
+- text like `lunch 180`
+- a voice message (transcribed via Whisper)
+- a photo of a receipt (image understanding)
+- an edit request like `change lunch to dinner` and confirm/cancel when prompted
