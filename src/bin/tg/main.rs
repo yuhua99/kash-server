@@ -15,7 +15,6 @@ mod handlers;
 mod helpers;
 mod models;
 mod openai;
-mod pending;
 
 use models::{BotError, BotState};
 
@@ -49,7 +48,6 @@ async fn main() -> Result<(), BotError> {
         openai_model,
         openai_reasoning_effort,
         timezone,
-        pending_actions: Arc::new(RwLock::new(HashMap::new())),
         chat_contexts: Arc::new(RwLock::new(HashMap::new())),
     };
 

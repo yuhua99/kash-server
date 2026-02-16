@@ -6,27 +6,6 @@ pub const DEFAULT_WHISPER_MODEL: &str = "whisper-1";
 pub const MAX_VOICE_FILE_SIZE: usize = 3 * 1024 * 1024;
 pub const MAX_PHOTO_FILE_SIZE: usize = 10 * 1024 * 1024;
 
-pub const SIMILAR_RECORDS_DAYS: i64 = 180;
-pub const SIMILAR_RECORDS_LIMIT: usize = 5;
-pub const SIMILAR_AMOUNT_RATIO: f64 = 0.2;
-pub const RECORD_CONTEXT_LIMIT: usize = 30;
-
-pub const PENDING_ACTION_TTL_SECONDS: i64 = 180;
+pub const TOOL_MAX_ROUNDS: usize = 6;
 pub const CONTEXT_MAX_TURNS: usize = 3;
 pub const CONTEXT_TTL_SECONDS: i64 = 600;
-
-pub const EDIT_REQUEST_KEYWORDS: [&str; 4] = ["edit", "update", "change", "rename"];
-pub const DELETE_REQUEST_KEYWORDS: [&str; 3] = ["delete", "remove", "erase"];
-
-pub const CONFIRM_WORDS: [&str; 8] = [
-    "yes", "confirm", "ok", "okay", "ok do it", "do it", "apply", "proceed",
-];
-
-pub const CANCEL_WORDS: [&str; 6] = [
-    "cancel",
-    "stop",
-    "never mind",
-    "nevermind",
-    "don't do it",
-    "dont do it",
-];

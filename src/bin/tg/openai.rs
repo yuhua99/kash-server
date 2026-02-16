@@ -3,136 +3,57 @@ use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
 
-use crate::constants::{DEFAULT_WHISPER_MODEL, SIMILAR_RECORDS_DAYS};
-use crate::models::{
-    AiBatchRecordResult, AiCategoryHint, AiEditResult, BotState, CategoryInfo, SimilarRecord,
-};
-
-use my_budget_server::models::Record;
+use crate::constants::{DEFAULT_WHISPER_MODEL, TOOL_MAX_ROUNDS};
+use crate::db::execute_tool_call;
+use crate::models::{BotState, CategoryInfo};
 
 #[derive(Deserialize)]
 struct WhisperTranscriptionResponse {
     text: String,
 }
 
-// ---------------------------------------------------------------------------
-// Classify message (quick category + amount hint)
-// ---------------------------------------------------------------------------
-
-pub async fn classify_message(
-    http: &Client,
-    api_key: &str,
-    model: &str,
-    reasoning_effort: &str,
-    timezone: &str,
-    message: &str,
-    categories: &[CategoryInfo],
-) -> Result<AiCategoryHint, String> {
-    let category_list = categories
-        .iter()
-        .map(|c| format!("- {} | {} | is_income={}", c.id, c.name, c.is_income))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let input = format!(
-        "You are a finance assistant. Extract amount and category for the user's message.\n\n\
-         User message:\n{}\n\n\
-         Categories:\n{}\n\n\
-         Timezone: {}\n\n\
-         Rules:\n\
-         - Choose the best category_id from the list.\n\
-         - If unsure about category, set category_id and category_name to empty strings.\n\
-         - If amount is missing, set amount to 0.\n",
-        message, category_list, timezone
-    );
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "amount": { "type": "number" },
-            "category_id": { "type": "string" },
-            "category_name": { "type": "string" },
-            "is_income": { "type": "boolean" }
-        },
-        "required": ["amount", "category_id", "category_name", "is_income"],
-        "additionalProperties": false
-    });
-
-    call_openai_json(
-        http,
-        api_key,
-        model,
-        reasoning_effort,
-        "category_hint",
-        json!(input),
-        schema,
-    )
-    .await
+struct ToolCall {
+    call_id: String,
+    name: String,
+    arguments: String,
 }
 
-// ---------------------------------------------------------------------------
-// Extract records from message
-// ---------------------------------------------------------------------------
-
-pub async fn extract_records(
+pub async fn respond_with_tools(
     state: &BotState,
+    user_id: &str,
     message: &str,
     image_data_url: Option<&str>,
     categories: &[CategoryInfo],
-    similar_records: &[SimilarRecord],
-    hint: Option<&AiCategoryHint>,
     history: &[serde_json::Value],
-) -> Result<AiBatchRecordResult, String> {
+) -> Result<String, String> {
     let category_list = if categories.is_empty() {
         "(none)".to_string()
     } else {
         categories
             .iter()
-            .map(|c| format!("- {} | {} | is_income={}", c.id, c.name, c.is_income))
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let similar_list = if similar_records.is_empty() {
-        "(none)".to_string()
-    } else {
-        similar_records
-            .iter()
-            .map(|r| format!("- {} ({})", r.name, r.amount))
+            .map(|category| {
+                format!(
+                    "- {} | {} | is_income={}",
+                    category.id, category.name, category.is_income
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     };
 
     let now_date = OffsetDateTime::now_utc().date().to_string();
-    let hint_text = match hint {
-        Some(hint) => format!(
-            "Pre-extracted: amount={}, category_id='{}', category_name='{}', is_income={}\n",
-            hint.amount, hint.category_id, hint.category_name, hint.is_income
-        ),
-        None => "Pre-extracted: (none)\n".to_string(),
-    };
-
     let system_prompt = format!(
-        "You are a finance assistant. Convert the user's message into one or more expense/income records.\n\n\
-        Categories:\n{category_list}\n\n\
-        Similar records (same category, similar amount, last {similar_days} days):\n{similar_list}\n\n\
-        {hint_text}\
-        Timezone: {timezone}\n\
-        Current date (YYYY-MM-DD): {now_date}\n\n\
-        Rules:\n\
-        - Extract every record the user mentions into the \"records\" array. If the user lists multiple items with amounts, include each one as a separate record.\n\
-        - The user may attach a receipt/invoice photo. If an image is provided, read it and extract all valid records you can infer from it.\n\
-        - Return each record's date in YYYY-MM-DD format.\n\
-        - If a similar record name matches, reuse its exact name.\n\
-        - Choose the best matching category_id from the categories list. If no category fits, set needs_clarification=true and ask the user which category to use.\n\
-        - Use conversation history to resolve references to previous messages.\n\
-        - Set needs_clarification=true only when essential information is missing (e.g. no amount, or category cannot be determined). Do not use it merely to confirm what the user already stated clearly.\n",
-        category_list = category_list,
-        similar_days = SIMILAR_RECORDS_DAYS,
-        similar_list = similar_list,
-        hint_text = hint_text,
-        timezone = state.timezone,
-        now_date = now_date,
+        "You are a budget assistant for a Telegram bot.\n\
+         You can use three tools: create_record, edit_record, list_records.\n\
+         Decide which tool(s) to use based on the user's request.\n\
+         Do not ask for confirmation before editing records. Apply edits directly.\n\
+         Never ask the user to use confirm/cancel commands.\n\
+         For delete requests, clearly state delete is not supported by this assistant.\n\
+         Use concise, friendly replies.\n\n\
+         Timezone: {}\n\
+         Current date (YYYY-MM-DD): {}\n\n\
+         Categories:\n{}",
+        state.timezone, now_date, category_list
     );
 
     let mut input_messages: Vec<serde_json::Value> = Vec::new();
@@ -141,12 +62,13 @@ pub async fn extract_records(
         "content": system_prompt
     }));
     input_messages.extend_from_slice(history);
+
     let user_content = match image_data_url {
-        Some(image_data_url) => {
+        Some(image_url) => {
             let mut blocks = Vec::new();
             blocks.push(json!({
                 "type": "input_image",
-                "image_url": image_data_url,
+                "image_url": image_url,
             }));
             if !message.trim().is_empty() {
                 blocks.push(json!({
@@ -158,48 +80,68 @@ pub async fn extract_records(
         }
         None => json!(message),
     };
-
     input_messages.push(json!({
         "role": "user",
         "content": user_content
     }));
 
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "records": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": { "type": "string" },
-                        "amount": { "type": "number" },
-                        "category_id": { "type": "string" },
-                        "category_name": { "type": "string" },
-                        "date": { "type": "string" },
-                        "is_income": { "type": "boolean" }
-                    },
-                    "required": ["name", "amount", "category_id", "category_name", "date", "is_income"],
-                    "additionalProperties": false
-                }
-            },
-            "needs_clarification": { "type": "boolean" },
-            "clarification": { "type": "string" }
-        },
-        "required": ["records", "needs_clarification", "clarification"],
-        "additionalProperties": false
-    });
+    let tools = build_tools_schema();
+    let mut previous_response_id: Option<String> = None;
+    let mut input = json!(input_messages);
 
-    call_openai_json(
-        &state.http,
-        &state.openai_api_key,
-        &state.openai_model,
-        &state.openai_reasoning_effort,
-        "records",
-        json!(input_messages),
-        schema,
-    )
-    .await
+    for _round in 0..TOOL_MAX_ROUNDS {
+        let response_value = send_responses_request(
+            &state.http,
+            &state.openai_api_key,
+            &state.openai_model,
+            &state.openai_reasoning_effort,
+            input,
+            &tools,
+            previous_response_id.as_deref(),
+        )
+        .await?;
+
+        if let Some(response_id) = response_value.get("id").and_then(|value| value.as_str()) {
+            previous_response_id = Some(response_id.to_string());
+        }
+
+        let tool_calls = extract_tool_calls(&response_value);
+        if tool_calls.is_empty() {
+            let reply = extract_output_text(&response_value)?;
+            if reply.trim().is_empty() {
+                return Ok("I couldn't generate a reply. Please try again.".to_string());
+            }
+            return Ok(reply.trim().to_string());
+        }
+
+        let mut tool_outputs = Vec::new();
+        for tool_call in tool_calls {
+            let tool_output = match execute_tool_call(
+                state,
+                user_id,
+                &tool_call.name,
+                &tool_call.arguments,
+            )
+            .await
+            {
+                Ok(result) => result,
+                Err(message) => json!({
+                    "ok": false,
+                    "error": message,
+                }),
+            };
+
+            tool_outputs.push(json!({
+                "type": "function_call_output",
+                "call_id": tool_call.call_id,
+                "output": tool_output.to_string(),
+            }));
+        }
+
+        input = json!(tool_outputs);
+    }
+
+    Err("Tool-call loop limit reached. Please try a simpler request.".to_string())
 }
 
 pub async fn transcribe_voice(
@@ -240,145 +182,95 @@ pub async fn transcribe_voice(
     Ok(payload.text.trim().to_string())
 }
 
-// ---------------------------------------------------------------------------
-// Extract edit from message
-// ---------------------------------------------------------------------------
-
-pub async fn extract_edit(
-    state: &BotState,
-    message: &str,
-    categories: &[CategoryInfo],
-    records: &[Record],
-    history: &[serde_json::Value],
-) -> Result<AiEditResult, String> {
-    let category_list = if categories.is_empty() {
-        "(none)".to_string()
-    } else {
-        categories
-            .iter()
-            .map(|category| {
-                format!(
-                    "- {} | {} | is_income={}",
-                    category.id, category.name, category.is_income
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    let record_list = if records.is_empty() {
-        "(none)".to_string()
-    } else {
-        records
-            .iter()
-            .map(|record| {
-                format!(
-                    "- {} | {} | amount={} | category_id={} | date={}",
-                    record.id, record.name, record.amount, record.category_id, record.date
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-
-    let system_prompt = format!(
-        "You are a finance assistant. Extract one edit operation from the user's message.\n\n\
-         Categories:\n{}\n\n\
-         Recent records:\n{}\n\n\
-         Rules:\n\
-         - target_type must be one of: record, category, none.\n\
-         - Only one target is allowed. If multiple edits are requested, set needs_clarification=true.\n\
-         - Never perform delete operations. If user asks delete, set needs_clarification=true.\n\
-         - For category edits, only name change is allowed.\n\
-         - For record edits, any of name/amount/category/date may be changed.\n\
-         - If unknown target, set needs_clarification=true with a short clarification message.\n\
-         - The user may refer to previous messages in the conversation. Use conversation history to resolve references.\n",
-        category_list, record_list
-    );
-
-    let mut input_messages: Vec<serde_json::Value> = Vec::new();
-    input_messages.push(json!({
-        "role": "system",
-        "content": system_prompt
-    }));
-    input_messages.extend_from_slice(history);
-    input_messages.push(json!({
-        "role": "user",
-        "content": message
-    }));
-
-    let schema = json!({
-        "type": "object",
-        "properties": {
-            "target_type": { "type": "string" },
-            "target_id": { "type": "string" },
-            "target_name": { "type": "string" },
-            "category_id": { "type": "string" },
-            "category_name": { "type": "string" },
-            "new_name": { "type": ["string", "null"] },
-            "new_amount": { "type": ["number", "null"] },
-            "new_category_id": { "type": ["string", "null"] },
-            "new_category_name": { "type": ["string", "null"] },
-            "new_date": { "type": ["string", "null"] },
-            "needs_clarification": { "type": "boolean" },
-            "clarification": { "type": "string" }
+fn build_tools_schema() -> serde_json::Value {
+    json!([
+        {
+            "type": "function",
+            "name": "create_record",
+            "description": "Create one income/expense record.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string" },
+                    "amount": { "type": "number" },
+                    "category_id": { "type": "string" },
+                    "category_name": { "type": "string" },
+                    "date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "is_income": { "type": "boolean", "description": "Required only when creating a new category by category_name." }
+                },
+                "required": ["name", "amount"],
+                "additionalProperties": false
+            }
         },
-        "required": [
-            "target_type",
-            "target_id",
-            "target_name",
-            "category_id",
-            "category_name",
-            "new_name",
-            "new_amount",
-            "new_category_id",
-            "new_category_name",
-            "new_date",
-            "needs_clarification",
-            "clarification"
-        ],
-        "additionalProperties": false
-    });
-
-    call_openai_json(
-        &state.http,
-        &state.openai_api_key,
-        &state.openai_model,
-        &state.openai_reasoning_effort,
-        "edit",
-        json!(input_messages),
-        schema,
-    )
-    .await
+        {
+            "type": "function",
+            "name": "edit_record",
+            "description": "Edit an existing record immediately. No confirmation step.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "record_id": { "type": "string" },
+                    "record_name": { "type": "string" },
+                    "name": { "type": "string" },
+                    "amount": { "type": "number" },
+                    "category_id": { "type": "string" },
+                    "category_name": { "type": "string" },
+                    "date": { "type": "string", "description": "YYYY-MM-DD" }
+                },
+                "anyOf": [
+                    { "required": ["record_id"] },
+                    { "required": ["record_name"] }
+                ],
+                "additionalProperties": false
+            }
+        },
+        {
+            "type": "function",
+            "name": "list_records",
+            "description": "List records with optional filters.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "start_date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "end_date": { "type": "string", "description": "YYYY-MM-DD" },
+                    "limit": { "type": "integer" },
+                    "offset": { "type": "integer" },
+                    "category_id": { "type": "string" },
+                    "category_name": { "type": "string" },
+                    "name_contains": { "type": "string" },
+                    "min_amount": { "type": "number" },
+                    "max_amount": { "type": "number" }
+                },
+                "additionalProperties": false
+            }
+        }
+    ])
 }
 
-// ---------------------------------------------------------------------------
-// OpenAI API call (generic JSON schema)
-// ---------------------------------------------------------------------------
-
-pub async fn call_openai_json<T: for<'de> Deserialize<'de>>(
+async fn send_responses_request(
     http: &Client,
     api_key: &str,
     model: &str,
     reasoning_effort: &str,
-    schema_name: &str,
     input: serde_json::Value,
-    schema: serde_json::Value,
-) -> Result<T, String> {
-    let body = json!({
+    tools: &serde_json::Value,
+    previous_response_id: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let mut body = json!({
         "model": model,
         "reasoning": {
             "effort": reasoning_effort
         },
-        "input": input,
-        "text": {
-            "format": {
-                "type": "json_schema",
-                "name": schema_name,
-                "strict": true,
-                "schema": schema
-            }
-        }
+        "tool_choice": "auto",
+        "tools": tools,
+        "input": input
     });
+
+    if let Some(response_id) = previous_response_id
+        && let Some(map) = body.as_object_mut()
+    {
+        map.insert("previous_response_id".to_string(), json!(response_id));
+    }
 
     let response = http
         .post("https://api.openai.com/v1/responses")
@@ -394,45 +286,93 @@ pub async fn call_openai_json<T: for<'de> Deserialize<'de>>(
         return Err(format!("OpenAI error: {} {}", status, text));
     }
 
-    let value: serde_json::Value = response
+    response
         .json()
         .await
-        .map_err(|_| "Failed to parse OpenAI response".to_string())?;
-
-    let payload = extract_output_json(&value)?;
-    serde_json::from_value(payload).map_err(|_| "Failed to parse OpenAI output".to_string())
+        .map_err(|_| "Failed to parse OpenAI response".to_string())
 }
 
-fn extract_output_json(value: &serde_json::Value) -> Result<serde_json::Value, String> {
-    if let Some(output_text) = value.get("output_text").and_then(|v| v.as_str()) {
-        return serde_json::from_str(output_text)
-            .map_err(|_| "Failed to parse OpenAI output".to_string());
+fn extract_tool_calls(value: &serde_json::Value) -> Vec<ToolCall> {
+    let mut calls = Vec::new();
+
+    let Some(outputs) = value.get("output").and_then(|output| output.as_array()) else {
+        return calls;
+    };
+
+    for output in outputs {
+        if output.get("type").and_then(|value| value.as_str()) != Some("function_call") {
+            continue;
+        }
+
+        let Some(name) = output.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+
+        let Some(call_id) = output
+            .get("call_id")
+            .and_then(|value| value.as_str())
+            .or_else(|| output.get("id").and_then(|value| value.as_str()))
+        else {
+            continue;
+        };
+
+        let arguments = match output.get("arguments") {
+            Some(argument_value) if argument_value.is_string() => {
+                argument_value.as_str().unwrap_or("{}").to_string()
+            }
+            Some(argument_value) => argument_value.to_string(),
+            None => "{}".to_string(),
+        };
+
+        calls.push(ToolCall {
+            call_id: call_id.to_string(),
+            name: name.to_string(),
+            arguments,
+        });
+    }
+
+    calls
+}
+
+fn extract_output_text(value: &serde_json::Value) -> Result<String, String> {
+    if let Some(output_text) = value.get("output_text").and_then(|text| text.as_str())
+        && !output_text.trim().is_empty()
+    {
+        return Ok(output_text.to_string());
     }
 
     let outputs = value
         .get("output")
-        .and_then(|v| v.as_array())
+        .and_then(|output| output.as_array())
         .ok_or_else(|| "OpenAI response missing output".to_string())?;
 
+    let mut parts = Vec::new();
     for output in outputs {
-        if let Some(contents) = output.get("content").and_then(|v| v.as_array()) {
-            for content in contents {
-                if let Some(kind) = content.get("type").and_then(|v| v.as_str()) {
-                    if kind == "output_json"
-                        && let Some(json_value) = content.get("json")
+        if output.get("type").and_then(|value| value.as_str()) != Some("message") {
+            continue;
+        }
+
+        let Some(content_items) = output.get("content").and_then(|content| content.as_array())
+        else {
+            continue;
+        };
+
+        for content in content_items {
+            if let Some(kind) = content.get("type").and_then(|value| value.as_str()) {
+                if kind == "output_text" || kind == "text" {
+                    if let Some(text) = content.get("text").and_then(|value| value.as_str())
+                        && !text.trim().is_empty()
                     {
-                        return Ok(json_value.clone());
-                    }
-                    if kind == "output_text"
-                        && let Some(text_value) = content.get("text").and_then(|v| v.as_str())
-                    {
-                        return serde_json::from_str(text_value)
-                            .map_err(|_| "Failed to parse OpenAI output".to_string());
+                        parts.push(text.to_string());
                     }
                 }
             }
         }
     }
 
-    Err("OpenAI response missing content".to_string())
+    if parts.is_empty() {
+        Err("OpenAI response missing assistant text".to_string())
+    } else {
+        Ok(parts.join("\n"))
+    }
 }
