@@ -381,6 +381,18 @@ async fn edit_record_tool(
         existing.amount
     };
 
+    let name_unchanged = updated_name == existing.name;
+    let amount_unchanged = (updated_amount - existing.amount).abs() < f64::EPSILON;
+    let category_unchanged = updated_category_id == existing.category_id;
+    let date_unchanged = updated_date == existing.date;
+
+    if name_unchanged && amount_unchanged && category_unchanged && date_unchanged {
+        return Err(
+            "No actual changes detected. For rename requests, set the new value in the `name` field."
+                .to_string(),
+        );
+    }
+
     let affected_rows = conn
         .execute(
             "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ?",

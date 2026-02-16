@@ -46,10 +46,32 @@ pub async fn respond_with_tools(
         "You are a budget assistant for a Telegram bot.\n\
          You can use three tools: create_record, edit_record, list_records.\n\
          Decide which tool(s) to use based on the user's request.\n\
+         Never fabricate success. For add/edit/list requests, you MUST call the relevant tool first, then reply from tool results only.\n\
          Do not ask for confirmation before editing records. Apply edits directly.\n\
          Never ask the user to use confirm/cancel commands.\n\
          For delete requests, clearly state delete is not supported by this assistant.\n\
-         Use concise, friendly replies.\n\n\
+         Edit intent rule: when user says \"change to ...\" / \"改成...\" without a field name, treat it as renaming the record, so pass the new value in `name` (not category_name).\n\
+         Use concise, friendly replies.\n\
+         Output format rules:\n\
+         - If create_record succeeds, reply in EXACTLY this block format and nothing else:\n\
+           [RECORD_ADDED]\n\
+           id: <id>\n\
+           name: <name>\n\
+           amount: <amount>\n\
+           category: <category_name>\n\
+           date: <YYYY-MM-DD>\n\
+         - If edit_record succeeds, reply in EXACTLY this block format and nothing else:\n\
+            [RECORD_EDITED]\n\
+            id: <id>\n\
+            name: <name>\n\
+            amount: <amount>\n\
+            category: <category_name>\n\
+            date: <YYYY-MM-DD>\n\
+         - Never output [RECORD_ADDED] or [RECORD_EDITED] unless the corresponding tool returned ok=true.\n\
+         - If multiple records are added/edited, repeat the same block for each record with one blank line between blocks.\n\
+         - If a tool returns an error, reply in EXACTLY this format and nothing else:\n\
+           [ERROR]\n\
+           message: <error message>\n\n\
          Timezone: {}\n\
          Current date (YYYY-MM-DD): {}\n\n\
          Categories:\n{}",
@@ -209,18 +231,14 @@ fn build_tools_schema() -> serde_json::Value {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "record_id": { "type": "string" },
-                    "record_name": { "type": "string" },
+                    "record_id": { "type": "string", "description": "Preferred target identifier for the record to edit." },
+                    "record_name": { "type": "string", "description": "Fallback target identifier when record_id is unknown." },
                     "name": { "type": "string" },
                     "amount": { "type": "number" },
                     "category_id": { "type": "string" },
                     "category_name": { "type": "string" },
                     "date": { "type": "string", "description": "YYYY-MM-DD" }
                 },
-                "anyOf": [
-                    { "required": ["record_id"] },
-                    { "required": ["record_name"] }
-                ],
                 "additionalProperties": false
             }
         },
