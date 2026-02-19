@@ -376,14 +376,12 @@ fn extract_output_text(value: &serde_json::Value) -> Result<String, String> {
         };
 
         for content in content_items {
-            if let Some(kind) = content.get("type").and_then(|value| value.as_str()) {
-                if kind == "output_text" || kind == "text" {
-                    if let Some(text) = content.get("text").and_then(|value| value.as_str())
-                        && !text.trim().is_empty()
-                    {
-                        parts.push(text.to_string());
-                    }
-                }
+            if let Some(kind) = content.get("type").and_then(|value| value.as_str())
+                && (kind == "output_text" || kind == "text")
+                && let Some(text) = content.get("text").and_then(|value| value.as_str())
+                && !text.trim().is_empty()
+            {
+                parts.push(text.to_string());
             }
         }
     }

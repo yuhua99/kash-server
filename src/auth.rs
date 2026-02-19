@@ -11,6 +11,24 @@ use crate::constants::*;
 use crate::database::Db;
 use crate::models::{LoginPayload, PublicUser, RegisterPayload, User};
 
+pub async fn get_user_by_username_public(
+    db: &Db,
+    username: &str,
+) -> anyhow::Result<Option<PublicUser>> {
+    let conn = db.read().await;
+    let mut rows = conn
+        .query("SELECT id, name FROM users WHERE name = ?", [username])
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        let id: String = row.get(0)?;
+        let username: String = row.get(1)?;
+        Ok(Some(PublicUser { id, username }))
+    } else {
+        Ok(None)
+    }
+}
+
 async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<PublicUser> {
     let salt = SaltString::generate(&mut OsRng);
     let hash = Argon2::default()

@@ -21,6 +21,20 @@ pub const MAX_SEARCH_TERM_LENGTH: usize = 100;
 pub const MAX_USERNAME_LENGTH: usize = 50;
 pub const MIN_USERNAME_LENGTH: usize = 4;
 pub const MIN_PASSWORD_LENGTH: usize = 6;
+pub const MAX_NICKNAME_LENGTH: usize = 100;
+
+// Friendship Status FSM
+pub const FRIEND_STATUS_PENDING: &str = "pending";
+pub const FRIEND_STATUS_ACCEPTED: &str = "accepted";
+pub const FRIEND_STATUS_BLOCKED: &str = "blocked";
+pub const FRIEND_STATUS_UNFRIENDED: &str = "unfriended";
+
+// Split Coordination Status FSM
+pub const SPLIT_STATUS_INITIATED: &str = "initiated";
+pub const SPLIT_STATUS_PARTIAL: &str = "partial";
+pub const SPLIT_STATUS_PARTIAL_FAILURE: &str = "partial_failure";
+pub const SPLIT_STATUS_COMPLETED: &str = "completed";
+pub const SPLIT_STATUS_FAILED: &str = "failed";
 
 // Error messages
 pub const ERR_DATABASE_ACCESS: &str = "Database access error";

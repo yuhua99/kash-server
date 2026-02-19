@@ -366,7 +366,7 @@ async fn edit_record_tool(
     }
 
     let updated_name = new_name.unwrap_or_else(|| existing.name.clone());
-    let updated_category_id = new_category_id.unwrap_or_else(|| existing.category_id.clone());
+    let updated_category_id = new_category_id.or_else(|| existing.category_id.clone());
     let updated_date = new_date.unwrap_or_else(|| existing.date.clone());
 
     let user_db = get_user_database_from_pool(db_pool, user_id)
@@ -375,8 +375,12 @@ async fn edit_record_tool(
     let conn = user_db.write().await;
 
     let updated_amount = if let Some(amount) = input.amount {
-        let is_income = get_category_is_income(&conn, &updated_category_id).await?;
-        normalize_amount_by_category(amount, is_income)
+        if let Some(ref category_id) = updated_category_id {
+            let is_income = get_category_is_income(&conn, category_id).await?;
+            normalize_amount_by_category(amount, is_income)
+        } else {
+            return Err("Cannot update amount without a category".to_string());
+        }
     } else {
         existing.amount
     };
@@ -399,7 +403,7 @@ async fn edit_record_tool(
             (
                 updated_name.as_str(),
                 updated_amount,
-                updated_category_id.as_str(),
+                updated_category_id.as_deref(),
                 updated_date.as_str(),
                 existing.id.as_str(),
             ),
@@ -410,12 +414,16 @@ async fn edit_record_tool(
         return Err("Record not found or no changes made".to_string());
     }
 
-    let category_name = categories
-        .iter()
-        .find(|category| category.id == updated_category_id)
-        .map(|category| category.name.as_str())
-        .unwrap_or("Unknown")
-        .to_string();
+    let category_name = if let Some(ref cat_id) = updated_category_id {
+        categories
+            .iter()
+            .find(|category| &category.id == cat_id)
+            .map(|category| category.name.as_str())
+            .unwrap_or("Unknown")
+            .to_string()
+    } else {
+        "Unknown".to_string()
+    };
 
     Ok(json!({
         "ok": true,
@@ -543,9 +551,10 @@ async fn list_records_tool(
         .map_err(|_| "Failed to query records".to_string())?
     {
         let record = records::extract_record_from_row(row).map_err(|(_, message)| message)?;
-        let category_name = category_name_map
-            .get(&record.category_id)
-            .cloned()
+        let category_name = record
+            .category_id
+            .as_ref()
+            .and_then(|cat_id| category_name_map.get(cat_id).cloned())
             .unwrap_or_else(|| "Unknown".to_string());
 
         records_output.push(json!({

@@ -1,7 +1,7 @@
 use axum::{
     Router,
     response::Html,
-    routing::{get, post, put},
+    routing::{get, patch, post, put},
 };
 use time::Duration;
 use tower_http::cors::CorsLayer;
@@ -9,7 +9,8 @@ use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::
 
 // Import everything from the library crate (no duplicate module declarations)
 use my_budget_server::{
-    AppState, DbPool, auth, categories, config::Config, constants::*, database, records,
+    AppState, DbPool, auth, categories, config::Config, constants::*, database, friends, records,
+    splits,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -68,6 +69,7 @@ async fn main() -> Result<()> {
             axum::http::Method::GET,
             axum::http::Method::POST,
             axum::http::Method::PUT,
+            axum::http::Method::PATCH,
             axum::http::Method::DELETE,
         ])
         .allow_headers([
@@ -92,6 +94,11 @@ async fn main() -> Result<()> {
             "/records/{id}",
             put(records::update_record).delete(records::delete_record),
         )
+        .route("/records/{id}/settle", put(records::update_settle))
+        .route(
+            "/records/finalize-pending",
+            post(records::finalize_pending_record),
+        )
         .route(
             "/categories",
             post(categories::create_category).get(categories::get_categories),
@@ -100,6 +107,15 @@ async fn main() -> Result<()> {
             "/categories/{id}",
             put(categories::update_category).delete(categories::delete_category),
         )
+        .route("/friends/request", post(friends::send_friend_request))
+        .route("/friends/search", get(friends::search_users))
+        .route("/friends/nickname", patch(friends::update_nickname))
+        .route("/friends/list", get(friends::list_friends))
+        .route("/friends/accept", post(friends::accept_friend))
+        .route("/friends/block", post(friends::block_friend))
+        .route("/friends/unfriend", post(friends::unfriend))
+        .route("/splits/create", post(splits::create_split))
+        .route("/splits/{id}/retry", post(splits::retry_split_fanout))
         .layer(cors)
         .layer(session_layer)
         .with_state(app_state);

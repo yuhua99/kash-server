@@ -3,19 +3,74 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use serde::Deserialize;
 use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::auth::get_current_user;
 use crate::constants::*;
+use crate::db_pool::{TransactionError, with_transaction};
 use crate::models::{
-    CreateRecordPayload, GetRecordsQuery, GetRecordsResponse, Record, UpdateRecordPayload,
+    CreateRecordPayload, FinalizePendingPayload, GetRecordsQuery, GetRecordsResponse, Record,
+    UpdateRecordPayload, UpdateSettlePayload,
 };
 use crate::utils::{
     db_error, db_error_with_context, get_user_database_from_pool, validate_category_exists,
     validate_date, validate_offset, validate_records_limit, validate_string_length,
 };
 use crate::{AppState, DbPool};
+
+enum FinalizePendingError {
+    Transaction(TransactionError),
+    Db(&'static str),
+    NotFound,
+    CategoryNotFound,
+    Conflict,
+}
+
+impl From<TransactionError> for FinalizePendingError {
+    fn from(value: TransactionError) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+impl From<FinalizePendingError> for (StatusCode, String) {
+    fn from(value: FinalizePendingError) -> Self {
+        match value {
+            FinalizePendingError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            FinalizePendingError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            FinalizePendingError::Db(ctx) => db_error_with_context(ctx),
+            FinalizePendingError::NotFound => {
+                (StatusCode::NOT_FOUND, "Record not found".to_string())
+            }
+            FinalizePendingError::CategoryNotFound => (
+                StatusCode::BAD_REQUEST,
+                "Category does not exist".to_string(),
+            ),
+            FinalizePendingError::Conflict => (
+                StatusCode::CONFLICT,
+                "Record already finalized or being finalized".to_string(),
+            ),
+        }
+    }
+}
+
+fn now_rfc3339() -> Result<String, (StatusCode, String)> {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
+}
+
+const SPLIT_CREATE_ENDPOINT: &str = "/splits/create";
+
+#[derive(Deserialize)]
+struct SplitCreateIdempotencyResponse {
+    pending_record_ids: Vec<String>,
+}
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
     validate_string_length(name, "Record name", MAX_RECORD_NAME_LENGTH)
@@ -78,7 +133,7 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
     let amount: f64 = row
         .get(2)
         .map_err(|_| db_error_with_context("invalid record data"))?;
-    let category_id: String = row
+    let category_id: Option<String> = row
         .get(3)
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let date: String = row
@@ -140,7 +195,7 @@ pub async fn create_record_for_user(
         id: record_id,
         name: payload.name.trim().to_string(),
         amount: normalized_amount,
-        category_id,
+        category_id: Some(category_id),
         date: payload.date.trim().to_string(),
     })
 }
@@ -183,32 +238,111 @@ pub async fn get_records(
     let start_date = query.start_date.unwrap_or_else(|| "0000-01-01".to_string());
     let end_date = query.end_date.unwrap_or_else(|| "9999-12-31".to_string());
 
-    // Get total count
-    let count_query = "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ?";
-    let mut count_rows = conn
-        .query(count_query, (start_date.as_str(), end_date.as_str()))
-        .await
-        .map_err(|_| db_error_with_context("failed to count records"))?;
+    let pending = query.pending.map(|p| if p { 1 } else { 0 });
+    let settle = query.settle.map(|s| if s { 1 } else { 0 });
 
-    let total_count: u32 = if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-        row.get(0).map_err(|_| db_error())?
-    } else {
-        0
+    let total_count: u32 = match (pending, settle) {
+        (None, None) => {
+            let mut count_rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ?",
+                    (start_date.as_str(), end_date.as_str()),
+                )
+                .await
+                .map_err(|_| db_error_with_context("failed to count records"))?;
+
+            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
+                row.get(0).map_err(|_| db_error())?
+            } else {
+                0
+            }
+        }
+        (Some(p), None) => {
+            let mut count_rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND pending = ?",
+                    (start_date.as_str(), end_date.as_str(), p),
+                )
+                .await
+                .map_err(|_| db_error_with_context("failed to count records"))?;
+
+            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
+                row.get(0).map_err(|_| db_error())?
+            } else {
+                0
+            }
+        }
+        (None, Some(s)) => {
+            let mut count_rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND settle = ?",
+                    (start_date.as_str(), end_date.as_str(), s),
+                )
+                .await
+                .map_err(|_| db_error_with_context("failed to count records"))?;
+
+            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
+                row.get(0).map_err(|_| db_error())?
+            } else {
+                0
+            }
+        }
+        (Some(p), Some(s)) => {
+            let mut count_rows = conn
+                .query("SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND pending = ? AND settle = ?", (start_date.as_str(), end_date.as_str(), p, s))
+                .await
+                .map_err(|_| db_error_with_context("failed to count records"))?;
+
+            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
+                row.get(0).map_err(|_| db_error())?
+            } else {
+                0
+            }
+        }
     };
 
-    // Get records
-    let records_query = "SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?";
-    let mut rows = conn
-        .query(
-            records_query,
-            (start_date.as_str(), end_date.as_str(), limit, offset),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to query records"))?;
-
     let mut records = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|_| db_error())? {
-        records.push(extract_record_from_row(row)?);
+    match (pending, settle) {
+        (None, None) => {
+            let mut rows = conn
+                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), limit, offset))
+                .await
+                .map_err(|_| db_error_with_context("failed to query records"))?;
+
+            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+                records.push(extract_record_from_row(row)?);
+            }
+        }
+        (Some(p), None) => {
+            let mut rows = conn
+                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), p, limit, offset))
+                .await
+                .map_err(|_| db_error_with_context("failed to query records"))?;
+
+            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+                records.push(extract_record_from_row(row)?);
+            }
+        }
+        (None, Some(s)) => {
+            let mut rows = conn
+                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), s, limit, offset))
+                .await
+                .map_err(|_| db_error_with_context("failed to query records"))?;
+
+            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+                records.push(extract_record_from_row(row)?);
+            }
+        }
+        (Some(p), Some(s)) => {
+            let mut rows = conn
+                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), p, s, limit, offset))
+                .await
+                .map_err(|_| db_error_with_context("failed to query records"))?;
+
+            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+                records.push(extract_record_from_row(row)?);
+            }
+        }
     }
 
     Ok((
@@ -287,11 +421,18 @@ pub async fn update_record(
     let updated_name = payload.name.as_deref().unwrap_or(&existing_record.name);
     let updated_category_id = payload
         .category_id
-        .as_deref()
-        .unwrap_or(&existing_record.category_id);
+        .clone()
+        .or(existing_record.category_id.clone());
     let updated_amount = if let Some(amount) = payload.amount {
-        let is_income = get_category_is_income(&conn, updated_category_id).await?;
-        normalize_amount_by_category(amount, is_income)
+        if let Some(ref category_id) = updated_category_id {
+            let is_income = get_category_is_income(&conn, category_id).await?;
+            normalize_amount_by_category(amount, is_income)
+        } else {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                "Cannot update amount without a category".to_string(),
+            ));
+        }
     } else {
         existing_record.amount
     };
@@ -304,7 +445,7 @@ pub async fn update_record(
             (
                 updated_name,
                 updated_amount,
-                updated_category_id,
+                updated_category_id.as_deref(),
                 updated_date.as_str(),
                 record_id.as_str(),
             ),
@@ -324,11 +465,278 @@ pub async fn update_record(
         id: record_id,
         name: updated_name.to_string(),
         amount: updated_amount,
-        category_id: updated_category_id.to_string(),
+        category_id: updated_category_id,
         date: updated_date,
     };
 
     Ok((StatusCode::OK, Json(updated_record)))
+}
+
+pub async fn finalize_pending_record(
+    State(app_state): State<AppState>,
+    session: Session,
+    Json(payload): Json<FinalizePendingPayload>,
+) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
+    let user = get_current_user(&session).await?;
+    validate_category_id(&payload.category_id)?;
+    validate_string_length(&payload.record_id, "Record ID", MAX_RECORD_NAME_LENGTH)?;
+
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
+    let category_id = payload.category_id.trim().to_string();
+    let record_id = payload.record_id.trim().to_string();
+
+    let (record, split_id) = with_transaction(&user_db, |conn| {
+        let category_id = category_id.clone();
+        let record_id = record_id.clone();
+
+        Box::pin(async move {
+            let mut category_rows = conn
+                .query(
+                    "SELECT id FROM categories WHERE id = ?",
+                    [category_id.as_str()],
+                )
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to validate category"))?;
+
+            if category_rows
+                .next()
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to validate category"))?
+                .is_none()
+            {
+                return Err(FinalizePendingError::CategoryNotFound);
+            }
+
+            let mut existing_rows = conn
+                .query(
+                    "SELECT pending, split_id FROM records WHERE id = ?",
+                    [record_id.as_str()],
+                )
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?;
+
+            let (pending, split_id): (bool, Option<String>) = if let Some(row) = existing_rows
+                .next()
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?
+            {
+                let pending: bool = row
+                    .get(0)
+                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?;
+                let split_id: Option<String> = row
+                    .get(1)
+                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?;
+                (pending, split_id)
+            } else {
+                return Err(FinalizePendingError::NotFound);
+            };
+
+            if !pending {
+                return Err(FinalizePendingError::Conflict);
+            }
+
+            let affected_rows = conn
+                .execute(
+                    "UPDATE records SET pending = ?, category_id = ? WHERE id = ? AND pending = ?",
+                    (false, category_id.as_str(), record_id.as_str(), true),
+                )
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to finalize pending record"))?;
+
+            if affected_rows == 0 {
+                return Err(FinalizePendingError::Conflict);
+            }
+
+            let mut updated_rows = conn
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
+                    [record_id.as_str()],
+                )
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?;
+
+            let row = updated_rows
+                .next()
+                .await
+                .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?
+                .ok_or(FinalizePendingError::NotFound)?;
+
+            let finalized_category_id: Option<String> = row
+                .get(3)
+                .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
+
+            let record = Record {
+                id: row
+                    .get(0)
+                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
+                name: row
+                    .get(1)
+                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
+                amount: row
+                    .get(2)
+                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
+                category_id: finalized_category_id,
+                date: row
+                    .get(4)
+                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
+            };
+
+            Ok((record, split_id))
+        })
+    })
+    .await
+    .map_err(|e: FinalizePendingError| -> (StatusCode, String) { e.into() })?;
+
+    if let Some(split_id) = split_id {
+        update_split_coordination_status(&app_state, &split_id).await?;
+    }
+
+    Ok((StatusCode::OK, Json(record)))
+}
+
+async fn update_split_coordination_status(
+    app_state: &AppState,
+    split_id: &str,
+) -> Result<(), (StatusCode, String)> {
+    let (current_status, idempotency_key) = {
+        let conn = app_state.main_db.read().await;
+        let mut rows = conn
+            .query(
+                "SELECT status, idempotency_key FROM split_coordination WHERE id = ?",
+                [split_id],
+            )
+            .await
+            .map_err(|_| db_error_with_context("failed to query split coordination status"))?;
+
+        if let Some(row) = rows
+            .next()
+            .await
+            .map_err(|_| db_error_with_context("failed to query split coordination status"))?
+        {
+            let current_status: String = row
+                .get(0)
+                .map_err(|_| db_error_with_context("invalid split coordination data"))?;
+            let idempotency_key: String = row
+                .get(1)
+                .map_err(|_| db_error_with_context("invalid split coordination data"))?;
+            (current_status, idempotency_key)
+        } else {
+            return Ok(());
+        }
+    };
+
+    let has_remaining_pending =
+        has_remaining_pending_split_records(app_state, &idempotency_key).await?;
+    let next_status = if has_remaining_pending {
+        SPLIT_STATUS_PARTIAL
+    } else {
+        SPLIT_STATUS_COMPLETED
+    };
+
+    if current_status != next_status {
+        let now = now_rfc3339()?;
+        let conn = app_state.main_db.write().await;
+        conn.execute(
+            "UPDATE split_coordination SET status = ?, updated_at = ? WHERE id = ?",
+            (next_status, now.as_str(), split_id),
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to update split coordination status"))?;
+    }
+
+    Ok(())
+}
+
+async fn has_remaining_pending_split_records(
+    app_state: &AppState,
+    idempotency_key: &str,
+) -> Result<bool, (StatusCode, String)> {
+    let pending_record_ids = {
+        let conn = app_state.main_db.read().await;
+
+        let mut idem_rows = conn
+            .query(
+                "SELECT response_body FROM idempotency_keys WHERE key = ? AND endpoint = ?",
+                (idempotency_key, SPLIT_CREATE_ENDPOINT),
+            )
+            .await
+            .map_err(|_| db_error_with_context("failed to query split idempotency response"))?;
+
+        let response_body: String = if let Some(row) = idem_rows
+            .next()
+            .await
+            .map_err(|_| db_error_with_context("failed to query split idempotency response"))?
+        {
+            row.get(0)
+                .map_err(|_| db_error_with_context("invalid split idempotency response"))?
+        } else {
+            return Ok(true);
+        };
+
+        let parsed: SplitCreateIdempotencyResponse = serde_json::from_str(&response_body)
+            .map_err(|_| db_error_with_context("invalid split idempotency response json"))?;
+
+        if parsed.pending_record_ids.is_empty() {
+            return Ok(false);
+        }
+
+        parsed.pending_record_ids
+    };
+
+    let user_ids = {
+        let conn = app_state.main_db.read().await;
+        let mut user_rows = conn
+            .query("SELECT id FROM users", ())
+            .await
+            .map_err(|_| db_error_with_context("failed to query users for split status"))?;
+
+        let mut user_ids = Vec::new();
+        while let Some(row) = user_rows
+            .next()
+            .await
+            .map_err(|_| db_error_with_context("failed to query users for split status"))?
+        {
+            user_ids.push(
+                row.get::<String>(0)
+                    .map_err(|_| db_error_with_context("invalid user data"))?,
+            );
+        }
+        user_ids
+    };
+
+    for user_id in user_ids {
+        let user_db = app_state
+            .db_pool
+            .get_user_db(&user_id)
+            .await
+            .map_err(|_| db_error_with_context("failed to access user db for split status"))?;
+
+        let conn = user_db.read().await;
+        for pending_record_id in &pending_record_ids {
+            let mut rows = conn
+                .query(
+                    "SELECT pending FROM records WHERE id = ?",
+                    [pending_record_id.as_str()],
+                )
+                .await
+                .map_err(|_| db_error_with_context("failed to query pending split records"))?;
+
+            if let Some(row) = rows
+                .next()
+                .await
+                .map_err(|_| db_error_with_context("failed to query pending split records"))?
+            {
+                let pending: bool = row
+                    .get(0)
+                    .map_err(|_| db_error_with_context("invalid split record data"))?;
+                if pending {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
 }
 
 pub async fn delete_record(
@@ -356,4 +764,99 @@ pub async fn delete_record(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn update_settle(
+    State(app_state): State<AppState>,
+    session: Session,
+    Path(record_id): Path<String>,
+    Json(_payload): Json<UpdateSettlePayload>,
+) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
+    let current_user = get_current_user(&session).await?;
+    let user_id = current_user.id.clone();
+
+    let user_db = get_user_database_from_pool(&app_state.db_pool, &user_id).await?;
+
+    let record = with_transaction(&user_db, |conn| {
+        let record_id = record_id.clone();
+        let user_id = user_id.clone();
+        Box::pin(async move {
+            let mut rows = conn
+                .query(
+                    "SELECT id, name, amount, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
+                    [record_id.as_str()],
+                )
+                .await
+                .map_err(|_| TransactionError::Begin)?;
+
+            let row = rows
+                .next()
+                .await
+                .map_err(|_| TransactionError::Begin)?
+                .ok_or(TransactionError::Begin)?;
+
+            let settle: bool = row.get(5).map_err(|_| TransactionError::Begin)?;
+            let debtor_user_id: Option<String> = row.get(6).map_err(|_| TransactionError::Begin)?;
+            let creditor_user_id: Option<String> = row.get(7).map_err(|_| TransactionError::Begin)?;
+
+            drop(rows);
+
+            let is_owner = true;
+            let is_debtor = debtor_user_id.as_ref() == Some(&user_id);
+            let is_creditor = creditor_user_id.as_ref() == Some(&user_id);
+
+            if !is_owner && !is_debtor && !is_creditor {
+                return Err(TransactionError::Begin);
+            }
+
+            if settle {
+                let record = Record {
+                    id: row.get(0).map_err(|_| TransactionError::Begin)?,
+                    name: row.get(1).map_err(|_| TransactionError::Begin)?,
+                    amount: row.get(2).map_err(|_| TransactionError::Begin)?,
+                    category_id: row.get(3).map_err(|_| TransactionError::Begin)?,
+                    date: row.get(4).map_err(|_| TransactionError::Begin)?,
+                };
+                return Ok(record);
+            }
+
+            conn.execute(
+                "UPDATE records SET settle = ? WHERE id = ?",
+                (true, record_id.as_str()),
+            )
+            .await
+            .map_err(|_| TransactionError::Commit)?;
+
+            let mut updated_rows = conn
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
+                    [record_id.as_str()],
+                )
+                .await
+                .map_err(|_| TransactionError::Commit)?;
+
+            let updated_row = updated_rows
+                .next()
+                .await
+                .map_err(|_| TransactionError::Commit)?
+                .ok_or(TransactionError::Commit)?;
+
+            let record = Record {
+                id: updated_row.get(0).map_err(|_| TransactionError::Commit)?,
+                name: updated_row.get(1).map_err(|_| TransactionError::Commit)?,
+                amount: updated_row.get(2).map_err(|_| TransactionError::Commit)?,
+                category_id: updated_row.get(3).map_err(|_| TransactionError::Commit)?,
+                date: updated_row.get(4).map_err(|_| TransactionError::Commit)?,
+            };
+
+            Ok(record)
+        })
+    })
+    .await
+    .map_err(|e| match e {
+        TransactionError::Begin => (StatusCode::NOT_FOUND, "Record not found".to_string()),
+        TransactionError::Commit => db_error_with_context("failed to update settlement status"),
+    })?;
+
+    Ok((StatusCode::OK, Json(record)))
 }
