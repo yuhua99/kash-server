@@ -376,28 +376,6 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     assert_eq!(finalize_c_body["id"], charlie_pending_record_id);
     assert_eq!(finalize_c_body["category_id"], charlie_category_id);
 
-    {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT status, participant_count, fanout_attempts FROM split_coordination WHERE id = ?",
-                [split_id.as_str()],
-            )
-            .await
-            .expect("query split status");
-        let row = rows
-            .next()
-            .await
-            .expect("next split row")
-            .expect("split row exists");
-        let status: String = row.get(0).expect("split status");
-        let participant_count: i64 = row.get(1).expect("participant count");
-        let fanout_attempts: i64 = row.get(2).expect("fanout attempts");
-        assert_eq!(status, "completed");
-        assert_eq!(participant_count, 3);
-        assert_eq!(fanout_attempts, 1);
-    }
-
     let (settle_status, settle_body) =
         update_settle(&app, &bob_cookie, &bob_pending_record_id, &split_id).await;
     assert_eq!(settle_status, StatusCode::OK);
@@ -488,24 +466,6 @@ async fn test_blocked_relation_prevents_split_e2e_lifecycle() {
         .as_str()
         .expect("split error as string response body");
     assert!(error_message.contains("not an accepted friend"));
-
-    {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT COUNT(*) FROM split_coordination WHERE initiator_user_id = ? AND idempotency_key = ?",
-                (alice_id.as_str(), "e2e-lifecycle-blocked-1"),
-            )
-            .await
-            .expect("query split coordination count");
-        let row = rows
-            .next()
-            .await
-            .expect("next split count row")
-            .expect("split count row exists");
-        let split_count: i64 = row.get(0).expect("split count");
-        assert_eq!(split_count, 0);
-    }
 
     {
         let bob_db = app

@@ -3,7 +3,6 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
-use serde::Deserialize;
 use tower_sessions::Session;
 use uuid::Uuid;
 
@@ -57,19 +56,6 @@ impl From<FinalizePendingError> for (StatusCode, String) {
             ),
         }
     }
-}
-
-fn now_rfc3339() -> Result<String, (StatusCode, String)> {
-    time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
-}
-
-const SPLIT_CREATE_ENDPOINT: &str = "/splits/create";
-
-#[derive(Deserialize)]
-struct SplitCreateIdempotencyResponse {
-    pending_record_ids: Vec<String>,
 }
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -485,7 +471,7 @@ pub async fn finalize_pending_record(
     let category_id = payload.category_id.trim().to_string();
     let record_id = payload.record_id.trim().to_string();
 
-    let (record, split_id) = with_transaction(&user_db, |conn| {
+    let record = with_transaction(&user_db, |conn| {
         let category_id = category_id.clone();
         let record_id = record_id.clone();
 
@@ -509,24 +495,19 @@ pub async fn finalize_pending_record(
 
             let mut existing_rows = conn
                 .query(
-                    "SELECT pending, split_id FROM records WHERE id = ?",
+                    "SELECT pending FROM records WHERE id = ?",
                     [record_id.as_str()],
                 )
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?;
 
-            let (pending, split_id): (bool, Option<String>) = if let Some(row) = existing_rows
+            let pending: bool = if let Some(row) = existing_rows
                 .next()
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?
             {
-                let pending: bool = row
-                    .get(0)
-                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?;
-                let split_id: Option<String> = row
-                    .get(1)
-                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?;
-                (pending, split_id)
+                row.get(0)
+                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?
             } else {
                 return Err(FinalizePendingError::NotFound);
             };
@@ -581,162 +562,13 @@ pub async fn finalize_pending_record(
                     .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
             };
 
-            Ok((record, split_id))
+            Ok(record)
         })
     })
     .await
     .map_err(|e: FinalizePendingError| -> (StatusCode, String) { e.into() })?;
 
-    if let Some(split_id) = split_id {
-        update_split_coordination_status(&app_state, &split_id).await?;
-    }
-
     Ok((StatusCode::OK, Json(record)))
-}
-
-async fn update_split_coordination_status(
-    app_state: &AppState,
-    split_id: &str,
-) -> Result<(), (StatusCode, String)> {
-    let (current_status, idempotency_key) = {
-        let conn = app_state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT status, idempotency_key FROM split_coordination WHERE id = ?",
-                [split_id],
-            )
-            .await
-            .map_err(|_| db_error_with_context("failed to query split coordination status"))?;
-
-        if let Some(row) = rows
-            .next()
-            .await
-            .map_err(|_| db_error_with_context("failed to query split coordination status"))?
-        {
-            let current_status: String = row
-                .get(0)
-                .map_err(|_| db_error_with_context("invalid split coordination data"))?;
-            let idempotency_key: String = row
-                .get(1)
-                .map_err(|_| db_error_with_context("invalid split coordination data"))?;
-            (current_status, idempotency_key)
-        } else {
-            return Ok(());
-        }
-    };
-
-    let has_remaining_pending =
-        has_remaining_pending_split_records(app_state, &idempotency_key).await?;
-    let next_status = if has_remaining_pending {
-        SPLIT_STATUS_PARTIAL
-    } else {
-        SPLIT_STATUS_COMPLETED
-    };
-
-    if current_status != next_status {
-        let now = now_rfc3339()?;
-        let conn = app_state.main_db.write().await;
-        conn.execute(
-            "UPDATE split_coordination SET status = ?, updated_at = ? WHERE id = ?",
-            (next_status, now.as_str(), split_id),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to update split coordination status"))?;
-    }
-
-    Ok(())
-}
-
-async fn has_remaining_pending_split_records(
-    app_state: &AppState,
-    idempotency_key: &str,
-) -> Result<bool, (StatusCode, String)> {
-    let pending_record_ids = {
-        let conn = app_state.main_db.read().await;
-
-        let mut idem_rows = conn
-            .query(
-                "SELECT response_body FROM idempotency_keys WHERE key = ? AND endpoint = ?",
-                (idempotency_key, SPLIT_CREATE_ENDPOINT),
-            )
-            .await
-            .map_err(|_| db_error_with_context("failed to query split idempotency response"))?;
-
-        let response_body: String = if let Some(row) = idem_rows
-            .next()
-            .await
-            .map_err(|_| db_error_with_context("failed to query split idempotency response"))?
-        {
-            row.get(0)
-                .map_err(|_| db_error_with_context("invalid split idempotency response"))?
-        } else {
-            return Ok(true);
-        };
-
-        let parsed: SplitCreateIdempotencyResponse = serde_json::from_str(&response_body)
-            .map_err(|_| db_error_with_context("invalid split idempotency response json"))?;
-
-        if parsed.pending_record_ids.is_empty() {
-            return Ok(false);
-        }
-
-        parsed.pending_record_ids
-    };
-
-    let user_ids = {
-        let conn = app_state.main_db.read().await;
-        let mut user_rows = conn
-            .query("SELECT id FROM users", ())
-            .await
-            .map_err(|_| db_error_with_context("failed to query users for split status"))?;
-
-        let mut user_ids = Vec::new();
-        while let Some(row) = user_rows
-            .next()
-            .await
-            .map_err(|_| db_error_with_context("failed to query users for split status"))?
-        {
-            user_ids.push(
-                row.get::<String>(0)
-                    .map_err(|_| db_error_with_context("invalid user data"))?,
-            );
-        }
-        user_ids
-    };
-
-    for user_id in user_ids {
-        let user_db = app_state
-            .db_pool
-            .get_user_db(&user_id)
-            .await
-            .map_err(|_| db_error_with_context("failed to access user db for split status"))?;
-
-        let conn = user_db.read().await;
-        for pending_record_id in &pending_record_ids {
-            let mut rows = conn
-                .query(
-                    "SELECT pending FROM records WHERE id = ?",
-                    [pending_record_id.as_str()],
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to query pending split records"))?;
-
-            if let Some(row) = rows
-                .next()
-                .await
-                .map_err(|_| db_error_with_context("failed to query pending split records"))?
-            {
-                let pending: bool = row
-                    .get(0)
-                    .map_err(|_| db_error_with_context("invalid split record data"))?;
-                if pending {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-
-    Ok(false)
 }
 
 pub async fn delete_record(

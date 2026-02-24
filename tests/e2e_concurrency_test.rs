@@ -148,44 +148,12 @@ async fn test_concurrent_split_creation_idempotency_e2e_concurrency() {
         "at least one concurrent request must succeed"
     );
 
-    {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT COUNT(*), MIN(status), MAX(status) FROM split_coordination WHERE initiator_user_id = ? AND idempotency_key = ?",
-                (alice_id.as_str(), "e2e-concurrency-split-1"),
-            )
-            .await
-            .expect("query split coordination count");
-        let row = rows
-            .next()
-            .await
-            .expect("next split coordination row")
-            .expect("split coordination row exists");
-        let split_count: i64 = row.get(0).expect("split count");
-        let min_status: Option<String> = row.get(1).expect("min status");
-        let max_status: Option<String> = row.get(2).expect("max status");
-        assert_eq!(split_count, 1);
-        assert_eq!(min_status, Some("initiated".to_string()));
-        assert_eq!(max_status, Some("initiated".to_string()));
-    }
-
-    let split_id = {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT id FROM split_coordination WHERE initiator_user_id = ? AND idempotency_key = ?",
-                (alice_id.as_str(), "e2e-concurrency-split-1"),
-            )
-            .await
-            .expect("query split id");
-        let row = rows
-            .next()
-            .await
-            .expect("next split id row")
-            .expect("split id row exists");
-        row.get::<String>(0).expect("split id")
-    };
+    let split_id = created_bodies
+        .first()
+        .expect("at least one successful create")["split_id"]
+        .as_str()
+        .expect("split_id string")
+        .to_string();
 
     {
         let bob_db = app
@@ -288,10 +256,6 @@ async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
     .await;
     assert_eq!(split_status, StatusCode::CREATED);
 
-    let split_id = split_body["split_id"]
-        .as_str()
-        .expect("split id")
-        .to_string();
     let pending_record_id = split_body["pending_record_ids"][0]
         .as_str()
         .expect("pending id")
@@ -382,25 +346,5 @@ async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
         assert_eq!(amount, -35.0);
         assert_eq!(debtor_user_id, Some(bob_id));
         assert_eq!(creditor_user_id, Some(alice_id));
-    }
-
-    {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT status, fanout_attempts FROM split_coordination WHERE id = ?",
-                [split_id.as_str()],
-            )
-            .await
-            .expect("query split status");
-        let row = rows
-            .next()
-            .await
-            .expect("next split status row")
-            .expect("split status row exists");
-        let status: String = row.get(0).expect("status");
-        let fanout_attempts: i64 = row.get(1).expect("fanout attempts");
-        assert_eq!(status, "completed");
-        assert_eq!(fanout_attempts, 1);
     }
 }

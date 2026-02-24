@@ -29,12 +29,9 @@ pub const FRIEND_STATUS_ACCEPTED: &str = "accepted";
 pub const FRIEND_STATUS_BLOCKED: &str = "blocked";
 pub const FRIEND_STATUS_UNFRIENDED: &str = "unfriended";
 
-// Split Coordination Status FSM
+// Split Status
 pub const SPLIT_STATUS_INITIATED: &str = "initiated";
-pub const SPLIT_STATUS_PARTIAL: &str = "partial";
-pub const SPLIT_STATUS_PARTIAL_FAILURE: &str = "partial_failure";
 pub const SPLIT_STATUS_COMPLETED: &str = "completed";
-pub const SPLIT_STATUS_FAILED: &str = "failed";
 
 // Error messages
 pub const ERR_DATABASE_ACCESS: &str = "Database access error";

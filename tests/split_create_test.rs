@@ -170,34 +170,6 @@ async fn split_create_happy_path_fans_out_records() {
     assert_eq!(pending_record_ids.len(), 2);
 
     {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT initiator_user_id, status, idempotency_key, total_amount, participant_count FROM split_coordination WHERE id = ?",
-                [split_id.as_str()],
-            )
-            .await
-            .expect("query split coordination");
-
-        let row = rows
-            .next()
-            .await
-            .expect("next split row")
-            .expect("split row should exist");
-        let initiator_user_id: String = row.get(0).expect("initiator_user_id");
-        let status: String = row.get(1).expect("status");
-        let idempotency_key: String = row.get(2).expect("idempotency_key");
-        let total_amount: f64 = row.get(3).expect("total_amount");
-        let participant_count: i64 = row.get(4).expect("participant_count");
-
-        assert_eq!(initiator_user_id, alice_id);
-        assert_eq!(status, "initiated");
-        assert_eq!(idempotency_key, "split-create-happy-1");
-        assert_eq!(total_amount, 100.0);
-        assert_eq!(participant_count, 3);
-    }
-
-    {
         let alice_db = app
             .state
             .db_pool

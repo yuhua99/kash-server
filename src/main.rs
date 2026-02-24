@@ -115,7 +115,6 @@ async fn main() -> Result<()> {
         .route("/friends/block", post(friends::block_friend))
         .route("/friends/unfriend", post(friends::unfriend))
         .route("/splits/create", post(splits::create_split))
-        .route("/splits/{id}/retry", post(splits::retry_split_fanout))
         .layer(cors)
         .layer(session_layer)
         .with_state(app_state);

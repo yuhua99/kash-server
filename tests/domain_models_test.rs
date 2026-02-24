@@ -1,6 +1,6 @@
 use my_budget_server::constants::*;
 use my_budget_server::models::*;
-use my_budget_server::utils::{validate_friendship_transition, validate_split_status_transition};
+use my_budget_server::utils::validate_friendship_transition;
 
 #[test]
 fn serde_send_friend_request_payload() {
@@ -188,53 +188,5 @@ fn fsm_friendship_invalid_unfriended_to_accepted() {
 #[test]
 fn fsm_friendship_invalid_same_state() {
     let result = validate_friendship_transition(FRIEND_STATUS_PENDING, FRIEND_STATUS_PENDING);
-    assert!(result.is_err());
-}
-
-#[test]
-fn fsm_split_valid_initiated_to_partial() {
-    let result = validate_split_status_transition(SPLIT_STATUS_INITIATED, SPLIT_STATUS_PARTIAL);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_split_valid_initiated_to_completed() {
-    let result = validate_split_status_transition(SPLIT_STATUS_INITIATED, SPLIT_STATUS_COMPLETED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_split_valid_initiated_to_failed() {
-    let result = validate_split_status_transition(SPLIT_STATUS_INITIATED, SPLIT_STATUS_FAILED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_split_valid_partial_to_completed() {
-    let result = validate_split_status_transition(SPLIT_STATUS_PARTIAL, SPLIT_STATUS_COMPLETED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_split_valid_partial_to_failed() {
-    let result = validate_split_status_transition(SPLIT_STATUS_PARTIAL, SPLIT_STATUS_FAILED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_split_invalid_completed_to_partial() {
-    let result = validate_split_status_transition(SPLIT_STATUS_COMPLETED, SPLIT_STATUS_PARTIAL);
-    assert!(result.is_err());
-}
-
-#[test]
-fn fsm_split_invalid_failed_to_initiated() {
-    let result = validate_split_status_transition(SPLIT_STATUS_FAILED, SPLIT_STATUS_INITIATED);
-    assert!(result.is_err());
-}
-
-#[test]
-fn fsm_split_invalid_same_state() {
-    let result = validate_split_status_transition(SPLIT_STATUS_INITIATED, SPLIT_STATUS_INITIATED);
     assert!(result.is_err());
 }

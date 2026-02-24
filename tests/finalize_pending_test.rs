@@ -129,13 +129,6 @@ fn extract_pending_record_id(split_response: &Value) -> String {
         .to_string()
 }
 
-fn extract_split_id(split_response: &Value) -> String {
-    split_response["split_id"]
-        .as_str()
-        .expect("split_id")
-        .to_string()
-}
-
 #[tokio::test]
 async fn finalize_pending_happy_path_finalizes_record_and_updates_split_status() {
     let app = common::setup_test_app().await.expect("setup failed");
@@ -170,7 +163,6 @@ async fn finalize_pending_happy_path_finalizes_record_and_updates_split_status()
     .await;
 
     let pending_record_id = extract_pending_record_id(&split_response);
-    let split_id = extract_split_id(&split_response);
 
     let finalize_payload = json!({
         "record_id": pending_record_id,
@@ -226,25 +218,6 @@ async fn finalize_pending_happy_path_finalizes_record_and_updates_split_status()
 
         assert!(!pending);
         assert_eq!(category_id, Some(bob_category.id));
-    }
-
-    {
-        let conn = app.state.main_db.read().await;
-        let mut rows = conn
-            .query(
-                "SELECT status FROM split_coordination WHERE id = ?",
-                [split_id.as_str()],
-            )
-            .await
-            .expect("query split status");
-
-        let row = rows
-            .next()
-            .await
-            .expect("next split status row")
-            .expect("split row exists");
-        let status: String = row.get(0).expect("status column");
-        assert_eq!(status, "completed");
     }
 }
 

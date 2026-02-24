@@ -119,10 +119,6 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             "/splits/create",
             axum::routing::post(my_budget_server::splits::create_split),
         )
-        .route(
-            "/splits/{id}/retry",
-            axum::routing::post(my_budget_server::splits::retry_split_fanout),
-        )
         .layer(session_layer)
         .with_state(app_state.clone());
 

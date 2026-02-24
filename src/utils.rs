@@ -153,21 +153,6 @@ pub fn validate_friendship_transition(from: &str, to: &str) -> Result<(), String
     }
 }
 
-pub fn validate_split_status_transition(from: &str, to: &str) -> Result<(), String> {
-    use crate::constants::*;
-    match (from, to) {
-        (SPLIT_STATUS_INITIATED, SPLIT_STATUS_PARTIAL) => Ok(()),
-        (SPLIT_STATUS_INITIATED, SPLIT_STATUS_COMPLETED) => Ok(()),
-        (SPLIT_STATUS_INITIATED, SPLIT_STATUS_FAILED) => Ok(()),
-        (SPLIT_STATUS_PARTIAL, SPLIT_STATUS_COMPLETED) => Ok(()),
-        (SPLIT_STATUS_PARTIAL, SPLIT_STATUS_FAILED) => Ok(()),
-        _ => Err(format!(
-            "Invalid split status transition from {} to {}",
-            from, to
-        )),
-    }
-}
-
 /// Validates split participants for consistency and validity.
 ///
 /// Checks:

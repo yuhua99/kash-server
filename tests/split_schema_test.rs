@@ -32,21 +32,7 @@ async fn split_schema_tables_exist() {
         "friendship_relations table should exist"
     );
 
-    // Test 2: Verify split_coordination table exists
-    let mut rows = conn
-        .query(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='split_coordination'",
-            (),
-        )
-        .await
-        .expect("query failed");
-
-    assert!(
-        rows.next().await.expect("rows.next failed").is_some(),
-        "split_coordination table should exist"
-    );
-
-    // Test 3: Verify idempotency_keys table exists
+    // Test 2: Verify idempotency_keys table exists
     let mut rows = conn
         .query(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='idempotency_keys'",

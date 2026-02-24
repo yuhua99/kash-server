@@ -4,8 +4,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use common::{auth_request, create_test_user, login_user, setup_test_app};
-use my_budget_server::{constants::*, database, with_transaction};
+use common::{create_test_user, login_user, setup_test_app};
 use serde_json::json;
 use tower::util::ServiceExt;
 use uuid::Uuid;
@@ -16,96 +15,83 @@ async fn create_split_scenario(
     debtor_id: &str,
     payer_cookie: &str,
 ) -> anyhow::Result<(String, String, String)> {
-    let split_id = Uuid::new_v4().to_string();
-    let payer_record_id = Uuid::new_v4().to_string();
-    let debtor_record_id = Uuid::new_v4().to_string();
+    // Ensure payer and debtor are friends
+    let friend_request_payload = json!({ "friend_username": "debtor" });
+    let friend_request = Request::builder()
+        .method("POST")
+        .uri("/friends/request")
+        .header("content-type", "application/json")
+        .header("cookie", payer_cookie)
+        .body(Body::from(friend_request_payload.to_string()))?;
+    app.router.clone().oneshot(friend_request).await?;
 
-    {
-        let conn = app.state.main_db.write().await;
-        let now = time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)?;
-        conn.execute(
-            "INSERT INTO split_coordination (id, initiator_user_id, idempotency_key, status, total_amount, participant_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                split_id.as_str(),
-                payer_id,
-                "test_idem_key",
-                SPLIT_STATUS_INITIATED,
-                100.0,
-                2,
-                now.as_str(),
-                now.as_str(),
-            ),
-        )
-        .await?;
-    }
+    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
+    let accept_payload = json!({ "friend_id": payer_id });
+    let accept_request = Request::builder()
+        .method("POST")
+        .uri("/friends/accept")
+        .header("content-type", "application/json")
+        .header("cookie", &debtor_cookie)
+        .body(Body::from(accept_payload.to_string()))?;
+    app.router.clone().oneshot(accept_request).await?;
 
-    let category_id = Uuid::new_v4().to_string();
-    {
-        let user_db = app.state.db_pool.get_user_db(payer_id).await?;
-        let conn = user_db.write().await;
-        conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            (category_id.as_str(), "Test Category", false),
-        )
-        .await?;
-    }
+    // Create category via API
+    let category_payload = json!({ "name": "Test Category", "is_income": false });
+    let category_request = Request::builder()
+        .method("POST")
+        .uri("/categories")
+        .header("content-type", "application/json")
+        .header("cookie", payer_cookie)
+        .body(Body::from(category_payload.to_string()))?;
+    let category_response = app.router.clone().oneshot(category_request).await?;
+    let category_body_bytes =
+        axum::body::to_bytes(category_response.into_body(), usize::MAX).await?;
+    let category_body: serde_json::Value = serde_json::from_slice(&category_body_bytes)?;
+    let category_id = category_body["id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Expected category creation response to include id"))?;
 
-    {
-        let user_db = app.state.db_pool.get_user_db(payer_id).await?;
-        let conn = user_db.write().await;
-        let now = time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)?;
-        let date = time::Date::parse(
-            "2026-02-16",
-            &time::format_description::parse("[year]-[month]-[day]")?,
-        )?
-        .to_string();
-        conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                payer_record_id.as_str(),
-                "Split Payment",
-                -100.0,
-                category_id.as_str(),
-                date.as_str(),
-                false,
-                split_id.as_str(),
-                false,
-                payer_id,
-                payer_id,
-            ),
-        )
-        .await?;
-    }
+    // Create split via API
+    let split_payload = json!({
+        "idempotency_key": "settlement-test-idem-key",
+        "total_amount": 100.0,
+        "description": "Split Payment",
+        "date": "2026-02-16",
+        "category_id": category_id,
+        "splits": [
+            { "user_id": debtor_id, "amount": 50.0 }
+        ]
+    });
 
-    {
-        let user_db = app.state.db_pool.get_user_db(debtor_id).await?;
-        let conn = user_db.write().await;
-        let date = time::Date::parse(
-            "2026-02-16",
-            &time::format_description::parse("[year]-[month]-[day]")?,
-        )?
-        .to_string();
-        conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                debtor_record_id.as_str(),
-                "Split Payment",
-                50.0,
-                "",
-                date.as_str(),
-                true,
-                split_id.as_str(),
-                false,
-                debtor_id,
-                payer_id,
-            ),
-        )
-        .await?;
-    }
+    let split_request = Request::builder()
+        .method("POST")
+        .uri("/splits/create")
+        .header("content-type", "application/json")
+        .header("cookie", payer_cookie)
+        .body(Body::from(split_payload.to_string()))?;
+    let split_response = app.router.clone().oneshot(split_request).await?;
+    let split_body_bytes = axum::body::to_bytes(split_response.into_body(), usize::MAX).await?;
+    let split_body: serde_json::Value = serde_json::from_slice(&split_body_bytes)?;
 
-    Ok((split_id, payer_record_id, debtor_record_id))
+    let split_id = split_body["split_id"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Expected split creation response to include split_id"))?;
+    let payer_record_id = split_body["payer_record_id"].as_str().ok_or_else(|| {
+        anyhow::anyhow!("Expected split creation response to include payer_record_id")
+    })?;
+    let pending_record_ids = split_body["pending_record_ids"].as_array().ok_or_else(|| {
+        anyhow::anyhow!("Expected split creation response to include pending_record_ids")
+    })?;
+    let debtor_record_id = pending_record_ids
+        .get(0)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Expected at least one pending_record_ids entry"))?;
+
+    Ok((
+        split_id.to_string(),
+        payer_record_id.to_string(),
+        debtor_record_id.to_string(),
+    ))
 }
 
 #[tokio::test]
@@ -332,7 +318,7 @@ async fn test_settle_idempotent() -> anyhow::Result<()> {
 async fn test_settle_record_not_found() -> anyhow::Result<()> {
     let app = setup_test_app().await?;
 
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
+    let _payer_id = create_test_user(&app.state, "payer", "password").await?;
     let payer_cookie = login_user(&app.router, "payer", "password").await?;
 
     let non_existent_record_id = Uuid::new_v4().to_string();

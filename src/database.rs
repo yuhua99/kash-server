@@ -74,27 +74,6 @@ const CREATE_FRIENDSHIP_TO_INDEX: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship_relations(to_user_id);
 "#;
 
-const CREATE_SPLIT_COORDINATION_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS split_coordination (
-    id                        TEXT    PRIMARY KEY,
-    initiator_user_id         TEXT    NOT NULL,
-    idempotency_key           TEXT    NOT NULL UNIQUE,
-    status                    TEXT    NOT NULL,
-    total_amount              REAL    NOT NULL,
-    participant_count         INTEGER NOT NULL,
-    created_at                TEXT    NOT NULL,
-    updated_at                TEXT    NOT NULL,
-    payload_json              TEXT    NOT NULL DEFAULT '{}',
-    succeeded_participant_ids TEXT    NOT NULL DEFAULT '[]',
-    failed_participant_ids    TEXT    NOT NULL DEFAULT '[]',
-    fanout_attempts           INTEGER NOT NULL DEFAULT 0
-);
-"#;
-
-const CREATE_SPLIT_COORD_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_split_coord_initiator ON split_coordination(initiator_user_id);
-"#;
-
 const CREATE_IDEMPOTENCY_KEYS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS idempotency_keys (
     key             TEXT    PRIMARY KEY,
@@ -126,8 +105,6 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_FRIENDSHIP_RELATIONS_TABLE, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_FROM_INDEX, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_TO_INDEX, ()).await?;
-    conn.execute(CREATE_SPLIT_COORDINATION_TABLE, ()).await?;
-    conn.execute(CREATE_SPLIT_COORD_INDEX, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
     Ok(Arc::new(RwLock::new(conn)))
