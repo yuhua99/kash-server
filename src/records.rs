@@ -8,16 +8,15 @@ use uuid::Uuid;
 
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::db_pool::{TransactionError, with_transaction};
 use crate::models::{
     CreateRecordPayload, FinalizePendingPayload, GetRecordsQuery, GetRecordsResponse, Record,
     UpdateRecordPayload, UpdateSettlePayload,
 };
 use crate::utils::{
-    db_error, db_error_with_context, get_user_database_from_pool, validate_category_exists,
-    validate_date, validate_offset, validate_records_limit, validate_string_length,
+    db_error, db_error_with_context, validate_category_exists, validate_date, validate_offset,
+    validate_records_limit, validate_string_length,
 };
-use crate::{AppState, DbPool};
+use crate::{AppState, TransactionError, with_transaction};
 
 enum FinalizePendingError {
     Transaction(TransactionError),
@@ -86,12 +85,13 @@ fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
 
 async fn get_category_is_income(
     conn: &libsql::Connection,
+    user_id: &str,
     category_id: &str,
 ) -> Result<bool, (StatusCode, String)> {
     let mut rows = conn
         .query(
-            "SELECT is_income FROM categories WHERE id = ?",
-            [category_id],
+            "SELECT is_income FROM categories WHERE id = ? AND owner_user_id = ?",
+            (category_id, user_id),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query category type"))?;
@@ -136,38 +136,33 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
 }
 
 pub async fn create_record_for_user(
-    db_pool: &DbPool,
+    db: &crate::Db,
     user_id: &str,
     payload: CreateRecordPayload,
 ) -> Result<Record, (StatusCode, String)> {
-    // Input validation
     validate_record_name(&payload.name)?;
     validate_record_amount(payload.amount)?;
     validate_category_id(&payload.category_id)?;
     validate_date(&payload.date)?;
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(db_pool, user_id).await?;
-
     let category_id = payload.category_id.trim().to_string();
 
-    // Validate that the category exists
-    validate_category_exists(&user_db, &category_id).await?;
+    validate_category_exists(db, user_id, &category_id).await?;
 
     let is_income = {
-        let conn = user_db.read().await;
-        get_category_is_income(&conn, &category_id).await?
+        let conn = db.read().await;
+        get_category_is_income(&conn, user_id, &category_id).await?
     };
     let normalized_amount = normalize_amount_by_category(payload.amount, is_income);
 
-    // Create record
     let record_id = Uuid::new_v4().to_string();
 
-    let conn = user_db.write().await;
+    let conn = db.write().await;
     conn.execute(
-        "INSERT INTO records (id, name, amount, category_id, date) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO records (id, owner_user_id, name, amount, category_id, date) VALUES (?, ?, ?, ?, ?, ?)",
         (
             record_id.as_str(),
+            user_id,
             payload.name.trim(),
             normalized_amount,
             category_id.as_str(),
@@ -191,11 +186,8 @@ pub async fn create_record(
     session: Session,
     Json(payload): Json<CreateRecordPayload>,
 ) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
-
-    let record = create_record_for_user(&app_state.db_pool, &user.id, payload).await?;
-
+    let record = create_record_for_user(&app_state.main_db, &user.id, payload).await?;
     Ok((StatusCode::CREATED, Json(record)))
 }
 
@@ -205,13 +197,9 @@ pub async fn get_records(
     Query(query): Query<GetRecordsQuery>,
 ) -> Result<(StatusCode, Json<GetRecordsResponse>), (StatusCode, String)> {
     let user = get_current_user(&session).await?;
-
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
-
-    let conn = user_db.read().await;
+    let conn = app_state.main_db.read().await;
 
     if let Some(ref start_date) = query.start_date {
         validate_date(start_date)?;
@@ -231,8 +219,8 @@ pub async fn get_records(
         (None, None) => {
             let mut count_rows = conn
                 .query(
-                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ?",
-                    (start_date.as_str(), end_date.as_str()),
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str()),
                 )
                 .await
                 .map_err(|_| db_error_with_context("failed to count records"))?;
@@ -246,8 +234,8 @@ pub async fn get_records(
         (Some(p), None) => {
             let mut count_rows = conn
                 .query(
-                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND pending = ?",
-                    (start_date.as_str(), end_date.as_str(), p),
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p),
                 )
                 .await
                 .map_err(|_| db_error_with_context("failed to count records"))?;
@@ -261,8 +249,8 @@ pub async fn get_records(
         (None, Some(s)) => {
             let mut count_rows = conn
                 .query(
-                    "SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND settle = ?",
-                    (start_date.as_str(), end_date.as_str(), s),
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), s),
                 )
                 .await
                 .map_err(|_| db_error_with_context("failed to count records"))?;
@@ -275,7 +263,10 @@ pub async fn get_records(
         }
         (Some(p), Some(s)) => {
             let mut count_rows = conn
-                .query("SELECT COUNT(*) FROM records WHERE date BETWEEN ? AND ? AND pending = ? AND settle = ?", (start_date.as_str(), end_date.as_str(), p, s))
+                .query(
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s),
+                )
                 .await
                 .map_err(|_| db_error_with_context("failed to count records"))?;
 
@@ -291,7 +282,10 @@ pub async fn get_records(
     match (pending, settle) {
         (None, None) => {
             let mut rows = conn
-                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), limit, offset))
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), limit, offset),
+                )
                 .await
                 .map_err(|_| db_error_with_context("failed to query records"))?;
 
@@ -301,7 +295,10 @@ pub async fn get_records(
         }
         (Some(p), None) => {
             let mut rows = conn
-                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), p, limit, offset))
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, limit, offset),
+                )
                 .await
                 .map_err(|_| db_error_with_context("failed to query records"))?;
 
@@ -311,7 +308,10 @@ pub async fn get_records(
         }
         (None, Some(s)) => {
             let mut rows = conn
-                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), s, limit, offset))
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), s, limit, offset),
+                )
                 .await
                 .map_err(|_| db_error_with_context("failed to query records"))?;
 
@@ -321,7 +321,10 @@ pub async fn get_records(
         }
         (Some(p), Some(s)) => {
             let mut rows = conn
-                .query("SELECT id, name, amount, category_id, date FROM records WHERE date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?", (start_date.as_str(), end_date.as_str(), p, s, limit, offset))
+                .query(
+                    "SELECT id, name, amount, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s, limit, offset),
+                )
                 .await
                 .map_err(|_| db_error_with_context("failed to query records"))?;
 
@@ -346,10 +349,8 @@ pub async fn update_record(
     Path(record_id): Path<String>,
     Json(payload): Json<UpdateRecordPayload>,
 ) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
 
-    // Validate that at least one field is being updated
     if payload.name.is_none()
         && payload.amount.is_none()
         && payload.category_id.is_none()
@@ -361,7 +362,6 @@ pub async fn update_record(
         ));
     }
 
-    // Input validation for provided fields
     if let Some(ref name) = payload.name {
         validate_record_name(name)?;
     }
@@ -378,21 +378,18 @@ pub async fn update_record(
         validate_date(date)?;
     }
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
+    let db = &app_state.main_db;
 
-    // Validate that the category exists if being updated
     if let Some(ref category_id) = payload.category_id {
-        validate_category_exists(&user_db, category_id).await?;
+        validate_category_exists(db, &user.id, category_id).await?;
     }
 
-    let conn = user_db.write().await;
+    let conn = db.write().await;
 
-    // First, check if the record exists and belongs to the user
     let mut existing_rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
-            [record_id.as_str()],
+            "SELECT id, name, amount, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+            (record_id.as_str(), user.id.as_str()),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query existing record"))?;
@@ -403,7 +400,6 @@ pub async fn update_record(
         return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
     };
 
-    // Build the updated record with new values or keep existing ones
     let updated_name = payload.name.as_deref().unwrap_or(&existing_record.name);
     let updated_category_id = payload
         .category_id
@@ -411,7 +407,7 @@ pub async fn update_record(
         .or(existing_record.category_id.clone());
     let updated_amount = if let Some(amount) = payload.amount {
         if let Some(ref category_id) = updated_category_id {
-            let is_income = get_category_is_income(&conn, category_id).await?;
+            let is_income = get_category_is_income(&conn, &user.id, category_id).await?;
             normalize_amount_by_category(amount, is_income)
         } else {
             return Err((
@@ -424,22 +420,21 @@ pub async fn update_record(
     };
     let updated_date = payload.date.unwrap_or(existing_record.date);
 
-    // Update the record and verify it was actually modified
     let affected_rows = conn
         .execute(
-            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ?",
+            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
             (
                 updated_name,
                 updated_amount,
                 updated_category_id.as_deref(),
                 updated_date.as_str(),
                 record_id.as_str(),
+                user.id.as_str(),
             ),
         )
         .await
         .map_err(|_| db_error_with_context("failed to update record"))?;
 
-    // Verify the update actually modified a record
     if affected_rows == 0 {
         return Err((
             StatusCode::NOT_FOUND,
@@ -467,19 +462,19 @@ pub async fn finalize_pending_record(
     validate_category_id(&payload.category_id)?;
     validate_string_length(&payload.record_id, "Record ID", MAX_RECORD_NAME_LENGTH)?;
 
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
+    let db = &app_state.main_db;
     let category_id = payload.category_id.trim().to_string();
     let record_id = payload.record_id.trim().to_string();
 
-    let record = with_transaction(&user_db, |conn| {
+    let record = with_transaction(db, |conn| {
         let category_id = category_id.clone();
         let record_id = record_id.clone();
-
+        let owner_user_id = user.id.clone();
         Box::pin(async move {
             let mut category_rows = conn
                 .query(
-                    "SELECT id FROM categories WHERE id = ?",
-                    [category_id.as_str()],
+                    "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
+                    (category_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to validate category"))?;
@@ -495,8 +490,8 @@ pub async fn finalize_pending_record(
 
             let mut existing_rows = conn
                 .query(
-                    "SELECT pending FROM records WHERE id = ?",
-                    [record_id.as_str()],
+                    "SELECT pending FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?;
@@ -518,8 +513,14 @@ pub async fn finalize_pending_record(
 
             let affected_rows = conn
                 .execute(
-                    "UPDATE records SET pending = ?, category_id = ? WHERE id = ? AND pending = ?",
-                    (false, category_id.as_str(), record_id.as_str(), true),
+                    "UPDATE records SET pending = ?, category_id = ? WHERE id = ? AND owner_user_id = ? AND pending = ?",
+                    (
+                        false,
+                        category_id.as_str(),
+                        record_id.as_str(),
+                        owner_user_id.as_str(),
+                        true,
+                    ),
                 )
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to finalize pending record"))?;
@@ -530,8 +531,8 @@ pub async fn finalize_pending_record(
 
             let mut updated_rows = conn
                 .query(
-                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
-                    [record_id.as_str()],
+                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
                 .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?;
@@ -576,21 +577,17 @@ pub async fn delete_record(
     session: Session,
     Path(record_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
+    let conn = app_state.main_db.write().await;
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-
-    let conn = user_db.write().await;
-
-    // Delete the record and verify it was actually deleted
     let affected_rows = conn
-        .execute("DELETE FROM records WHERE id = ?", [record_id.as_str()])
+        .execute(
+            "DELETE FROM records WHERE id = ? AND owner_user_id = ?",
+            (record_id.as_str(), user.id.as_str()),
+        )
         .await
         .map_err(|_| db_error_with_context("failed to delete record"))?;
 
-    // Verify the delete actually removed a record
     if affected_rows == 0 {
         return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
     }
@@ -606,17 +603,17 @@ pub async fn update_settle(
 ) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
     let user_id = current_user.id.clone();
+    let db = &app_state.main_db;
 
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user_id).await?;
-
-    let record = with_transaction(&user_db, |conn| {
+    let record = with_transaction(db, |conn| {
         let record_id = record_id.clone();
         let user_id = user_id.clone();
+        let owner_user_id = user_id.clone();
         Box::pin(async move {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
-                    [record_id.as_str()],
+                    "SELECT id, name, amount, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
                 .map_err(|_| TransactionError::Begin)?;
@@ -633,7 +630,7 @@ pub async fn update_settle(
 
             drop(rows);
 
-            let is_owner = true;
+            let is_owner = owner_user_id == user_id;
             let is_debtor = debtor_user_id.as_ref() == Some(&user_id);
             let is_creditor = creditor_user_id.as_ref() == Some(&user_id);
 
@@ -653,16 +650,16 @@ pub async fn update_settle(
             }
 
             conn.execute(
-                "UPDATE records SET settle = ? WHERE id = ?",
-                (true, record_id.as_str()),
+                "UPDATE records SET settle = ? WHERE id = ? AND owner_user_id = ?",
+                (true, record_id.as_str(), owner_user_id.as_str()),
             )
             .await
             .map_err(|_| TransactionError::Commit)?;
 
             let mut updated_rows = conn
                 .query(
-                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
-                    [record_id.as_str()],
+                    "SELECT id, name, amount, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
                 .map_err(|_| TransactionError::Commit)?;

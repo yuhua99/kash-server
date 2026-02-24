@@ -9,38 +9,46 @@ async fn test_records_filter_pending_only() -> anyhow::Result<()> {
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    // Create a user database with records
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records with different pending states
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         // Pending record
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+            ),
         )
         .await?;
 
         // Non-pending record
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-02", false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-02",
+                false,
+            ),
         )
         .await?;
     }
@@ -69,37 +77,46 @@ async fn test_records_filter_settle_only() -> anyhow::Result<()> {
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records with different settle states
     {
-        let conn = user_db.write().await;
         // Settled record
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+            ),
         )
         .await?;
 
         // Unsettled record
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-02", false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-02",
+                false,
+            ),
         )
         .await?;
     }
@@ -128,51 +145,80 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records with different combinations
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         // pending=true, settle=false
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true, false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+                false,
+            ),
         )
         .await?;
 
         // pending=true, settle=true (both true)
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-02", true, true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-02",
+                true,
+                true,
+            ),
         )
         .await?;
 
         // pending=false, settle=false
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec3", "Breakfast", -30.0, "cat1", "2024-01-03", false, false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec3",
+                user_id.as_str(),
+                "Breakfast",
+                -30.0,
+                "cat1",
+                "2024-01-03",
+                false,
+                false,
+            ),
         )
         .await?;
 
         // pending=false, settle=true
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec4", "Snack", -20.0, "cat1", "2024-01-04", false, true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec4",
+                user_id.as_str(),
+                "Snack",
+                -20.0,
+                "cat1",
+                "2024-01-04",
+                false,
+                true,
+            ),
         )
         .await?;
     }
@@ -206,35 +252,46 @@ async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Resu
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records with different states
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true, false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+                false,
+            ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-02", false, true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-02",
+                false,
+                true,
+            ),
         )
         .await?;
     }
@@ -261,41 +318,58 @@ async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records with different dates and pending states
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+            ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-05", false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-05",
+                false,
+            ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec3", "Breakfast", -30.0, "cat1", "2024-01-10", true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec3",
+                user_id.as_str(),
+                "Breakfast",
+                -30.0,
+                "cat1",
+                "2024-01-10",
+                true,
+            ),
         )
         .await?;
     }
@@ -328,35 +402,44 @@ async fn test_records_filter_pending_false() -> anyhow::Result<()> {
     let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
     let cookie = login_user(&test_app.router, "user1", "pass").await?;
 
-    let user_db = test_app
-        .state
-        .db_pool
-        .get_user_db(&user_id)
-        .await
-        .expect("should get user db");
-
     // Create a category first
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            ("cat1", "Food", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            ("cat1", user_id.as_str(), "Food", false),
         )
         .await?;
     }
 
     // Insert test records
     {
-        let conn = user_db.write().await;
+        let conn = test_app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec1", "Lunch", -50.0, "cat1", "2024-01-01", true),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec1",
+                user_id.as_str(),
+                "Lunch",
+                -50.0,
+                "cat1",
+                "2024-01-01",
+                true,
+            ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?)",
-            ("rec2", "Dinner", -100.0, "cat1", "2024-01-02", false),
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                "rec2",
+                user_id.as_str(),
+                "Dinner",
+                -100.0,
+                "cat1",
+                "2024-01-02",
+                false,
+            ),
         )
         .await?;
     }

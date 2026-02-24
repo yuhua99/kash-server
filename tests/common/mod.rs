@@ -3,7 +3,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use my_budget_server::{AppState, DbPool, auth, constants::*, database};
+use my_budget_server::{AppState, auth, constants::*, database};
 use time::Duration;
 use tower::util::ServiceExt;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer, cookie::Key};
@@ -42,9 +42,7 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize main database: {}", e))?;
 
-    let db_pool = DbPool::new(data_path);
-
-    let app_state = AppState { main_db, db_pool };
+    let app_state = AppState { main_db };
 
     let store = MemoryStore::default();
 
@@ -86,6 +84,11 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             "/categories",
             axum::routing::post(my_budget_server::categories::create_category)
                 .get(my_budget_server::categories::get_categories),
+        )
+        .route(
+            "/categories/{id}",
+            axum::routing::put(my_budget_server::categories::update_category)
+                .delete(my_budget_server::categories::delete_category),
         )
         .route(
             "/friends/request",

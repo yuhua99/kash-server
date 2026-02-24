@@ -55,9 +55,8 @@ async fn json_request(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let value = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let value = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, value)
 }
 
@@ -123,6 +122,7 @@ async fn link_telegram_user(
 }
 
 /// Count records in the shared DB owned by a given user_id.
+#[allow(dead_code)]
 async fn count_records_in_shared_db(app: &common::TestApp, owner_user_id: &str) -> i64 {
     let conn = app.state.main_db.read().await;
     let mut rows = conn
@@ -155,7 +155,7 @@ async fn g25_tg_list_records_returns_only_linked_user_records() {
     let alice_id = common::create_test_user(&app.state, "alice_g25", "pw")
         .await
         .expect("create alice");
-    let bob_id = common::create_test_user(&app.state, "bob_g25", "pw")
+    let _bob_id = common::create_test_user(&app.state, "bob_g25", "pw")
         .await
         .expect("create bob");
 
@@ -198,7 +198,11 @@ async fn g25_tg_list_records_returns_only_linked_user_records() {
         "Alice's record must appear in bot list"
     );
     // Bob's records must NOT appear
-    assert_eq!(found_ids.len(), 1, "bot must return exactly 1 record for Alice");
+    assert_eq!(
+        found_ids.len(),
+        1,
+        "bot must return exactly 1 record for Alice"
+    );
 
     // Also verify via HTTP API (which the bot calls internally) — GET /records
     drop(conn);
@@ -211,7 +215,10 @@ async fn g25_tg_list_records_returns_only_linked_user_records() {
         .iter()
         .filter_map(|r| r["id"].as_str())
         .collect();
-    assert!(http_ids.contains(&alice_rec_id.as_str()), "HTTP /records must include Alice's record");
+    assert!(
+        http_ids.contains(&alice_rec_id.as_str()),
+        "HTTP /records must include Alice's record"
+    );
     assert_eq!(
         http_ids.len(),
         1,
@@ -268,7 +275,10 @@ async fn g26_tg_edit_record_cannot_modify_other_user_record() {
             .await
             .expect("execute update");
         // rows_affected must be 0 — Alice cannot touch Bob's record
-        assert_eq!(result, 0, "bot update must affect 0 rows when owner_user_id does not match");
+        assert_eq!(
+            result, 0,
+            "bot update must affect 0 rows when owner_user_id does not match"
+        );
     }
 
     // Verify Bob's record is unchanged in the shared DB
@@ -283,7 +293,10 @@ async fn g26_tg_edit_record_cannot_modify_other_user_record() {
             .expect("query record");
         let row = rows.next().await.expect("next").expect("row");
         let name: String = row.get(0).expect("name");
-        assert_eq!(name, "Bob record G26", "Bob's record name must be unchanged");
+        assert_eq!(
+            name, "Bob record G26",
+            "Bob's record name must be unchanged"
+        );
     }
 
     // Also verify the HTTP PUT endpoint rejects Alice editing Bob's record

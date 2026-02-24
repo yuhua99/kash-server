@@ -73,20 +73,6 @@ async fn split_schema_tables_exist() {
         "idx_friendship_to index should exist"
     );
 
-    // Test 5: Verify split_coordination index exists
-    let mut rows = conn
-        .query(
-            "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_split_coord_initiator'",
-            (),
-        )
-        .await
-        .expect("query failed");
-
-    assert!(
-        rows.next().await.expect("rows.next failed").is_some(),
-        "idx_split_coord_initiator index should exist"
-    );
-
     // Test 6: Verify idempotency_keys index exists
     let mut rows = conn
         .query(
@@ -104,8 +90,8 @@ async fn split_schema_tables_exist() {
     // Test 7: Verify UNIQUE constraint on idempotency_keys is enforced
     // Insert a test key
     conn.execute(
-        "INSERT INTO idempotency_keys (key, user_id, endpoint, payload_hash, response_status, created_at, expires_at) 
-         VALUES ('test_key_1', 'user_123', '/api/test', 'hash_abc', 200, '2026-02-16', '2026-03-16')",
+        "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, created_at, expires_at) 
+         VALUES ('idem-id-1', 'test_key_1', 'user_123', '/api/test', 'hash_abc', 200, '2026-02-16', '2026-03-16')",
         (),
     )
     .await
@@ -114,15 +100,15 @@ async fn split_schema_tables_exist() {
     // Try to insert duplicate key - should fail with UNIQUE constraint
     let result = conn
         .execute(
-            "INSERT INTO idempotency_keys (key, user_id, endpoint, payload_hash, response_status, created_at, expires_at) 
-             VALUES ('test_key_1', 'user_456', '/api/other', 'hash_xyz', 201, '2026-02-16', '2026-03-16')",
+            "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, created_at, expires_at) 
+             VALUES ('idem-id-2', 'test_key_1', 'user_123', '/api/test', 'hash_xyz', 201, '2026-02-16', '2026-03-16')",
             (),
         )
         .await;
 
     assert!(
         result.is_err(),
-        "UNIQUE constraint on idempotency_keys.key should reject duplicate key"
+        "UNIQUE constraint on idempotency_keys(user_id, endpoint, key) should reject duplicate entry"
     );
 
     println!("✓ All split schema tests passed");

@@ -5,13 +5,11 @@ use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
+use my_budget_server::Db;
 use my_budget_server::categories::validate_category_name;
 use my_budget_server::models::{CreateRecordPayload, Record};
 use my_budget_server::records;
-use my_budget_server::utils::{
-    get_user_database_from_pool, validate_date, validate_offset, validate_records_limit,
-};
-use my_budget_server::{Db, DbPool};
+use my_budget_server::utils::{validate_date, validate_offset, validate_records_limit};
 
 use crate::helpers::{normalize_amount_by_category, resolve_category_id};
 use crate::models::{BotState, CategoryInfo};
@@ -76,15 +74,12 @@ pub async fn fetch_linked_user_id(
 // Category helpers
 // ---------------------------------------------------------------------------
 
-pub async fn load_categories(db_pool: &DbPool, user_id: &str) -> Result<Vec<CategoryInfo>, String> {
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.read().await;
+pub async fn load_categories(db: &Db, user_id: &str) -> Result<Vec<CategoryInfo>, String> {
+    let conn = db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, name, is_income FROM categories ORDER BY name ASC",
-            (),
+            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? ORDER BY name ASC",
+            [user_id],
         )
         .await
         .map_err(|_| "Failed to query categories".to_string())?;
@@ -109,7 +104,7 @@ pub async fn load_categories(db_pool: &DbPool, user_id: &str) -> Result<Vec<Cate
 }
 
 pub async fn get_or_create_category(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     name: &str,
     is_income: bool,
@@ -118,15 +113,12 @@ pub async fn get_or_create_category(
     let fallback = if trimmed.is_empty() { "Other" } else { trimmed };
     validate_category_name(fallback).map_err(|(_, message)| message)?;
 
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.write().await;
+    let conn = db.write().await;
 
     let mut existing = conn
         .query(
-            "SELECT id, name, is_income FROM categories WHERE LOWER(name) = LOWER(?)",
-            [fallback],
+            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?)",
+            (user_id, fallback),
         )
         .await
         .map_err(|_| "Failed to query categories".to_string())?;
@@ -148,8 +140,8 @@ pub async fn get_or_create_category(
 
     let category_id = Uuid::new_v4().to_string();
     conn.execute(
-        "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-        (category_id.as_str(), fallback, is_income),
+        "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+        (category_id.as_str(), user_id, fallback, is_income),
     )
     .await
     .map_err(|_| "Failed to create category".to_string())?;
@@ -210,15 +202,15 @@ pub async fn execute_tool_call(
     match tool_name {
         "create_record" => {
             let input: CreateRecordToolInput = parse_tool_arguments(arguments)?;
-            create_record_tool(&state.db_pool, user_id, input).await
+            create_record_tool(&state.main_db, user_id, input).await
         }
         "edit_record" => {
             let input: EditRecordToolInput = parse_tool_arguments(arguments)?;
-            edit_record_tool(&state.db_pool, user_id, input).await
+            edit_record_tool(&state.main_db, user_id, input).await
         }
         "list_records" => {
             let input: ListRecordsToolInput = parse_tool_arguments(arguments)?;
-            list_records_tool(&state.db_pool, user_id, input).await
+            list_records_tool(&state.main_db, user_id, input).await
         }
         _ => Err(format!("Unknown tool: {tool_name}")),
     }
@@ -229,13 +221,13 @@ fn parse_tool_arguments<T: for<'de> Deserialize<'de>>(arguments: &str) -> Result
 }
 
 async fn create_record_tool(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     input: CreateRecordToolInput,
 ) -> Result<serde_json::Value, String> {
-    let categories = load_categories(db_pool, user_id).await?;
+    let categories = load_categories(db, user_id).await?;
     let category = resolve_or_create_category(
-        db_pool,
+        db,
         user_id,
         &categories,
         input.category_id.as_deref(),
@@ -262,7 +254,7 @@ async fn create_record_tool(
         date,
     };
 
-    let record = records::create_record_for_user(db_pool, user_id, payload)
+    let record = records::create_record_for_user(db, user_id, payload)
         .await
         .map_err(|(_, message)| message)?;
 
@@ -280,11 +272,11 @@ async fn create_record_tool(
 }
 
 async fn edit_record_tool(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     input: EditRecordToolInput,
 ) -> Result<serde_json::Value, String> {
-    let categories = load_categories(db_pool, user_id).await?;
+    let categories = load_categories(db, user_id).await?;
 
     let existing = if let Some(record_id) = input
         .record_id
@@ -292,14 +284,14 @@ async fn edit_record_tool(
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        fetch_record_by_id(db_pool, user_id, record_id).await?
+        fetch_record_by_id(db, user_id, record_id).await?
     } else if let Some(record_name) = input
         .record_name
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
     {
-        fetch_record_by_exact_name(db_pool, user_id, record_name).await?
+        fetch_record_by_exact_name(db, user_id, record_name).await?
     } else {
         return Err("edit_record requires record_id or record_name".to_string());
     };
@@ -369,14 +361,11 @@ async fn edit_record_tool(
     let updated_category_id = new_category_id.or_else(|| existing.category_id.clone());
     let updated_date = new_date.unwrap_or_else(|| existing.date.clone());
 
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.write().await;
+    let conn = db.write().await;
 
     let updated_amount = if let Some(amount) = input.amount {
         if let Some(ref category_id) = updated_category_id {
-            let is_income = get_category_is_income(&conn, category_id).await?;
+            let is_income = get_category_is_income(&conn, user_id, category_id).await?;
             normalize_amount_by_category(amount, is_income)
         } else {
             return Err("Cannot update amount without a category".to_string());
@@ -399,13 +388,14 @@ async fn edit_record_tool(
 
     let affected_rows = conn
         .execute(
-            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ?",
+            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
             (
                 updated_name.as_str(),
                 updated_amount,
                 updated_category_id.as_deref(),
                 updated_date.as_str(),
                 existing.id.as_str(),
+                user_id,
             ),
         )
         .await
@@ -439,7 +429,7 @@ async fn edit_record_tool(
 }
 
 async fn list_records_tool(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     input: ListRecordsToolInput,
 ) -> Result<serde_json::Value, String> {
@@ -464,7 +454,7 @@ async fn list_records_tool(
     let min_amount = input.min_amount.unwrap_or(-1.0e15);
     let max_amount = input.max_amount.unwrap_or(1.0e15);
 
-    let categories = load_categories(db_pool, user_id).await?;
+    let categories = load_categories(db, user_id).await?;
     let category_filter = resolve_category_filter_id(
         &categories,
         input.category_id.as_deref(),
@@ -479,19 +469,18 @@ async fn list_records_tool(
         .map(str::to_string)
         .unwrap_or_default();
 
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.read().await;
+    let conn = db.read().await;
 
     let mut count_rows = conn
         .query(
             "SELECT COUNT(*) FROM records \
-             WHERE date BETWEEN ? AND ? \
+             WHERE owner_user_id = ? \
+             AND date BETWEEN ? AND ? \
              AND (? = '' OR category_id = ?) \
              AND (? = '' OR INSTR(LOWER(name), LOWER(?)) > 0) \
              AND amount BETWEEN ? AND ?",
             (
+                user_id,
                 start_date.as_str(),
                 end_date.as_str(),
                 category_filter.as_str(),
@@ -518,12 +507,14 @@ async fn list_records_tool(
     let mut rows = conn
         .query(
             "SELECT id, name, amount, category_id, date FROM records \
-             WHERE date BETWEEN ? AND ? \
+             WHERE owner_user_id = ? \
+             AND date BETWEEN ? AND ? \
              AND (? = '' OR category_id = ?) \
              AND (? = '' OR INSTR(LOWER(name), LOWER(?)) > 0) \
              AND amount BETWEEN ? AND ? \
              ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             (
+                user_id,
                 start_date.as_str(),
                 end_date.as_str(),
                 category_filter.as_str(),
@@ -605,7 +596,7 @@ fn resolve_category_filter_id(
 }
 
 async fn resolve_or_create_category(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     categories: &[CategoryInfo],
     category_id: Option<&str>,
@@ -626,7 +617,7 @@ async fn resolve_or_create_category(
     if !provided_name.is_empty()
         && let Some(income_flag) = is_income
     {
-        return get_or_create_category(db_pool, user_id, provided_name, income_flag).await;
+        return get_or_create_category(db, user_id, provided_name, income_flag).await;
     }
 
     if categories.is_empty() {
@@ -655,7 +646,7 @@ fn format_category_options(categories: &[CategoryInfo]) -> String {
 }
 
 async fn fetch_record_by_exact_name(
-    db_pool: &DbPool,
+    db: &Db,
     user_id: &str,
     record_name: &str,
 ) -> Result<Record, String> {
@@ -664,15 +655,12 @@ async fn fetch_record_by_exact_name(
         return Err("record_name cannot be empty".to_string());
     }
 
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.read().await;
+    let conn = db.read().await;
 
     let mut rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records WHERE LOWER(name) = LOWER(?) ORDER BY date DESC LIMIT 3",
-            [trimmed],
+            "SELECT id, name, amount, category_id, date FROM records WHERE LOWER(name) = LOWER(?) AND owner_user_id = ? ORDER BY date DESC LIMIT 3",
+            (trimmed, user_id),
         )
         .await
         .map_err(|_| "Failed to query record by name".to_string())?;
@@ -703,12 +691,13 @@ async fn fetch_record_by_exact_name(
 
 async fn get_category_is_income(
     conn: &libsql::Connection,
+    user_id: &str,
     category_id: &str,
 ) -> Result<bool, String> {
     let mut rows = conn
         .query(
-            "SELECT is_income FROM categories WHERE id = ?",
-            [category_id],
+            "SELECT is_income FROM categories WHERE id = ? AND owner_user_id = ?",
+            (category_id, user_id),
         )
         .await
         .map_err(|_| "Failed to query category type".to_string())?;
@@ -724,19 +713,12 @@ async fn get_category_is_income(
     }
 }
 
-pub async fn fetch_record_by_id(
-    db_pool: &DbPool,
-    user_id: &str,
-    record_id: &str,
-) -> Result<Record, String> {
-    let user_db = get_user_database_from_pool(db_pool, user_id)
-        .await
-        .map_err(|(_, message)| message)?;
-    let conn = user_db.read().await;
+pub async fn fetch_record_by_id(db: &Db, user_id: &str, record_id: &str) -> Result<Record, String> {
+    let conn = db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records WHERE id = ?",
-            [record_id],
+            "SELECT id, name, amount, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+            (record_id, user_id),
         )
         .await
         .map_err(|_| "Failed to query existing record".to_string())?;

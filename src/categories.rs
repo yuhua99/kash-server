@@ -6,18 +6,17 @@ use axum::{
 use tower_sessions::Session;
 use uuid::Uuid;
 
-use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::db_pool::{TransactionError, with_transaction};
 use crate::models::{
     Category, CreateCategoryPayload, GetCategoriesQuery, GetCategoriesResponse,
     UpdateCategoryPayload,
 };
 use crate::utils::{
-    db_error, db_error_with_context, get_user_database_from_pool, validate_categories_limit,
-    validate_offset, validate_string_length,
+    db_error, db_error_with_context, validate_categories_limit, validate_offset,
+    validate_string_length,
 };
+use crate::{AppState, Db, TransactionError, with_transaction};
 
 pub fn validate_category_name(name: &str) -> Result<(), (StatusCode, String)> {
     validate_string_length(name, "Category name", MAX_CATEGORY_NAME_LENGTH)
@@ -42,16 +41,16 @@ pub fn extract_category_from_row(row: libsql::Row) -> Result<Category, (StatusCo
 }
 
 pub async fn validate_category_not_in_use(
-    user_db: &std::sync::Arc<tokio::sync::RwLock<libsql::Connection>>,
+    db: &Db,
+    user_id: &str,
     category_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = user_db.read().await;
+    let conn = db.read().await;
 
-    // Check if any records use this category
     let mut rows = conn
         .query(
-            "SELECT COUNT(*) FROM records WHERE category_id = ?",
-            [category_id],
+            "SELECT COUNT(*) FROM records WHERE category_id = ? AND owner_user_id = ?",
+            (category_id, user_id),
         )
         .await
         .map_err(|_| db_error_with_context("failed to check category usage"))?;
@@ -69,7 +68,6 @@ pub async fn validate_category_not_in_use(
     Ok(())
 }
 
-/// Error type for category creation that can be converted to handler response
 enum CreateCategoryError {
     Transaction(TransactionError),
     DbCheck,
@@ -109,26 +107,20 @@ pub async fn create_category(
     session: Session,
     Json(payload): Json<CreateCategoryPayload>,
 ) -> Result<(StatusCode, Json<Category>), (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
-
-    // Input validation and sanitization
     validate_category_name(&payload.name)?;
     let category_name = payload.name.trim().to_string();
     let is_income = payload.is_income;
+    let db = &app_state.main_db;
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-
-    // Execute within a transaction for atomicity
-    let category = with_transaction(&user_db, |conn| {
+    let category = with_transaction(db, |conn| {
         let name = category_name.clone();
+        let owner_user_id = user.id.clone();
         Box::pin(async move {
-            // Check if category name already exists (case-insensitive)
             let mut existing_rows = conn
                 .query(
-                    "SELECT id FROM categories WHERE LOWER(name) = LOWER(?)",
-                    [name.as_str()],
+                    "SELECT id FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?)",
+                    (owner_user_id.as_str(), name.as_str()),
                 )
                 .await
                 .map_err(|_| CreateCategoryError::DbCheck)?;
@@ -142,11 +134,15 @@ pub async fn create_category(
                 return Err(CreateCategoryError::Conflict);
             }
 
-            // Create category
             let category_id = Uuid::new_v4().to_string();
             conn.execute(
-                "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-                (category_id.as_str(), name.as_str(), is_income),
+                "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+                (
+                    category_id.as_str(),
+                    owner_user_id.as_str(),
+                    name.as_str(),
+                    is_income,
+                ),
             )
             .await
             .map_err(|_| CreateCategoryError::DbInsert)?;
@@ -169,14 +165,10 @@ pub async fn get_categories(
     session: Session,
     Query(query): Query<GetCategoriesQuery>,
 ) -> Result<(StatusCode, Json<GetCategoriesResponse>), (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
-
-    // Input validation
     let limit = validate_categories_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
-    // Validate and sanitize search term
     let search_term = query
         .search
         .as_ref()
@@ -186,17 +178,14 @@ pub async fn get_categories(
         validate_string_length(search, "Search term", MAX_SEARCH_TERM_LENGTH)?;
     }
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-    let conn = user_db.read().await;
+    let conn = app_state.main_db.read().await;
 
-    // Get total count with search filter
     let total_count: u32 = if let Some(search) = &search_term {
         let search_pattern = format!("%{}%", search);
         let mut count_rows = conn
             .query(
-                "SELECT COUNT(*) FROM categories WHERE name LIKE ? COLLATE NOCASE",
-                [search_pattern.as_str()],
+                "SELECT COUNT(*) FROM categories WHERE owner_user_id = ? AND name LIKE ? COLLATE NOCASE",
+                (user.id.as_str(), search_pattern.as_str()),
             )
             .await
             .map_err(|_| db_error_with_context("failed to count categories"))?;
@@ -208,7 +197,10 @@ pub async fn get_categories(
         }
     } else {
         let mut count_rows = conn
-            .query("SELECT COUNT(*) FROM categories", ())
+            .query(
+                "SELECT COUNT(*) FROM categories WHERE owner_user_id = ?",
+                [user.id.as_str()],
+            )
             .await
             .map_err(|_| db_error_with_context("failed to count categories"))?;
 
@@ -219,19 +211,18 @@ pub async fn get_categories(
         }
     };
 
-    // Get categories with search filter, pagination, and ordering (utilizing the index)
     let mut rows = if let Some(search) = &search_term {
         let search_pattern = format!("%{}%", search);
         conn.query(
-            "SELECT id, name, is_income FROM categories WHERE name LIKE ? COLLATE NOCASE ORDER BY name ASC LIMIT ? OFFSET ?",
-            (search_pattern.as_str(), limit, offset)
+            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? AND name LIKE ? COLLATE NOCASE ORDER BY name ASC LIMIT ? OFFSET ?",
+            (user.id.as_str(), search_pattern.as_str(), limit, offset),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query categories"))?
     } else {
         conn.query(
-            "SELECT id, name, is_income FROM categories ORDER BY name ASC LIMIT ? OFFSET ?",
-            (limit, offset),
+            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? ORDER BY name ASC LIMIT ? OFFSET ?",
+            (user.id.as_str(), limit, offset),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query categories"))?
@@ -259,10 +250,7 @@ pub async fn update_category(
     Path(category_id): Path<String>,
     Json(payload): Json<UpdateCategoryPayload>,
 ) -> Result<(StatusCode, Json<Category>), (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
-
-    // Input validation - only update if name is provided
     let category_name = if let Some(ref name) = payload.name {
         validate_category_name(name)?;
         name.trim().to_string()
@@ -273,15 +261,12 @@ pub async fn update_category(
         ));
     };
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-    let conn = user_db.write().await;
+    let conn = app_state.main_db.write().await;
 
-    // First, check if the category exists and belongs to the user
     let mut existing_rows = conn
         .query(
-            "SELECT id, name, is_income FROM categories WHERE id = ?",
-            [category_id.as_str()],
+            "SELECT id, name, is_income FROM categories WHERE id = ? AND owner_user_id = ?",
+            (category_id.as_str(), user.id.as_str()),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query existing category"))?;
@@ -292,11 +277,10 @@ pub async fn update_category(
         return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
     };
 
-    // Check if the new name conflicts with existing categories (excluding current one)
     let mut conflict_rows = conn
         .query(
-            "SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND id != ?",
-            (category_name.as_str(), category_id.as_str()),
+            "SELECT id FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?) AND id != ?",
+            (user.id.as_str(), category_name.as_str(), category_id.as_str()),
         )
         .await
         .map_err(|_| db_error_with_context("failed to check name conflict"))?;
@@ -313,16 +297,18 @@ pub async fn update_category(
         ));
     }
 
-    // Update the category
     let affected_rows = conn
         .execute(
-            "UPDATE categories SET name = ? WHERE id = ?",
-            (category_name.as_str(), category_id.as_str()),
+            "UPDATE categories SET name = ? WHERE id = ? AND owner_user_id = ?",
+            (
+                category_name.as_str(),
+                category_id.as_str(),
+                user.id.as_str(),
+            ),
         )
         .await
         .map_err(|_| db_error_with_context("failed to update category"))?;
 
-    // Verify the update actually modified a record
     if affected_rows == 0 {
         return Err((
             StatusCode::NOT_FOUND,
@@ -344,19 +330,14 @@ pub async fn delete_category(
     session: Session,
     Path(category_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
-    // Get current user from session
     let user = get_current_user(&session).await?;
 
-    // Get user's database
-    let user_db = get_user_database_from_pool(&app_state.db_pool, &user.id).await?;
-
-    // Check if category exists and belongs to user first
     {
-        let conn = user_db.read().await;
+        let conn = app_state.main_db.read().await;
         let mut existing_rows = conn
             .query(
-                "SELECT id FROM categories WHERE id = ?",
-                [category_id.as_str()],
+                "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
+                (category_id.as_str(), user.id.as_str()),
             )
             .await
             .map_err(|_| db_error_with_context("failed to query existing category"))?;
@@ -370,21 +351,18 @@ pub async fn delete_category(
             return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
         }
 
-        // Check if category is in use by any records
-        validate_category_not_in_use(&user_db, &category_id).await?;
-    } // Read lock is dropped here
+        validate_category_not_in_use(&app_state.main_db, &user.id, &category_id).await?;
+    }
 
-    // Now delete the category
-    let conn = user_db.write().await;
+    let conn = app_state.main_db.write().await;
     let affected_rows = conn
         .execute(
-            "DELETE FROM categories WHERE id = ?",
-            [category_id.as_str()],
+            "DELETE FROM categories WHERE id = ? AND owner_user_id = ?",
+            (category_id.as_str(), user.id.as_str()),
         )
         .await
         .map_err(|_| db_error_with_context("failed to delete category"))?;
 
-    // Verify the delete actually removed a record
     if affected_rows == 0 {
         return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
     }

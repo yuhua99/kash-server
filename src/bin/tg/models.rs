@@ -6,7 +6,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
-use my_budget_server::{Db, DbPool};
+use my_budget_server::Db;
 
 use crate::constants::{CONTEXT_MAX_TURNS, CONTEXT_TTL_SECONDS};
 
@@ -19,7 +19,6 @@ pub type BotError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Clone)]
 pub struct BotState {
     pub main_db: Db,
-    pub db_pool: DbPool,
     pub http: Client,
     pub openai_api_key: String,
     pub openai_model: String,

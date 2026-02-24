@@ -231,7 +231,7 @@ async fn handle_ai_turn(
         }
     };
 
-    let categories = match load_categories(&state.db_pool, &user_id).await {
+    let categories = match load_categories(&state.main_db, &user_id).await {
         Ok(categories) => categories,
         Err(message) => {
             bot.send_message(chat_id, message).await?;

@@ -39,9 +39,8 @@ async fn json_post(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
@@ -68,17 +67,12 @@ async fn json_put(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
-async fn json_delete(
-    app: &common::TestApp,
-    uri: &str,
-    cookie: &str,
-) -> StatusCode {
+async fn json_delete(app: &common::TestApp, uri: &str, cookie: &str) -> StatusCode {
     let request = Request::builder()
         .method("DELETE")
         .uri(uri)
@@ -93,11 +87,7 @@ async fn json_delete(
         .status()
 }
 
-async fn json_get(
-    app: &common::TestApp,
-    uri: &str,
-    cookie: &str,
-) -> (StatusCode, Value) {
+async fn json_get(app: &common::TestApp, uri: &str, cookie: &str) -> (StatusCode, Value) {
     let request = Request::builder()
         .method("GET")
         .uri(uri)
@@ -114,9 +104,8 @@ async fn json_get(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
@@ -163,7 +152,16 @@ async fn create_record(
 async fn setup_two_users(
     app: &common::TestApp,
     suffix: &str,
-) -> (String, String, String, String, String, String, String, String) {
+) -> (
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+) {
     let alice_name = format!("alice_{suffix}");
     let bob_name = format!("bob_{suffix}");
 
@@ -206,17 +204,14 @@ async fn setup_two_users(
 #[tokio::test]
 async fn b5_user_a_record_not_visible_to_user_b() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let (_alice_id, _bob_id, alice_cookie, bob_cookie, _ac, _bc, alice_rec_id, _bob_rec) =
+    let (_alice_id, _bob_id, _alice_cookie, bob_cookie, _ac, _bc, alice_rec_id, _bob_rec) =
         setup_two_users(&app, "b5").await;
 
     // Bob lists records — must not see Alice's record
     let (status, body) = json_get(&app, "/records", &bob_cookie).await;
     assert_eq!(status, StatusCode::OK);
     let records = body["records"].as_array().expect("records array");
-    let ids: Vec<&str> = records
-        .iter()
-        .filter_map(|r| r["id"].as_str())
-        .collect();
+    let ids: Vec<&str> = records.iter().filter_map(|r| r["id"].as_str()).collect();
     assert!(
         !ids.contains(&alice_rec_id.as_str()),
         "Bob must not see Alice's record"
@@ -289,8 +284,14 @@ async fn b8_get_records_returns_only_current_user_data() {
         .iter()
         .filter_map(|r| r["id"].as_str())
         .collect();
-    assert!(alice_ids.contains(&alice_rec_id.as_str()), "Alice must see her own record");
-    assert!(!alice_ids.contains(&bob_rec_id.as_str()), "Alice must not see Bob's record");
+    assert!(
+        alice_ids.contains(&alice_rec_id.as_str()),
+        "Alice must see her own record"
+    );
+    assert!(
+        !alice_ids.contains(&bob_rec_id.as_str()),
+        "Alice must not see Bob's record"
+    );
 
     // Bob sees only his record
     let (status_b, body_b) = json_get(&app, "/records", &bob_cookie).await;
@@ -301,8 +302,14 @@ async fn b8_get_records_returns_only_current_user_data() {
         .iter()
         .filter_map(|r| r["id"].as_str())
         .collect();
-    assert!(bob_ids.contains(&bob_rec_id.as_str()), "Bob must see his own record");
-    assert!(!bob_ids.contains(&alice_rec_id.as_str()), "Bob must not see Alice's record");
+    assert!(
+        bob_ids.contains(&bob_rec_id.as_str()),
+        "Bob must see his own record"
+    );
+    assert!(
+        !bob_ids.contains(&alice_rec_id.as_str()),
+        "Bob must not see Alice's record"
+    );
 
     // With filter applied — still scoped to the caller
     let (status_fa, body_fa) = json_get(&app, "/records?pending=false", &alice_cookie).await;
@@ -313,7 +320,10 @@ async fn b8_get_records_returns_only_current_user_data() {
         .iter()
         .filter_map(|r| r["id"].as_str())
         .collect();
-    assert!(!filtered_ids.contains(&bob_rec_id.as_str()), "filter must not expose Bob's records");
+    assert!(
+        !filtered_ids.contains(&bob_rec_id.as_str()),
+        "filter must not expose Bob's records"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +474,10 @@ async fn b10_settle_cross_user_blocked() {
     .await;
     assert_eq!(split_status, StatusCode::CREATED, "create split");
 
-    let split_id = split_body["split_id"].as_str().expect("split_id").to_string();
+    let split_id = split_body["split_id"]
+        .as_str()
+        .expect("split_id")
+        .to_string();
     let bob_record_id = split_body["pending_record_ids"][0]
         .as_str()
         .expect("pending id")
@@ -492,7 +505,11 @@ async fn b10_settle_cross_user_blocked() {
         json!({ "split_id": split_id }),
     )
     .await;
-    assert_eq!(bob_settle_status, StatusCode::OK, "Bob (debtor) must be able to settle");
+    assert_eq!(
+        bob_settle_status,
+        StatusCode::OK,
+        "Bob (debtor) must be able to settle"
+    );
 
     let _ = (eve_id, bob_id);
 }

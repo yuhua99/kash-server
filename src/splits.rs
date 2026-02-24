@@ -3,15 +3,14 @@ use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 use uuid::Uuid;
 
-use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::FRIEND_STATUS_ACCEPTED;
-use crate::db_pool::{TransactionError, with_transaction};
 use crate::models::{CreateSplitPayload, SplitParticipant};
 use crate::utils::{
     calculate_split_amounts, db_error_with_context, validate_category_exists, validate_date,
     validate_split_participants, validate_string_length,
 };
+use crate::{AppState, TransactionError, with_transaction};
 
 const SPLIT_CREATE_ENDPOINT: &str = "/splits/create";
 const IDEMPOTENCY_TTL_HOURS: i64 = 24;
@@ -284,100 +283,94 @@ async fn create_split_records(
     )
     .map_err(|msg| (StatusCode::BAD_REQUEST, msg))?;
 
-    let user_db = app_state
-        .db_pool
-        .get_user_db(initiator_user_id)
-        .await
-        .map_err(|_| db_error_with_context("failed to access payer database"))?;
-
-    validate_category_exists(&user_db, &payload.category_id).await?;
+    validate_category_exists(&app_state.main_db, initiator_user_id, &payload.category_id).await?;
 
     let payer_record_id = Uuid::new_v4().to_string();
     let payer_amount = -(payload.total_amount.abs());
 
-    with_transaction(&user_db, |conn| {
-        let payer_record_id = payer_record_id.clone();
+    // Pre-generate all pending record IDs before entering the transaction
+    let pending_record_ids: Vec<String> = calculated
+        .iter()
+        .filter(|(uid, _)| uid != initiator_user_id)
+        .map(|_| Uuid::new_v4().to_string())
+        .collect();
+
+    // Write all records atomically in one transaction on the shared DB
+    {
+        let pending_ids = pending_record_ids.clone();
         let description = payload.description.trim().to_string();
         let category_id = payload.category_id.trim().to_string();
         let date = payload.date.trim().to_string();
-        let split_id = split_id.to_string();
-        let initiator_user_id = initiator_user_id.to_string();
+        let split_id_str = split_id.to_string();
+        let initiator_id = initiator_user_id.to_string();
+        let payer_id = payer_record_id.clone();
+        let participants: Vec<(String, f64)> = calculated
+            .iter()
+            .filter(|(uid, _)| uid != initiator_user_id)
+            .map(|(uid, amt)| (uid.clone(), *amt))
+            .collect();
 
-        Box::pin(async move {
-            conn.execute(
-                "INSERT INTO records (id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    payer_record_id.as_str(),
-                    description.as_str(),
-                    payer_amount,
-                    category_id.as_str(),
-                    date.as_str(),
-                    false,
-                    split_id.as_str(),
-                    false,
-                    initiator_user_id.as_str(),
-                    initiator_user_id.as_str(),
-                ),
-            )
-            .await
-            .map_err(|_| SplitRecordError::Db)?;
-
-            Ok::<(), SplitRecordError>(())
-        })
-    })
-    .await
-    .map_err(|_| db_error_with_context("failed to create payer record"))?;
-
-    let mut pending_record_ids = Vec::new();
-
-    for (participant_user_id, amount) in &calculated {
-        if participant_user_id == initiator_user_id {
-            continue;
-        }
-
-        let participant_db = app_state
-            .db_pool
-            .get_user_db(participant_user_id)
-            .await
-            .map_err(|_| db_error_with_context("failed to access participant database"))?;
-
-        let pending_record_id = Uuid::new_v4().to_string();
-        let pending_amount = -(amount.abs());
-
-        with_transaction(&participant_db, |conn| {
-            let pending_record_id = pending_record_id.clone();
-            let description = payload.description.trim().to_string();
-            let date = payload.date.trim().to_string();
-            let split_id = split_id.to_string();
-            let participant_user_id = participant_user_id.to_string();
-            let initiator_user_id = initiator_user_id.to_string();
+        with_transaction(&app_state.main_db, |conn| {
+            let payer_id = payer_id.clone();
+            let description = description.clone();
+            let category_id = category_id.clone();
+            let date = date.clone();
+            let split_id_str = split_id_str.clone();
+            let initiator_id = initiator_id.clone();
+            let participants = participants.clone();
+            let pending_ids = pending_ids.clone();
 
             Box::pin(async move {
+                // Payer record
                 conn.execute(
-                    "INSERT INTO records (id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        pending_record_id.as_str(),
+                        payer_id.as_str(),
+                        initiator_id.as_str(),
                         description.as_str(),
-                        pending_amount,
-                        Option::<&str>::None,
+                        payer_amount,
+                        category_id.as_str(),
                         date.as_str(),
-                        true,
-                        split_id.as_str(),
                         false,
-                        participant_user_id.as_str(),
-                        initiator_user_id.as_str(),
+                        split_id_str.as_str(),
+                        false,
+                        initiator_id.as_str(),
+                        initiator_id.as_str(),
                     ),
                 )
                 .await
                 .map_err(|_| SplitRecordError::Db)?;
 
+                // Pending records for each participant
+                for ((participant_user_id, amount), pending_record_id) in
+                    participants.iter().zip(pending_ids.iter())
+                {
+                    let pending_amount = -(amount.abs());
+                    conn.execute(
+                        "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            pending_record_id.as_str(),
+                            participant_user_id.as_str(),
+                            description.as_str(),
+                            pending_amount,
+                            Option::<&str>::None,
+                            date.as_str(),
+                            true,
+                            split_id_str.as_str(),
+                            false,
+                            participant_user_id.as_str(),
+                            initiator_id.as_str(),
+                        ),
+                    )
+                    .await
+                    .map_err(|_| SplitRecordError::Db)?;
+                }
+
                 Ok::<(), SplitRecordError>(())
             })
         })
         .await
-        .map_err(|_| db_error_with_context("failed to create participant pending record"))?;
-
-        pending_record_ids.push(pending_record_id);
+        .map_err(|_| db_error_with_context("failed to create split records"))?;
     }
 
     Ok((payer_record_id, pending_record_ids))
@@ -393,8 +386,9 @@ async fn reserve_idempotency_entry(
 ) -> Result<(), (StatusCode, String)> {
     let conn = app_state.main_db.write().await;
     conn.execute(
-        "INSERT INTO idempotency_keys (key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+        "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         (
+            Uuid::new_v4().to_string(),
             idempotency_key,
             user_id,
             SPLIT_CREATE_ENDPOINT,

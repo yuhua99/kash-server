@@ -42,9 +42,8 @@ async fn json_request(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
@@ -70,7 +69,11 @@ async fn send_friend_request(app: &common::TestApp, cookie: &str, friend_usernam
         json!({ "friend_username": friend_username }),
     )
     .await;
-    assert_eq!(status, StatusCode::CREATED, "send friend request to {friend_username}");
+    assert_eq!(
+        status,
+        StatusCode::CREATED,
+        "send friend request to {friend_username}"
+    );
 }
 
 async fn accept_friend(app: &common::TestApp, cookie: &str, friend_id: &str) {
@@ -85,6 +88,7 @@ async fn accept_friend(app: &common::TestApp, cookie: &str, friend_id: &str) {
     assert_eq!(status, StatusCode::OK, "accept friend");
 }
 
+#[allow(dead_code)]
 async fn create_split(
     app: &common::TestApp,
     alice_cookie: &str,
@@ -131,10 +135,7 @@ async fn count_records_for_user(app: &common::TestApp, user_id: &str) -> i64 {
 async fn record_ids_for_user(app: &common::TestApp, user_id: &str) -> Vec<String> {
     let conn = app.state.main_db.read().await;
     let mut rows = conn
-        .query(
-            "SELECT id FROM records WHERE owner_user_id = ?",
-            [user_id],
-        )
+        .query("SELECT id FROM records WHERE owner_user_id = ?", [user_id])
         .await
         .expect("record ids query");
     let mut ids = Vec::new();
@@ -262,12 +263,23 @@ async fn d16_idempotency_same_key_same_payload_no_duplicate_writes() {
     });
 
     // First request
-    let (s1, b1) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload.clone()).await;
+    let (s1, b1) = json_request(
+        &app,
+        "POST",
+        "/splits/create",
+        &alice_cookie,
+        payload.clone(),
+    )
+    .await;
     assert_eq!(s1, StatusCode::CREATED, "first request");
 
     // Second request — identical key + payload
     let (s2, b2) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload).await;
-    assert_eq!(s2, StatusCode::CREATED, "second request (idempotent replay)");
+    assert_eq!(
+        s2,
+        StatusCode::CREATED,
+        "second request (idempotent replay)"
+    );
     assert_eq!(b1, b2, "idempotent replay must return identical body");
 
     // Only ONE payer record and ONE pending record must exist in the shared DB
@@ -324,7 +336,14 @@ async fn d17_idempotency_same_key_different_payload_conflicts() {
         "category_id": cat,
         "splits": [{ "user_id": bob_id, "amount": 40.0 }]
     });
-    let (s2, _) = json_request(&app, "POST", "/splits/create", &alice_cookie, second_payload).await;
+    let (s2, _) = json_request(
+        &app,
+        "POST",
+        "/splits/create",
+        &alice_cookie,
+        second_payload,
+    )
+    .await;
     assert_eq!(s2, StatusCode::CONFLICT, "different payload must conflict");
 }
 
@@ -366,12 +385,19 @@ async fn d18_create_split_rolls_back_on_failure() {
         }),
     )
     .await;
-    assert_eq!(status, StatusCode::BAD_REQUEST, "non-friend split must fail");
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "non-friend split must fail"
+    );
 
     // Zero records must exist in the shared DB for both users
     let alice_count = count_records_for_user(&app, &alice_id).await;
     let bob_count = count_records_for_user(&app, &bob_id).await;
-    assert_eq!(alice_count, 0, "alice must have no records after failed split");
+    assert_eq!(
+        alice_count, 0,
+        "alice must have no records after failed split"
+    );
     assert_eq!(bob_count, 0, "bob must have no records after failed split");
 }
 
@@ -411,8 +437,22 @@ async fn e19_no_duplicate_payer_record_on_retry() {
     });
 
     // Simulate a client retrying three times with the same key
-    let (s1, b1) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload.clone()).await;
-    let (s2, b2) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload.clone()).await;
+    let (s1, b1) = json_request(
+        &app,
+        "POST",
+        "/splits/create",
+        &alice_cookie,
+        payload.clone(),
+    )
+    .await;
+    let (s2, b2) = json_request(
+        &app,
+        "POST",
+        "/splits/create",
+        &alice_cookie,
+        payload.clone(),
+    )
+    .await;
     let (s3, b3) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload).await;
 
     assert_eq!(s1, StatusCode::CREATED);
@@ -453,7 +493,11 @@ async fn e20_retry_fanout_endpoint_does_not_exist() {
         json!({}),
     )
     .await;
-    assert_eq!(status, StatusCode::NOT_FOUND, "retry-fanout endpoint must not exist");
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "retry-fanout endpoint must not exist"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -527,13 +571,23 @@ async fn e21_stale_null_body_idempotency_key_does_not_replay() {
     let (status, _) = json_request(&app, "POST", "/splits/create", &alice_cookie, payload).await;
 
     // Must NOT 500 with a "replay null body" panic
-    assert_ne!(status, StatusCode::INTERNAL_SERVER_ERROR, "must not crash on stale key");
+    assert_ne!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "must not crash on stale key"
+    );
 
     // Must NOT have created duplicate records either
     let alice_count = count_records_for_user(&app, &alice_id).await;
     let bob_count = count_records_for_user(&app, &bob_id).await;
-    assert!(alice_count <= 1, "alice must have at most 1 record (no duplicates), got {alice_count}");
-    assert!(bob_count <= 1, "bob must have at most 1 record (no duplicates), got {bob_count}");
+    assert!(
+        alice_count <= 1,
+        "alice must have at most 1 record (no duplicates), got {alice_count}"
+    );
+    assert!(
+        bob_count <= 1,
+        "bob must have at most 1 record (no duplicates), got {bob_count}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -755,7 +809,10 @@ async fn f24_concurrent_settle_result_is_consistent() {
     .await;
     assert_eq!(split_status, StatusCode::CREATED);
 
-    let split_id = split_body["split_id"].as_str().expect("split_id").to_string();
+    let split_id = split_body["split_id"]
+        .as_str()
+        .expect("split_id")
+        .to_string();
     let bob_record_id = split_body["pending_record_ids"][0]
         .as_str()
         .expect("pending id")
@@ -789,7 +846,11 @@ async fn f24_concurrent_settle_result_is_consistent() {
 
     // Settle is idempotent — all must succeed with 200
     for s in &statuses {
-        assert_eq!(*s, StatusCode::OK, "settle must be idempotent (all 200), got {s}");
+        assert_eq!(
+            *s,
+            StatusCode::OK,
+            "settle must be idempotent (all 200), got {s}"
+        );
     }
 
     // Record must be settled exactly once in the shared DB

@@ -237,17 +237,11 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     assert_eq!(pending_record_ids.len(), 2);
 
     let bob_pending_record_id = {
-        let bob_db = app
-            .state
-            .db_pool
-            .get_user_db(&bob_id)
-            .await
-            .expect("bob db");
-        let conn = bob_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
-                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ?",
-                [split_id.as_str()],
+                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                (split_id.as_str(), bob_id.as_str()),
             )
             .await
             .expect("query bob split record");
@@ -275,17 +269,11 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     };
 
     let charlie_pending_record_id = {
-        let charlie_db = app
-            .state
-            .db_pool
-            .get_user_db(&charlie_id)
-            .await
-            .expect("charlie db");
-        let conn = charlie_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
-                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ?",
-                [split_id.as_str()],
+                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                (split_id.as_str(), charlie_id.as_str()),
             )
             .await
             .expect("query charlie split record");
@@ -313,13 +301,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     };
 
     {
-        let alice_db = app
-            .state
-            .db_pool
-            .get_user_db(&alice_id)
-            .await
-            .expect("alice db");
-        let conn = alice_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
                 "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
@@ -468,17 +450,11 @@ async fn test_blocked_relation_prevents_split_e2e_lifecycle() {
     assert!(error_message.contains("not an accepted friend"));
 
     {
-        let bob_db = app
-            .state
-            .db_pool
-            .get_user_db(&bob_id)
-            .await
-            .expect("bob db");
-        let conn = bob_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM records WHERE name = ?",
-                ["blocked relation should fail"],
+                "SELECT COUNT(*) FROM records WHERE name = ? AND owner_user_id = ?",
+                ("blocked relation should fail", bob_id.as_str()),
             )
             .await
             .expect("query bob records count");

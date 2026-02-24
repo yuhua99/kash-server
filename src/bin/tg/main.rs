@@ -5,7 +5,6 @@ use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use tokio::sync::RwLock;
 
-use my_budget_server::DbPool;
 use my_budget_server::constants::DEFAULT_DATA_PATH;
 use my_budget_server::database;
 
@@ -38,11 +37,9 @@ async fn main() -> Result<(), BotError> {
     let data_path =
         std::env::var("DATABASE_PATH").unwrap_or_else(|_| DEFAULT_DATA_PATH.to_string());
     let main_db = database::init_main_db(&data_path).await?;
-    let db_pool = DbPool::new(data_path);
 
     let state = BotState {
         main_db,
-        db_pool,
         http: Client::new(),
         openai_api_key,
         openai_model,

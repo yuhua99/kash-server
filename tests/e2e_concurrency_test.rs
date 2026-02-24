@@ -156,17 +156,11 @@ async fn test_concurrent_split_creation_idempotency_e2e_concurrency() {
         .to_string();
 
     {
-        let bob_db = app
-            .state
-            .db_pool
-            .get_user_db(&bob_id)
-            .await
-            .expect("bob db");
-        let conn = bob_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
-                "SELECT COUNT(*), MIN(pending), MAX(pending), MIN(amount), MAX(amount) FROM records WHERE split_id = ?",
-                [split_id.as_str()],
+                "SELECT COUNT(*), MIN(pending), MAX(pending), MIN(amount), MAX(amount) FROM records WHERE split_id = ? AND owner_user_id = ?",
+                (split_id.as_str(), bob_id.as_str()),
             )
             .await
             .expect("query bob pending record count");
@@ -317,13 +311,7 @@ async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
     );
 
     {
-        let bob_db = app
-            .state
-            .db_pool
-            .get_user_db(&bob_id)
-            .await
-            .expect("bob db");
-        let conn = bob_db.read().await;
+        let conn = app.state.main_db.read().await;
         let mut rows = conn
             .query(
                 "SELECT pending, category_id, amount, debtor_user_id, creditor_user_id FROM records WHERE id = ?",

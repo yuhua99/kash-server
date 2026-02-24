@@ -1,31 +1,6 @@
 use axum::http::StatusCode;
-use std::sync::{Arc, OnceLock};
-use tokio::sync::RwLock;
 
 use crate::constants::*;
-use crate::db_pool::DbPool;
-
-static CACHED_DATABASE_PATH: OnceLock<String> = OnceLock::new();
-
-pub fn get_database_path() -> &'static str {
-    CACHED_DATABASE_PATH.get_or_init(|| {
-        std::env::var("DATABASE_PATH").unwrap_or_else(|_| DEFAULT_DATA_PATH.to_string())
-    })
-}
-
-/// Get a user database connection from the pool
-/// This replaces the old implementation that created a new connection each time
-pub async fn get_user_database_from_pool(
-    pool: &DbPool,
-    user_id: &str,
-) -> Result<Arc<RwLock<libsql::Connection>>, (StatusCode, String)> {
-    pool.get_user_db(user_id).await.map_err(|_| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ERR_DATABASE_ACCESS.to_string(),
-        )
-    })
-}
 
 pub fn db_error() -> (StatusCode, String) {
     (
@@ -76,12 +51,16 @@ pub fn validate_date(value: &str) -> Result<(), (StatusCode, String)> {
 }
 
 pub async fn validate_category_exists(
-    user_db: &Arc<RwLock<libsql::Connection>>,
+    db: &crate::Db,
+    user_id: &str,
     category_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = user_db.read().await;
+    let conn = db.read().await;
     let mut rows = conn
-        .query("SELECT id FROM categories WHERE id = ?", [category_id])
+        .query(
+            "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
+            (category_id, user_id),
+        )
         .await
         .map_err(|_| db_error_with_context("failed to check category existence"))?;
 

@@ -83,7 +83,7 @@ async fn create_split_scenario(
         anyhow::anyhow!("Expected split creation response to include pending_record_ids")
     })?;
     let debtor_record_id = pending_record_ids
-        .get(0)
+        .first()
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow::anyhow!("Expected at least one pending_record_ids entry"))?;
 
@@ -126,8 +126,7 @@ async fn test_settle_happy_path_owner() -> anyhow::Result<()> {
     );
 
     // Verify record is settled
-    let user_db = app.state.db_pool.get_user_db(&payer_id).await?;
-    let conn = user_db.read().await;
+    let conn = app.state.main_db.read().await;
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -148,10 +147,11 @@ async fn test_settle_happy_path_debtor() -> anyhow::Result<()> {
     let payer_id = create_test_user(&app.state, "payer", "password").await?;
     let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
 
+    let payer_cookie = login_user(&app.router, "payer", "password").await?;
     let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
 
     let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &debtor_cookie).await?;
+        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
 
     // Debtor settles the record where they are debtor
     let payload = json!({
@@ -173,8 +173,7 @@ async fn test_settle_happy_path_debtor() -> anyhow::Result<()> {
     );
 
     // Verify record is settled
-    let user_db = app.state.db_pool.get_user_db(&debtor_id).await?;
-    let conn = user_db.read().await;
+    let conn = app.state.main_db.read().await;
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -219,8 +218,7 @@ async fn test_settle_happy_path_creditor_sees_debtor_settled() -> anyhow::Result
         "Debtor should be able to settle their own record"
     );
 
-    let user_db = app.state.db_pool.get_user_db(&debtor_id).await?;
-    let conn = user_db.read().await;
+    let conn = app.state.main_db.read().await;
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -350,18 +348,23 @@ async fn test_settle_filters_out_settled_records() -> anyhow::Result<()> {
     let payer_id = create_test_user(&app.state, "payer", "password").await?;
     let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
 
+    let payer_cookie = login_user(&app.router, "payer", "password").await?;
     let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
 
     let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &debtor_cookie).await?;
+        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
 
     let category_id = Uuid::new_v4().to_string();
     {
-        let user_db = app.state.db_pool.get_user_db(&debtor_id).await?;
-        let conn = user_db.write().await;
+        let conn = app.state.main_db.write().await;
         conn.execute(
-            "INSERT INTO categories (id, name, is_income) VALUES (?, ?, ?)",
-            (category_id.as_str(), "Debtor Category", false),
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+            (
+                category_id.as_str(),
+                debtor_id.as_str(),
+                "Debtor Category",
+                false,
+            ),
         )
         .await?;
     }

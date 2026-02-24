@@ -9,8 +9,7 @@ use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::
 
 // Import everything from the library crate (no duplicate module declarations)
 use my_budget_server::{
-    AppState, DbPool, auth, categories, config::Config, constants::*, database, friends, records,
-    splits,
+    AppState, auth, categories, config::Config, constants::*, database, friends, records, splits,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -28,11 +27,8 @@ async fn main() -> Result<()> {
         .await
         .map_err(|e| format!("Failed to initialize main database: {}", e))?;
 
-    // Create database connection pool
-    let db_pool = DbPool::new(config.data_path.clone());
-
     // Create application state
-    let app_state = AppState { main_db, db_pool };
+    let app_state = AppState { main_db };
 
     // Create session store
     let store = MemoryStore::default();

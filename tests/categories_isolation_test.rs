@@ -39,9 +39,8 @@ async fn json_post(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
@@ -68,17 +67,12 @@ async fn json_put(
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read body");
-    let body = serde_json::from_slice(&bytes).unwrap_or_else(|_| {
-        Value::String(String::from_utf8(bytes.to_vec()).expect("utf8"))
-    });
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
     (status, body)
 }
 
-async fn json_delete(
-    app: &common::TestApp,
-    uri: &str,
-    cookie: &str,
-) -> StatusCode {
+async fn json_delete(app: &common::TestApp, uri: &str, cookie: &str) -> StatusCode {
     let request = Request::builder()
         .method("DELETE")
         .uri(uri)
@@ -94,11 +88,7 @@ async fn json_delete(
 }
 
 /// Create a category via API; return (id, status).
-async fn create_category(
-    app: &common::TestApp,
-    cookie: &str,
-    name: &str,
-) -> (StatusCode, String) {
+async fn create_category(app: &common::TestApp, cookie: &str, name: &str) -> (StatusCode, String) {
     let (status, body) = json_post(
         app,
         "/categories",
@@ -106,10 +96,7 @@ async fn create_category(
         json!({ "name": name, "is_income": false }),
     )
     .await;
-    let id = body["id"]
-        .as_str()
-        .unwrap_or("")
-        .to_string();
+    let id = body["id"].as_str().unwrap_or("").to_string();
     (status, id)
 }
 
@@ -139,8 +126,16 @@ async fn c11_same_category_name_allowed_for_different_users() {
     let (alice_status, alice_id) = create_category(&app, &alice_cookie, "Groceries").await;
     let (bob_status, bob_id) = create_category(&app, &bob_cookie, "Groceries").await;
 
-    assert_eq!(alice_status, StatusCode::CREATED, "alice should create Groceries");
-    assert_eq!(bob_status, StatusCode::CREATED, "bob should create Groceries (different owner)");
+    assert_eq!(
+        alice_status,
+        StatusCode::CREATED,
+        "alice should create Groceries"
+    );
+    assert_eq!(
+        bob_status,
+        StatusCode::CREATED,
+        "bob should create Groceries (different owner)"
+    );
     assert!(!alice_id.is_empty(), "alice category must have an id");
     assert!(!bob_id.is_empty(), "bob category must have an id");
     assert_ne!(alice_id, bob_id, "each user gets a distinct category id");
@@ -260,12 +255,8 @@ async fn c14_category_in_use_check_scoped_to_owner() {
     assert_eq!(rec_status, StatusCode::CREATED, "bob creates record");
 
     // Alice's category has no records — she should be able to delete it
-    let delete_status = json_delete(
-        &app,
-        &format!("/categories/{alice_cat_id}"),
-        &alice_cookie,
-    )
-    .await;
+    let delete_status =
+        json_delete(&app, &format!("/categories/{alice_cat_id}"), &alice_cookie).await;
     assert_eq!(
         delete_status,
         StatusCode::NO_CONTENT,

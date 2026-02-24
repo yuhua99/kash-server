@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS telegram_users (
 const CREATE_RECORDS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS records (
     id               TEXT    PRIMARY KEY,
+    owner_user_id    TEXT    NOT NULL,
     name             TEXT    NOT NULL,
     amount           REAL    NOT NULL,
     category_id      TEXT,
@@ -38,18 +39,24 @@ CREATE TABLE IF NOT EXISTS records (
 
 const CREATE_CATEGORIES_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS categories (
-    id        TEXT    PRIMARY KEY,
-    name      TEXT    UNIQUE NOT NULL,
-    is_income BOOLEAN NOT NULL DEFAULT FALSE
+    id            TEXT    PRIMARY KEY,
+    owner_user_id TEXT    NOT NULL,
+    name          TEXT    NOT NULL,
+    is_income     BOOLEAN NOT NULL DEFAULT FALSE,
+    UNIQUE(owner_user_id, name)
 );
 "#;
 
-const CREATE_RECORDS_INDEX: &str = r#"
+const CREATE_RECORDS_DATE_INDEX: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_records_date ON records(date);
 "#;
 
-const CREATE_CATEGORIES_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
+const CREATE_RECORDS_OWNER_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_records_owner ON records(owner_user_id);
+"#;
+
+const CREATE_CATEGORIES_OWNER_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_categories_owner ON categories(owner_user_id);
 "#;
 
 const CREATE_FRIENDSHIP_RELATIONS_TABLE: &str = r#"
@@ -76,14 +83,16 @@ CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship_relations(to_user_id)
 
 const CREATE_IDEMPOTENCY_KEYS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS idempotency_keys (
-    key             TEXT    PRIMARY KEY,
+    id              TEXT    PRIMARY KEY,
+    key             TEXT    NOT NULL,
     user_id         TEXT    NOT NULL,
     endpoint        TEXT    NOT NULL,
     payload_hash    TEXT    NOT NULL,
     response_status INTEGER NOT NULL,
     response_body   TEXT,
     created_at      TEXT    NOT NULL,
-    expires_at      TEXT    NOT NULL
+    expires_at      TEXT    NOT NULL,
+    UNIQUE(user_id, endpoint, key)
 );
 "#;
 
@@ -93,7 +102,7 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_user ON idempotency_keys(user_id);
 
 pub type Db = Arc<RwLock<Connection>>;
 
-/// Main users registry DB (users.db)
+/// Single shared DB — contains all tables (users, records, categories, friends, etc.)
 pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     tokio::fs::create_dir_all(data_dir).await?;
     let path = Path::new(data_dir).join("users.db");
@@ -102,25 +111,17 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
 
     conn.execute(CREATE_USERS_TABLE, ()).await?;
     conn.execute(CREATE_TELEGRAM_USERS_TABLE, ()).await?;
+    conn.execute(CREATE_RECORDS_TABLE, ()).await?;
+    conn.execute(CREATE_CATEGORIES_TABLE, ()).await?;
+    conn.execute(CREATE_RECORDS_DATE_INDEX, ()).await?;
+    conn.execute(CREATE_RECORDS_OWNER_INDEX, ()).await?;
+    conn.execute(CREATE_CATEGORIES_OWNER_INDEX, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_RELATIONS_TABLE, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_FROM_INDEX, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_TO_INDEX, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
-    Ok(Arc::new(RwLock::new(conn)))
-}
-
-/// Per-user isolated DB (user_{id}.db)
-pub async fn get_user_db(data_dir: &str, user_id: &str) -> Result<Db> {
-    let path = Path::new(data_dir).join(format!("user_{}.db", user_id));
-    let db = Builder::new_local(path).build().await?;
-    let conn = db.connect()?;
-
-    // Create tables for user's expense data
-    conn.execute(CREATE_RECORDS_TABLE, ()).await?;
-    conn.execute(CREATE_CATEGORIES_TABLE, ()).await?;
-    conn.execute(CREATE_RECORDS_INDEX, ()).await?;
-    conn.execute(CREATE_CATEGORIES_INDEX, ()).await?;
 
     Ok(Arc::new(RwLock::new(conn)))
 }
+

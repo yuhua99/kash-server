@@ -4,8 +4,6 @@
 /// They are expected to FAIL (red) until the migration is implemented.
 mod common;
 
-use my_budget_server::database;
-
 // ---------------------------------------------------------------------------
 // A1: Single DB init creates all required tables
 // ---------------------------------------------------------------------------
@@ -156,10 +154,7 @@ async fn a4_idempotency_keys_uniqueness_is_per_user_and_endpoint() {
         let idx_name: String = row.get(0).expect("index name");
         // Check the columns in this index
         let mut col_rows = conn
-            .query(
-                "SELECT name FROM pragma_index_info(?)",
-                [idx_name.as_str()],
-            )
+            .query("SELECT name FROM pragma_index_info(?)", [idx_name.as_str()])
             .await
             .expect("pragma index_info");
         let mut cols = Vec::new();
@@ -190,11 +185,7 @@ use axum::{
 };
 use tower::util::ServiceExt;
 
-async fn create_category_status(
-    app: &common::TestApp,
-    cookie: &str,
-    name: &str,
-) -> StatusCode {
+async fn create_category_status(app: &common::TestApp, cookie: &str, name: &str) -> StatusCode {
     let payload = serde_json::json!({ "name": name, "is_income": false });
     let request = Request::builder()
         .uri("/categories")
