@@ -47,7 +47,10 @@ async fn test_send_friend_request_happy_path() {
     // Verify response structure
     assert_eq!(relation.user_id, user_b_id);
     assert!(relation.pending);
-    assert!(relation.nickname.is_none());
+    assert_eq!(
+        relation.nickname, "bob",
+        "default nickname should be the friend's username"
+    );
 
     // Verify both directed rows exist in database
     let conn = app.state.main_db.read().await;
@@ -356,11 +359,7 @@ async fn test_nickname_isolation_happy_path() {
     }
 
     let relation: FriendshipRelation = serde_json::from_slice(&body).unwrap();
-    assert_eq!(
-        relation.nickname,
-        Some("Gym buddy".to_string()),
-        "Alice should see nickname"
-    );
+    assert_eq!(relation.nickname, "Gym buddy", "Alice should see nickname");
 
     let request = Request::builder()
         .uri("/friends/list?pending=false")
@@ -400,7 +399,10 @@ async fn test_nickname_isolation_happy_path() {
         .as_array()
         .expect("friends should be array");
     assert_eq!(friends.len(), 1);
-    assert!(friends[0]["nickname"].is_null(), "Bob should not see nickname");
+    assert_eq!(
+        friends[0]["nickname"], "alice",
+        "Bob should see Alice's username as default nickname"
+    );
 }
 
 #[tokio::test]
@@ -461,58 +463,60 @@ async fn test_list_friends_with_status_filter() {
     let user_b_id = common::create_test_user(&app.state, "bob", "password123")
         .await
         .expect("create bob failed");
-    let user_c_id = common::create_test_user(&app.state, "charlie", "password123")
+    let _user_c_id = common::create_test_user(&app.state, "charlie", "password123")
         .await
         .expect("create charlie failed");
 
     let cookie_a = common::login_user(&app.router, "alice", "password123")
         .await
         .expect("alice login failed");
-
-    let payload_b = json!({"friend_username": "bob"});
-    let request = Request::builder()
-        .uri("/friends/request")
-        .method("POST")
-        .header("cookie", cookie_a.clone())
-        .header("content-type", "application/json")
-        .body(Body::from(payload_b.to_string()))
-        .unwrap();
-    let _ = app.router.clone().oneshot(request).await.unwrap();
-
-    let payload_c = json!({"friend_username": "charlie"});
-    let request = Request::builder()
-        .uri("/friends/request")
-        .method("POST")
-        .header("cookie", cookie_a.clone())
-        .header("content-type", "application/json")
-        .body(Body::from(payload_c.to_string()))
-        .unwrap();
-    let _ = app.router.clone().oneshot(request).await.unwrap();
-
     let cookie_b = common::login_user(&app.router, "bob", "password123")
         .await
         .expect("bob login failed");
-    let accept_payload = json!({"friend_id": user_a_id});
+    let cookie_c = common::login_user(&app.router, "charlie", "password123")
+        .await
+        .expect("charlie login failed");
+
+    // Alice sends request to Bob
+    let request = Request::builder()
+        .uri("/friends/request")
+        .method("POST")
+        .header("cookie", cookie_a.clone())
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"friend_username": "bob"}).to_string()))
+        .unwrap();
+    let _ = app.router.clone().oneshot(request).await.unwrap();
+
+    // Charlie sends request to Alice
+    let request = Request::builder()
+        .uri("/friends/request")
+        .method("POST")
+        .header("cookie", cookie_c.clone())
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"friend_username": "alice"}).to_string()))
+        .unwrap();
+    let _ = app.router.clone().oneshot(request).await.unwrap();
+
+    // Bob accepts Alice's request
     let accept_request = Request::builder()
         .uri("/friends/accept")
         .method("POST")
-        .header("cookie", cookie_b)
+        .header("cookie", cookie_b.clone())
         .header("content-type", "application/json")
-        .body(Body::from(accept_payload.to_string()))
+        .body(Body::from(json!({"friend_id": user_a_id}).to_string()))
         .unwrap();
     let accept_response = app.router.clone().oneshot(accept_request).await.unwrap();
     assert_eq!(accept_response.status(), StatusCode::OK);
 
+    // Alice: pending=false (default) → 1 accepted friend (Bob)
     let request = Request::builder()
         .uri("/friends/list?pending=false")
         .method("GET")
         .header("cookie", cookie_a.clone())
         .body(Body::empty())
         .unwrap();
-
     let response = app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
@@ -520,20 +524,18 @@ async fn test_list_friends_with_status_filter() {
     let friends = list_response["friends"]
         .as_array()
         .expect("friends should be array");
-
-    assert_eq!(friends.len(), 1, "Should have 1 accepted friend");
+    assert_eq!(friends.len(), 1, "Alice should have 1 accepted friend");
     assert_eq!(friends[0]["user_id"], user_b_id);
 
+    // Alice: pending=true → only incoming requests (Charlie sent to Alice) → 1
     let request = Request::builder()
         .uri("/friends/list?pending=true")
         .method("GET")
-        .header("cookie", cookie_a)
+        .header("cookie", cookie_a.clone())
         .body(Body::empty())
         .unwrap();
-
     let response = app.router.clone().oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-
     let body = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .unwrap();
@@ -541,16 +543,37 @@ async fn test_list_friends_with_status_filter() {
     let friends = list_response["friends"]
         .as_array()
         .expect("friends should be array");
+    assert_eq!(
+        friends.len(),
+        1,
+        "Alice should see 1 incoming request (from Charlie)"
+    );
+    assert_eq!(friends[0]["user_id"], _user_c_id);
 
-    assert_eq!(friends.len(), 1, "Should have 1 pending friend");
-    assert_eq!(friends[0]["user_id"], user_c_id);
+    // Bob: pending=true → Bob sent no requests, and Alice's request to Bob is accepted, so 0 incoming
+    let request = Request::builder()
+        .uri("/friends/list?pending=true")
+        .method("GET")
+        .header("cookie", cookie_b)
+        .body(Body::empty())
+        .unwrap();
+    let response = app.router.clone().oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let list_response: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let friends = list_response["friends"]
+        .as_array()
+        .expect("friends should be array");
+    assert_eq!(friends.len(), 0, "Bob should see 0 incoming requests");
 }
 
 #[tokio::test]
 async fn test_list_friends_pagination() {
     let app = common::setup_test_app().await.expect("setup failed");
 
-    let _user_a_id = common::create_test_user(&app.state, "alice", "password123")
+    let user_a_id = common::create_test_user(&app.state, "alice", "password123")
         .await
         .expect("create alice failed");
 
@@ -565,6 +588,7 @@ async fn test_list_friends_pagination() {
         .await
         .expect("alice login failed");
 
+    // Alice sends requests to all 10 friends
     for i in 0..10 {
         let username = format!("friend{}", i);
         let payload = json!({"friend_username": username});
@@ -578,6 +602,25 @@ async fn test_list_friends_pagination() {
         let _ = app.router.clone().oneshot(request).await.unwrap();
     }
 
+    // All 10 friends accept Alice's request
+    for i in 0..10 {
+        let username = format!("friend{}", i);
+        let cookie = common::login_user(&app.router, &username, "password123")
+            .await
+            .expect("friend login failed");
+        let accept_payload = json!({"friend_id": user_a_id});
+        let request = Request::builder()
+            .uri("/friends/accept")
+            .method("POST")
+            .header("cookie", cookie)
+            .header("content-type", "application/json")
+            .body(Body::from(accept_payload.to_string()))
+            .unwrap();
+        let response = app.router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    // Page 1: 5 of 10 accepted friends
     let request = Request::builder()
         .uri("/friends/list?limit=5&offset=0")
         .method("GET")
@@ -602,6 +645,7 @@ async fn test_list_friends_pagination() {
     assert_eq!(friends.len(), 5, "Should return exactly 5 friends");
     assert_eq!(total_count, 10, "Total count should be 10");
 
+    // Page 2: next 5
     let request = Request::builder()
         .uri("/friends/list?limit=5&offset=5")
         .method("GET")
