@@ -57,8 +57,6 @@ fn serde_friendship_relation_roundtrip() {
         user_id: "user-123".to_string(),
         status: FRIEND_STATUS_ACCEPTED.to_string(),
         nickname: Some("Best Friend".to_string()),
-        requested_at: "2025-02-16".to_string(),
-        updated_at: "2025-02-16".to_string(),
     };
     let json = serde_json::to_string(&relation).unwrap();
     let deserialized: FriendshipRelation = serde_json::from_str(&json).unwrap();
@@ -70,7 +68,7 @@ fn serde_friendship_relation_roundtrip() {
 
 #[test]
 fn serde_friendship_relation_no_nickname() {
-    let json = r#"{"id":"rel-002","user_id":"user-456","status":"pending","nickname":null,"requested_at":"2025-02-15","updated_at":"2025-02-15"}"#;
+    let json = r#"{"id":"rel-002","user_id":"user-456","status":"pending","nickname":null}"#;
     let relation: FriendshipRelation = serde_json::from_str(json).unwrap();
     assert_eq!(relation.id, "rel-002");
     assert_eq!(relation.status, FRIEND_STATUS_PENDING);

@@ -47,10 +47,6 @@ pub async fn send_friend_request(
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found".to_string()))?;
 
-    let now = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     let a_to_b_id = Uuid::new_v4().to_string();
     let b_to_a_id = Uuid::new_v4().to_string();
 
@@ -81,30 +77,26 @@ pub async fn send_friend_request(
 
         // Insert both relations
         conn.execute(
-            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id, requested_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
             (
                 a_to_b_id.as_str(),
                 current_user.id.as_str(),
                 friend_user.id.as_str(),
                 FRIEND_STATUS_PENDING,
                 current_user.id.as_str(),
-                now.as_str(),
-                now.as_str(),
             ),
         )
         .await
         .map_err(|e| e.to_string())?;
 
         conn.execute(
-            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id, requested_at, updated_at) VALUES (?, ?, ?, ?, NULL, ?, ?, ?)",
+            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
             (
                 b_to_a_id.as_str(),
                 friend_user.id.as_str(),
                 current_user.id.as_str(),
                 FRIEND_STATUS_PENDING,
                 current_user.id.as_str(),
-                now.as_str(),
-                now.as_str(),
             ),
         )
         .await
@@ -139,8 +131,6 @@ pub async fn send_friend_request(
         user_id: friend_user.id,
         status: FRIEND_STATUS_PENDING.to_string(),
         nickname: None,
-        requested_at: now.clone(),
-        updated_at: now,
     };
 
     Ok((StatusCode::CREATED, Json(relation)))
@@ -244,7 +234,7 @@ pub async fn update_nickname(
     let conn = app_state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, to_user_id as user_id, status, nickname, requested_at, updated_at FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
             (user_id.as_str(), payload.friend_id.as_str()),
         )
         .await
@@ -265,17 +255,12 @@ pub async fn update_nickname(
     drop(rows);
     drop(conn);
 
-    let now = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     let conn = app_state.main_db.write().await;
 
     conn.execute(
-        "UPDATE friendship_relations SET nickname = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
+        "UPDATE friendship_relations SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",
         (
             payload.nickname.as_deref(),
-            now.as_str(),
             user_id.as_str(),
             payload.friend_id.as_str(),
         ),
@@ -285,7 +270,7 @@ pub async fn update_nickname(
 
     let mut rows = conn
         .query(
-            "SELECT id, to_user_id as user_id, status, nickname, requested_at, updated_at FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
             (user_id.as_str(), payload.friend_id.as_str()),
         )
         .await
@@ -308,20 +293,12 @@ pub async fn update_nickname(
         let nickname: Option<String> = row
             .get(3)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let requested_at: String = row
-            .get(4)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let updated_at: String = row
-            .get(5)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         let relation = FriendshipRelation {
             id,
             user_id: user_id_field,
             status,
             nickname,
-            requested_at,
-            updated_at,
         };
 
         Ok((StatusCode::OK, Json(relation)))
@@ -410,13 +387,13 @@ pub async fn list_friends(
 
     let mut rows = if let Some(ref status) = query.status {
         conn.query(
-            "SELECT id, to_user_id as user_id, status, nickname, requested_at, updated_at FROM friendship_relations WHERE from_user_id = ? AND status = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND status = ? ORDER BY nickname LIMIT ? OFFSET ?",
             (user_id.as_str(), status.as_str(), limit, offset),
         )
         .await
     } else {
         conn.query(
-            "SELECT id, to_user_id as user_id, status, nickname, requested_at, updated_at FROM friendship_relations WHERE from_user_id = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? ORDER BY nickname LIMIT ? OFFSET ?",
             (user_id.as_str(), limit, offset),
         )
         .await
@@ -441,20 +418,12 @@ pub async fn list_friends(
         let nickname: Option<String> = row
             .get(3)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let requested_at: String = row
-            .get(4)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let updated_at: String = row
-            .get(5)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         friends.push(FriendshipRelation {
             id,
             user_id: user_id_field,
             status,
             nickname,
-            requested_at,
-            updated_at,
         });
     }
 
@@ -481,7 +450,7 @@ pub async fn accept_friend(
 
     let mut rows = conn
         .query(
-            "SELECT id, from_user_id, to_user_id, status, nickname, requester_user_id, requested_at, updated_at FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, from_user_id, to_user_id, status, nickname, requester_user_id FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
             (payload.friend_id.as_str(), user_id.as_str()),
         )
         .await
@@ -516,9 +485,6 @@ pub async fn accept_friend(
     let requester_user_id: String = row
         .get(5)
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let requested_at: String = row
-        .get(6)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     drop(rows);
     drop(conn);
@@ -534,32 +500,29 @@ pub async fn accept_friend(
         ));
     }
 
-    let now = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     let conn = app_state.main_db.write().await;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let tx_result: Result<(), libsql::Error> = async {
-        conn.execute(
-            "UPDATE friendship_relations SET status = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_ACCEPTED, now.as_str(), from_user_id.as_str(), to_user_id.as_str()),
+    let tx_result: Result<(), libsql::Error> =
+        async {
+            conn.execute(
+            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
+            (FRIEND_STATUS_ACCEPTED, from_user_id.as_str(), to_user_id.as_str()),
         )
         .await?;
 
-        conn.execute(
-            "UPDATE friendship_relations SET status = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_ACCEPTED, now.as_str(), to_user_id.as_str(), from_user_id.as_str()),
+            conn.execute(
+            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
+            (FRIEND_STATUS_ACCEPTED, to_user_id.as_str(), from_user_id.as_str()),
         )
         .await?;
 
-        Ok(())
-    }
-    .await;
+            Ok(())
+        }
+        .await;
 
     match tx_result {
         Ok(_) => {
@@ -579,8 +542,6 @@ pub async fn accept_friend(
         user_id: from_user_id,
         status: FRIEND_STATUS_ACCEPTED.to_string(),
         nickname,
-        requested_at,
-        updated_at: now,
     };
 
     Ok((StatusCode::OK, Json(relation)))
@@ -597,7 +558,7 @@ pub async fn block_friend(
     let conn = app_state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, status, nickname, requested_at FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
             (user_id.as_str(), payload.friend_id.as_str()),
         )
         .await
@@ -623,9 +584,6 @@ pub async fn block_friend(
     let nickname: Option<String> = row
         .get(2)
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let requested_at: String = row
-        .get(3)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     drop(rows);
     drop(conn);
@@ -633,15 +591,15 @@ pub async fn block_friend(
     validate_friendship_transition(&current_status, FRIEND_STATUS_BLOCKED)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
-    let now = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     let conn = app_state.main_db.write().await;
 
     conn.execute(
-        "UPDATE friendship_relations SET status = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-        (FRIEND_STATUS_BLOCKED, now.as_str(), user_id.as_str(), payload.friend_id.as_str()),
+        "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
+        (
+            FRIEND_STATUS_BLOCKED,
+            user_id.as_str(),
+            payload.friend_id.as_str(),
+        ),
     )
     .await
     .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -651,8 +609,6 @@ pub async fn block_friend(
         user_id: payload.friend_id,
         status: FRIEND_STATUS_BLOCKED.to_string(),
         nickname,
-        requested_at,
-        updated_at: now,
     };
 
     Ok((StatusCode::OK, Json(relation)))
@@ -669,7 +625,7 @@ pub async fn unfriend(
     let conn = app_state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, from_user_id, to_user_id, status, nickname, requested_at FROM friendship_relations WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
+            "SELECT id, from_user_id, to_user_id, status, nickname FROM friendship_relations WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
             (user_id.as_str(), payload.friend_id.as_str(), payload.friend_id.as_str(), user_id.as_str()),
         )
         .await
@@ -701,9 +657,6 @@ pub async fn unfriend(
     let nickname: Option<String> = row
         .get(4)
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let requested_at: String = row
-        .get(5)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     drop(rows);
     drop(conn);
@@ -711,32 +664,29 @@ pub async fn unfriend(
     validate_friendship_transition(&current_status, FRIEND_STATUS_UNFRIENDED)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
 
-    let now = time::OffsetDateTime::now_utc()
-        .format(&time::format_description::well_known::Rfc3339)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
     let conn = app_state.main_db.write().await;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let tx_result: Result<(), libsql::Error> = async {
-        conn.execute(
-            "UPDATE friendship_relations SET status = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_UNFRIENDED, now.as_str(), from_user_id.as_str(), to_user_id.as_str()),
+    let tx_result: Result<(), libsql::Error> =
+        async {
+            conn.execute(
+            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
+            (FRIEND_STATUS_UNFRIENDED, from_user_id.as_str(), to_user_id.as_str()),
         )
         .await?;
 
-        conn.execute(
-            "UPDATE friendship_relations SET status = ?, updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_UNFRIENDED, now.as_str(), to_user_id.as_str(), from_user_id.as_str()),
+            conn.execute(
+            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
+            (FRIEND_STATUS_UNFRIENDED, to_user_id.as_str(), from_user_id.as_str()),
         )
         .await?;
 
-        Ok(())
-    }
-    .await;
+            Ok(())
+        }
+        .await;
 
     match tx_result {
         Ok(_) => {
@@ -755,8 +705,6 @@ pub async fn unfriend(
         user_id: payload.friend_id,
         status: FRIEND_STATUS_UNFRIENDED.to_string(),
         nickname,
-        requested_at,
-        updated_at: now,
     };
 
     Ok((StatusCode::OK, Json(relation)))

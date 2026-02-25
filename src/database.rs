@@ -67,8 +67,6 @@ CREATE TABLE IF NOT EXISTS friendship_relations (
     status            TEXT    NOT NULL,
     nickname          TEXT,
     requester_user_id TEXT    NOT NULL,
-    requested_at      TEXT    NOT NULL,
-    updated_at        TEXT    NOT NULL,
     UNIQUE(from_user_id, to_user_id)
 );
 "#;

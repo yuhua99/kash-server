@@ -132,8 +132,6 @@ pub struct FriendshipRelation {
     pub user_id: String,
     pub status: String,
     pub nickname: Option<String>,
-    pub requested_at: String,
-    pub updated_at: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

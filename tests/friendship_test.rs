@@ -327,20 +327,17 @@ async fn test_nickname_isolation_happy_path() {
     // For now, manually update database to accepted status
     {
         let conn = app.state.main_db.write().await;
-        let now = time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap();
 
         conn.execute(
-            "UPDATE friendship_relations SET status = 'accepted', updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (now.as_str(), user_a_id.as_str(), user_b_id.as_str()),
+            "UPDATE friendship_relations SET status = 'accepted' WHERE from_user_id = ? AND to_user_id = ?",
+            (user_a_id.as_str(), user_b_id.as_str()),
         )
         .await
         .unwrap();
 
         conn.execute(
-            "UPDATE friendship_relations SET status = 'accepted', updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (now.as_str(), user_b_id.as_str(), user_a_id.as_str()),
+            "UPDATE friendship_relations SET status = 'accepted' WHERE from_user_id = ? AND to_user_id = ?",
+            (user_b_id.as_str(), user_a_id.as_str()),
         )
         .await
         .unwrap();
@@ -517,13 +514,10 @@ async fn test_list_friends_with_status_filter() {
     // Accept only Bob's request
     {
         let conn = app.state.main_db.write().await;
-        let now = time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap();
 
         conn.execute(
-            "UPDATE friendship_relations SET status = 'accepted', updated_at = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (now.as_str(), user_a_id.as_str(), user_b_id.as_str()),
+            "UPDATE friendship_relations SET status = 'accepted' WHERE from_user_id = ? AND to_user_id = ?",
+            (user_a_id.as_str(), user_b_id.as_str()),
         )
         .await
         .unwrap();
