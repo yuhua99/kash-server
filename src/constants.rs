@@ -23,12 +23,6 @@ pub const MIN_USERNAME_LENGTH: usize = 4;
 pub const MIN_PASSWORD_LENGTH: usize = 6;
 pub const MAX_NICKNAME_LENGTH: usize = 100;
 
-// Friendship Status FSM
-pub const FRIEND_STATUS_PENDING: &str = "pending";
-pub const FRIEND_STATUS_ACCEPTED: &str = "accepted";
-pub const FRIEND_STATUS_BLOCKED: &str = "blocked";
-pub const FRIEND_STATUS_UNFRIENDED: &str = "unfriended";
-
 // Split Status
 pub const SPLIT_STATUS_INITIATED: &str = "initiated";
 pub const SPLIT_STATUS_COMPLETED: &str = "completed";

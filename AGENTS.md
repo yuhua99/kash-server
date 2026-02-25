@@ -149,7 +149,6 @@ DATABASE_PATH=data           # shares the same DB as the HTTP server
 
 ### Constants
 - All magic strings and numeric limits go in `src/constants.rs` or `src/bin/tg/constants.rs`.
-- Status strings like `"pending"`, `"accepted"` must use the `FRIEND_STATUS_*` constants, not inline literals.
 
 ---
 

@@ -9,10 +9,9 @@ use crate::AppState;
 use crate::auth::{get_current_user, get_user_by_username_public};
 use crate::constants::*;
 use crate::models::{
-    AcceptFriendPayload, BlockFriendPayload, FriendshipRelation, PublicUser,
-    SendFriendRequestPayload, UnfriendPayload, UpdateNicknamePayload,
+    AcceptFriendPayload, FriendshipRelation, PublicUser, RemoveFriendPayload,
+    SendFriendRequestPayload, UpdateNicknamePayload,
 };
-use crate::utils::validate_friendship_transition;
 
 pub async fn send_friend_request(
     State(app_state): State<AppState>,
@@ -56,12 +55,10 @@ pub async fn send_friend_request(
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Inner result to signal friendship exists vs other DB errors
     let tx_result: Result<(), String> = async {
-        // Check for existing friendship inside transaction
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
                 (current_user.id.as_str(), friend_user.id.as_str()),
             )
             .await
@@ -70,19 +67,17 @@ pub async fn send_friend_request(
         if let Some(row) = rows.next().await.map_err(|e| e.to_string())? {
             let count: i64 = row.get(0).map_err(|e| e.to_string())?;
             if count > 0 {
-                // Friendship already exists, return special signal
                 return Err("FRIENDSHIP_EXISTS".to_string());
             }
         }
 
-        // Insert both relations
         conn.execute(
-            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
+            "INSERT INTO friendship (id, from_user_id, to_user_id, pending, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
             (
                 a_to_b_id.as_str(),
                 current_user.id.as_str(),
                 friend_user.id.as_str(),
-                FRIEND_STATUS_PENDING,
+                1i64,
                 current_user.id.as_str(),
             ),
         )
@@ -90,12 +85,12 @@ pub async fn send_friend_request(
         .map_err(|e| e.to_string())?;
 
         conn.execute(
-            "INSERT INTO friendship_relations (id, from_user_id, to_user_id, status, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
+            "INSERT INTO friendship (id, from_user_id, to_user_id, pending, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
             (
                 b_to_a_id.as_str(),
                 friend_user.id.as_str(),
                 current_user.id.as_str(),
-                FRIEND_STATUS_PENDING,
+                1i64,
                 current_user.id.as_str(),
             ),
         )
@@ -115,7 +110,6 @@ pub async fn send_friend_request(
         Err(e) => {
             let _ = conn.execute("ROLLBACK", ()).await;
             drop(conn);
-            // Check if this was our "friendship exists" signal or a real DB error
             if e == "FRIENDSHIP_EXISTS" {
                 return Err((
                     StatusCode::CONFLICT,
@@ -129,7 +123,7 @@ pub async fn send_friend_request(
     let relation = FriendshipRelation {
         id: a_to_b_id,
         user_id: friend_user.id,
-        status: FRIEND_STATUS_PENDING.to_string(),
+        pending: true,
         nickname: None,
     };
 
@@ -234,7 +228,7 @@ pub async fn update_nickname(
     let conn = app_state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
             (user_id.as_str(), payload.friend_id.as_str()),
         )
         .await
@@ -258,7 +252,7 @@ pub async fn update_nickname(
     let conn = app_state.main_db.write().await;
 
     conn.execute(
-        "UPDATE friendship_relations SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",
+        "UPDATE friendship SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",
         (
             payload.nickname.as_deref(),
             user_id.as_str(),
@@ -270,7 +264,7 @@ pub async fn update_nickname(
 
     let mut rows = conn
         .query(
-            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
             (user_id.as_str(), payload.friend_id.as_str()),
         )
         .await
@@ -287,7 +281,7 @@ pub async fn update_nickname(
         let user_id_field: String = row
             .get(1)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let status: String = row
+        let pending_val: i64 = row
             .get(2)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         let nickname: Option<String> = row
@@ -297,22 +291,22 @@ pub async fn update_nickname(
         let relation = FriendshipRelation {
             id,
             user_id: user_id_field,
-            status,
+            pending: pending_val != 0,
             nickname,
         };
 
-        Ok((StatusCode::OK, Json(relation)))
-    } else {
-        Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Failed to retrieve updated relation".to_string(),
-        ))
+        return Ok((StatusCode::OK, Json(relation)));
     }
+
+    Err((
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "Failed to retrieve updated relation".to_string(),
+    ))
 }
 
 #[derive(Deserialize)]
 pub struct ListFriendsQuery {
-    pub status: Option<String>,
+    pub pending: Option<bool>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
@@ -325,36 +319,23 @@ pub async fn list_friends(
     let current_user = get_current_user(&session).await?;
     let user_id = &current_user.id;
 
-    if let Some(ref status) = query.status {
-        match status.as_str() {
-            FRIEND_STATUS_PENDING
-            | FRIEND_STATUS_ACCEPTED
-            | FRIEND_STATUS_BLOCKED
-            | FRIEND_STATUS_UNFRIENDED => {}
-            _ => {
-                return Err((
-                    StatusCode::BAD_REQUEST,
-                    format!("Invalid status: {}", status),
-                ));
-            }
-        }
-    }
-
     let limit = query.limit.unwrap_or(20).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0).min(MAX_OFFSET);
 
     let conn = app_state.main_db.read().await;
 
-    let total_count: i64 = if let Some(ref status) = query.status {
-        let mut count_rows = conn
+    let pending_filter = query.pending.map(|value| if value { 1i64 } else { 0i64 });
+
+    let total_count: i64 = if let Some(pending_value) = pending_filter {
+        let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship_relations WHERE from_user_id = ? AND status = ?",
-                (user_id.as_str(), status.as_str()),
+                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND pending = ?",
+                (user_id.as_str(), pending_value),
             )
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        if let Some(row) = count_rows
+        if let Some(row) = rows
             .next()
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -365,15 +346,15 @@ pub async fn list_friends(
             0
         }
     } else {
-        let mut count_rows = conn
+        let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship_relations WHERE from_user_id = ?",
+                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ?",
                 [user_id.as_str()],
             )
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-        if let Some(row) = count_rows
+        if let Some(row) = rows
             .next()
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -385,15 +366,15 @@ pub async fn list_friends(
         }
     };
 
-    let mut rows = if let Some(ref status) = query.status {
+    let mut rows = if let Some(pending_value) = pending_filter {
         conn.query(
-            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND status = ? ORDER BY nickname LIMIT ? OFFSET ?",
-            (user_id.as_str(), status.as_str(), limit, offset),
+            "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND pending = ? ORDER BY nickname LIMIT ? OFFSET ?",
+            (user_id.as_str(), pending_value, limit, offset),
         )
         .await
     } else {
         conn.query(
-            "SELECT id, to_user_id as user_id, status, nickname FROM friendship_relations WHERE from_user_id = ? ORDER BY nickname LIMIT ? OFFSET ?",
+            "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? ORDER BY nickname LIMIT ? OFFSET ?",
             (user_id.as_str(), limit, offset),
         )
         .await
@@ -412,7 +393,7 @@ pub async fn list_friends(
         let user_id_field: String = row
             .get(1)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let status: String = row
+        let pending_val: i64 = row
             .get(2)
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         let nickname: Option<String> = row
@@ -422,7 +403,7 @@ pub async fn list_friends(
         friends.push(FriendshipRelation {
             id,
             user_id: user_id_field,
-            status,
+            pending: pending_val != 0,
             nickname,
         });
     }
@@ -450,7 +431,7 @@ pub async fn accept_friend(
 
     let mut rows = conn
         .query(
-            "SELECT id, from_user_id, to_user_id, status, nickname, requester_user_id FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT id, from_user_id, to_user_id, pending, nickname, requester_user_id FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
             (payload.friend_id.as_str(), user_id.as_str()),
         )
         .await
@@ -476,7 +457,7 @@ pub async fn accept_friend(
     let to_user_id: String = row
         .get(2)
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let current_status: String = row
+    let pending_val: i64 = row
         .get(3)
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let nickname: Option<String> = row
@@ -489,10 +470,13 @@ pub async fn accept_friend(
     drop(rows);
     drop(conn);
 
-    validate_friendship_transition(&current_status, FRIEND_STATUS_ACCEPTED)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
+    if pending_val == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Friend request not found".to_string(),
+        ));
+    }
 
-    // Authorization: Only the recipient (non-requester) can accept
     if user_id == &requester_user_id {
         return Err((
             StatusCode::NOT_FOUND,
@@ -506,23 +490,22 @@ pub async fn accept_friend(
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let tx_result: Result<(), libsql::Error> =
-        async {
-            conn.execute(
-            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_ACCEPTED, from_user_id.as_str(), to_user_id.as_str()),
+    let tx_result: Result<(), libsql::Error> = async {
+        conn.execute(
+            "UPDATE friendship SET pending = 0 WHERE from_user_id = ? AND to_user_id = ?",
+            (from_user_id.as_str(), to_user_id.as_str()),
         )
         .await?;
 
-            conn.execute(
-            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_ACCEPTED, to_user_id.as_str(), from_user_id.as_str()),
+        conn.execute(
+            "UPDATE friendship SET pending = 0 WHERE from_user_id = ? AND to_user_id = ?",
+            (to_user_id.as_str(), from_user_id.as_str()),
         )
         .await?;
 
-            Ok(())
-        }
-        .await;
+        Ok(())
+    }
+    .await;
 
     match tx_result {
         Ok(_) => {
@@ -537,156 +520,79 @@ pub async fn accept_friend(
         }
     }
 
-    let relation = FriendshipRelation {
-        id: relation_id,
-        user_id: from_user_id,
-        status: FRIEND_STATUS_ACCEPTED.to_string(),
-        nickname,
-    };
-
-    Ok((StatusCode::OK, Json(relation)))
+    Ok((
+        StatusCode::OK,
+        Json(FriendshipRelation {
+            id: relation_id,
+            user_id: from_user_id,
+            pending: false,
+            nickname,
+        }),
+    ))
 }
 
-pub async fn block_friend(
+pub async fn remove_friend(
     State(app_state): State<AppState>,
     session: Session,
-    Json(payload): Json<BlockFriendPayload>,
-) -> Result<(StatusCode, Json<FriendshipRelation>), (StatusCode, String)> {
+    Json(payload): Json<RemoveFriendPayload>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
-    let user_id = &current_user.id;
 
     let conn = app_state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, status, nickname FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ?",
-            (user_id.as_str(), payload.friend_id.as_str()),
+            "SELECT COUNT(*) FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
+            (
+                current_user.id.as_str(),
+                payload.friend_id.as_str(),
+                payload.friend_id.as_str(),
+                current_user.id.as_str(),
+            ),
         )
         .await
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let row = rows
+    let count = if let Some(row) = rows
         .next()
         .await
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Friend request not found".to_string(),
-            )
-        })?;
-
-    let relation_id: String = row
-        .get(0)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let current_status: String = row
-        .get(1)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let nickname: Option<String> = row
-        .get(2)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    drop(rows);
-    drop(conn);
-
-    validate_friendship_transition(&current_status, FRIEND_STATUS_BLOCKED)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-
-    let conn = app_state.main_db.write().await;
-
-    conn.execute(
-        "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
-        (
-            FRIEND_STATUS_BLOCKED,
-            user_id.as_str(),
-            payload.friend_id.as_str(),
-        ),
-    )
-    .await
-    .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let relation = FriendshipRelation {
-        id: relation_id,
-        user_id: payload.friend_id,
-        status: FRIEND_STATUS_BLOCKED.to_string(),
-        nickname,
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    {
+        row.get(0)
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        0
     };
 
-    Ok((StatusCode::OK, Json(relation)))
-}
-
-pub async fn unfriend(
-    State(app_state): State<AppState>,
-    session: Session,
-    Json(payload): Json<UnfriendPayload>,
-) -> Result<(StatusCode, Json<FriendshipRelation>), (StatusCode, String)> {
-    let current_user = get_current_user(&session).await?;
-    let user_id = &current_user.id;
-
-    let conn = app_state.main_db.read().await;
-    let mut rows = conn
-        .query(
-            "SELECT id, from_user_id, to_user_id, status, nickname FROM friendship_relations WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
-            (user_id.as_str(), payload.friend_id.as_str(), payload.friend_id.as_str(), user_id.as_str()),
-        )
-        .await
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    let row = rows
-        .next()
-        .await
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .ok_or_else(|| {
-            (
-                StatusCode::NOT_FOUND,
-                "Friendship relation not found".to_string(),
-            )
-        })?;
-
-    let relation_id: String = row
-        .get(0)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let from_user_id: String = row
-        .get(1)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let to_user_id: String = row
-        .get(2)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let current_status: String = row
-        .get(3)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let nickname: Option<String> = row
-        .get(4)
-        .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    if count == 0 {
+        return Err((
+            StatusCode::NOT_FOUND,
+            "Friendship not found".to_string(),
+        ));
+    }
 
     drop(rows);
     drop(conn);
 
-    validate_friendship_transition(&current_status, FRIEND_STATUS_UNFRIENDED)
-        .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
-
     let conn = app_state.main_db.write().await;
-
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let tx_result: Result<(), libsql::Error> =
-        async {
-            conn.execute(
-            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_UNFRIENDED, from_user_id.as_str(), to_user_id.as_str()),
+    let tx_result: Result<(), libsql::Error> = async {
+        conn.execute(
+            "DELETE FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
+            (
+                current_user.id.as_str(),
+                payload.friend_id.as_str(),
+                payload.friend_id.as_str(),
+                current_user.id.as_str(),
+            ),
         )
         .await?;
 
-            conn.execute(
-            "UPDATE friendship_relations SET status = ? WHERE from_user_id = ? AND to_user_id = ?",
-            (FRIEND_STATUS_UNFRIENDED, to_user_id.as_str(), from_user_id.as_str()),
-        )
-        .await?;
-
-            Ok(())
-        }
-        .await;
+        Ok(())
+    }
+    .await;
 
     match tx_result {
         Ok(_) => {
@@ -696,16 +602,10 @@ pub async fn unfriend(
         }
         Err(e) => {
             let _ = conn.execute("ROLLBACK", ()).await;
+            drop(conn);
             return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
         }
     }
 
-    let relation = FriendshipRelation {
-        id: relation_id,
-        user_id: payload.friend_id,
-        status: FRIEND_STATUS_UNFRIENDED.to_string(),
-        nickname,
-    };
-
-    Ok((StatusCode::OK, Json(relation)))
+    Ok((StatusCode::OK, Json(json!({})) ))
 }

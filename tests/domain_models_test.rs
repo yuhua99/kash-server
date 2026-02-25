@@ -1,7 +1,5 @@
 use kash_server::constants::*;
 use kash_server::models::*;
-use kash_server::utils::validate_friendship_transition;
-
 #[test]
 fn serde_send_friend_request_payload() {
     let json = r#"{"friend_username":"alice"}"#;
@@ -37,16 +35,9 @@ fn serde_update_nickname_payload_none() {
 }
 
 #[test]
-fn serde_block_friend_payload() {
-    let json = r#"{"friend_id":"user-789"}"#;
-    let payload: BlockFriendPayload = serde_json::from_str(json).unwrap();
-    assert_eq!(payload.friend_id, "user-789");
-}
-
-#[test]
-fn serde_unfriend_payload() {
+fn serde_remove_friend_payload() {
     let json = r#"{"friend_id":"user-999"}"#;
-    let payload: UnfriendPayload = serde_json::from_str(json).unwrap();
+    let payload: RemoveFriendPayload = serde_json::from_str(json).unwrap();
     assert_eq!(payload.friend_id, "user-999");
 }
 
@@ -55,23 +46,23 @@ fn serde_friendship_relation_roundtrip() {
     let relation = FriendshipRelation {
         id: "rel-001".to_string(),
         user_id: "user-123".to_string(),
-        status: FRIEND_STATUS_ACCEPTED.to_string(),
+        pending: false,
         nickname: Some("Best Friend".to_string()),
     };
     let json = serde_json::to_string(&relation).unwrap();
     let deserialized: FriendshipRelation = serde_json::from_str(&json).unwrap();
     assert_eq!(deserialized.id, "rel-001");
     assert_eq!(deserialized.user_id, "user-123");
-    assert_eq!(deserialized.status, FRIEND_STATUS_ACCEPTED);
+    assert!(!deserialized.pending);
     assert_eq!(deserialized.nickname, Some("Best Friend".to_string()));
 }
 
 #[test]
 fn serde_friendship_relation_no_nickname() {
-    let json = r#"{"id":"rel-002","user_id":"user-456","status":"pending","nickname":null}"#;
+    let json = r#"{"id":"rel-002","user_id":"user-456","pending":true,"nickname":null}"#;
     let relation: FriendshipRelation = serde_json::from_str(json).unwrap();
     assert_eq!(relation.id, "rel-002");
-    assert_eq!(relation.status, FRIEND_STATUS_PENDING);
+    assert!(relation.pending);
     assert_eq!(relation.nickname, None);
 }
 
@@ -140,51 +131,4 @@ fn serde_split_record_roundtrip() {
     assert_eq!(deserialized.payer_id, "user-123");
     assert_eq!(deserialized.total_amount, 150.0);
     assert_eq!(deserialized.status, SPLIT_STATUS_INITIATED);
-}
-
-#[test]
-fn fsm_friendship_valid_pending_to_accepted() {
-    let result = validate_friendship_transition(FRIEND_STATUS_PENDING, FRIEND_STATUS_ACCEPTED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_friendship_valid_pending_to_blocked() {
-    let result = validate_friendship_transition(FRIEND_STATUS_PENDING, FRIEND_STATUS_BLOCKED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_friendship_valid_accepted_to_unfriended() {
-    let result = validate_friendship_transition(FRIEND_STATUS_ACCEPTED, FRIEND_STATUS_UNFRIENDED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_friendship_valid_blocked_to_unfriended() {
-    let result = validate_friendship_transition(FRIEND_STATUS_BLOCKED, FRIEND_STATUS_UNFRIENDED);
-    assert!(result.is_ok());
-}
-
-#[test]
-fn fsm_friendship_invalid_accepted_to_pending() {
-    let result = validate_friendship_transition(FRIEND_STATUS_ACCEPTED, FRIEND_STATUS_PENDING);
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .contains("Invalid friendship transition")
-    );
-}
-
-#[test]
-fn fsm_friendship_invalid_unfriended_to_accepted() {
-    let result = validate_friendship_transition(FRIEND_STATUS_UNFRIENDED, FRIEND_STATUS_ACCEPTED);
-    assert!(result.is_err());
-}
-
-#[test]
-fn fsm_friendship_invalid_same_state() {
-    let result = validate_friendship_transition(FRIEND_STATUS_PENDING, FRIEND_STATUS_PENDING);
-    assert!(result.is_err());
 }

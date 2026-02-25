@@ -59,12 +59,12 @@ const CREATE_CATEGORIES_OWNER_INDEX: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_categories_owner ON categories(owner_user_id);
 "#;
 
-const CREATE_FRIENDSHIP_RELATIONS_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS friendship_relations (
+const CREATE_FRIENDSHIP_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS friendship (
     id                TEXT    PRIMARY KEY,
     from_user_id      TEXT    NOT NULL,
     to_user_id        TEXT    NOT NULL,
-    status            TEXT    NOT NULL,
+    pending           BOOLEAN NOT NULL DEFAULT 1,
     nickname          TEXT,
     requester_user_id TEXT    NOT NULL,
     UNIQUE(from_user_id, to_user_id)
@@ -72,11 +72,11 @@ CREATE TABLE IF NOT EXISTS friendship_relations (
 "#;
 
 const CREATE_FRIENDSHIP_FROM_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_friendship_from ON friendship_relations(from_user_id);
+CREATE INDEX IF NOT EXISTS idx_friendship_from ON friendship(from_user_id);
 "#;
 
 const CREATE_FRIENDSHIP_TO_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship_relations(to_user_id);
+CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship(to_user_id);
 "#;
 
 const CREATE_IDEMPOTENCY_KEYS_TABLE: &str = r#"
@@ -114,7 +114,7 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_RECORDS_DATE_INDEX, ()).await?;
     conn.execute(CREATE_RECORDS_OWNER_INDEX, ()).await?;
     conn.execute(CREATE_CATEGORIES_OWNER_INDEX, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_RELATIONS_TABLE, ()).await?;
+    conn.execute(CREATE_FRIENDSHIP_TABLE, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_FROM_INDEX, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_TO_INDEX, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;

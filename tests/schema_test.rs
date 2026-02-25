@@ -16,7 +16,7 @@ async fn a1_single_db_init_creates_all_required_tables() {
     // All tables must exist in the single shared DB
     for table in &[
         "users",
-        "friendship_relations",
+        "friendship",
         "idempotency_keys",
         "records",
         "categories",

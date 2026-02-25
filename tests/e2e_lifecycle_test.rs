@@ -80,19 +80,6 @@ async fn accept_friend_request(app: &common::TestApp, cookie: &str, friend_id: &
     assert_eq!(status, StatusCode::OK);
 }
 
-async fn block_friend(app: &common::TestApp, cookie: &str, friend_id: &str) {
-    let (status, body) = json_request(
-        app,
-        "POST",
-        "/friends/block",
-        cookie,
-        json!({ "friend_id": friend_id }),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "blocked");
-}
-
 async fn create_split(
     app: &common::TestApp,
     cookie: &str,
@@ -411,10 +398,10 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
 }
 
 #[tokio::test]
-async fn test_blocked_relation_prevents_split_e2e_lifecycle() {
+async fn test_pending_relation_prevents_split_e2e_lifecycle() {
     let app = common::setup_test_app().await.expect("setup failed");
 
-    let alice_id = common::create_test_user(&app.state, "alice", "password123")
+    let _alice_id = common::create_test_user(&app.state, "alice", "password123")
         .await
         .expect("create alice");
     let bob_id = common::create_test_user(&app.state, "bob", "password123")
@@ -424,22 +411,21 @@ async fn test_blocked_relation_prevents_split_e2e_lifecycle() {
     let alice_cookie = common::login_user(&app.router, "alice", "password123")
         .await
         .expect("login alice");
-    let bob_cookie = common::login_user(&app.router, "bob", "password123")
+    let _bob_cookie = common::login_user(&app.router, "bob", "password123")
         .await
         .expect("login bob");
 
     send_friend_request(&app, &alice_cookie, "bob").await;
-    block_friend(&app, &bob_cookie, &alice_id).await;
 
     let alice_category_id = create_category(&app, &alice_cookie, "Dining").await;
     let (split_status, split_body) = create_split(
         &app,
         &alice_cookie,
-        "e2e-lifecycle-blocked-1",
+        "e2e-lifecycle-pending-1",
         100.0,
         &alice_category_id,
         json!([{ "user_id": bob_id, "amount": 40.0 }]),
-        "blocked relation should fail",
+        "pending relation should fail",
     )
     .await;
 
@@ -454,7 +440,7 @@ async fn test_blocked_relation_prevents_split_e2e_lifecycle() {
         let mut rows = conn
             .query(
                 "SELECT COUNT(*) FROM records WHERE name = ? AND owner_user_id = ?",
-                ("blocked relation should fail", bob_id.as_str()),
+                ("pending relation should fail", bob_id.as_str()),
             )
             .await
             .expect("query bob records count");

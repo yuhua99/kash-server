@@ -117,12 +117,7 @@ pub struct UpdateNicknamePayload {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct BlockFriendPayload {
-    pub friend_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct UnfriendPayload {
+pub struct RemoveFriendPayload {
     pub friend_id: String,
 }
 
@@ -130,7 +125,7 @@ pub struct UnfriendPayload {
 pub struct FriendshipRelation {
     pub id: String,
     pub user_id: String,
-    pub status: String,
+    pub pending: bool,
     pub nickname: Option<String>,
 }
 

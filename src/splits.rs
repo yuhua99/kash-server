@@ -4,7 +4,6 @@ use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::auth::get_current_user;
-use crate::constants::FRIEND_STATUS_ACCEPTED;
 use crate::models::{CreateSplitPayload, SplitParticipant};
 use crate::utils::{
     calculate_split_amounts, db_error_with_context, validate_category_exists, validate_date,
@@ -181,12 +180,8 @@ async fn validate_all_participants_are_friends(
     for participant in participants {
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship_relations WHERE from_user_id = ? AND to_user_id = ? AND status = ?",
-                (
-                    current_user_id,
-                    participant.user_id.as_str(),
-                    FRIEND_STATUS_ACCEPTED,
-                ),
+                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND to_user_id = ? AND pending = ?",
+                (current_user_id, participant.user_id.as_str(), 0i64),
             )
             .await
             .map_err(|_| db_error_with_context("failed to validate friendship relation"))?;

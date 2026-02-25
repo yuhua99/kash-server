@@ -111,12 +111,8 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             axum::routing::post(kash_server::friends::accept_friend),
         )
         .route(
-            "/friends/block",
-            axum::routing::post(kash_server::friends::block_friend),
-        )
-        .route(
-            "/friends/unfriend",
-            axum::routing::post(kash_server::friends::unfriend),
+            "/friends/remove",
+            axum::routing::post(kash_server::friends::remove_friend),
         )
         .route(
             "/splits/create",

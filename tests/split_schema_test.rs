@@ -18,10 +18,10 @@ async fn split_schema_tables_exist() {
         .expect("failed to build db");
     let conn = db.connect().expect("failed to connect");
 
-    // Test 1: Verify friendship_relations table exists
+    // Test 1: Verify friendship table exists
     let mut rows = conn
         .query(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='friendship_relations'",
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='friendship'",
             (),
         )
         .await
@@ -29,7 +29,7 @@ async fn split_schema_tables_exist() {
 
     assert!(
         rows.next().await.expect("rows.next failed").is_some(),
-        "friendship_relations table should exist"
+        "friendship table should exist"
     );
 
     // Test 2: Verify idempotency_keys table exists

@@ -118,20 +118,6 @@ pub fn validate_offset(offset: Option<u32>) -> Result<u32, (StatusCode, String)>
     }
 }
 
-pub fn validate_friendship_transition(from: &str, to: &str) -> Result<(), String> {
-    use crate::constants::*;
-    match (from, to) {
-        (FRIEND_STATUS_PENDING, FRIEND_STATUS_ACCEPTED) => Ok(()),
-        (FRIEND_STATUS_PENDING, FRIEND_STATUS_BLOCKED) => Ok(()),
-        (FRIEND_STATUS_ACCEPTED, FRIEND_STATUS_UNFRIENDED) => Ok(()),
-        (FRIEND_STATUS_BLOCKED, FRIEND_STATUS_UNFRIENDED) => Ok(()),
-        _ => Err(format!(
-            "Invalid friendship transition from {} to {}",
-            from, to
-        )),
-    }
-}
-
 /// Validates split participants for consistency and validity.
 ///
 /// Checks:
