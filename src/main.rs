@@ -8,7 +8,7 @@ use tower_http::cors::CorsLayer;
 use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::Key};
 
 // Import everything from the library crate (no duplicate module declarations)
-use my_budget_server::{
+use kash_server::{
     AppState, auth, categories, config::Config, constants::*, database, friends, records, splits,
 };
 
@@ -143,7 +143,7 @@ async fn root(session: Session) -> Html<String> {
     let _ = session.insert("visitor_count", new_count).await;
 
     Html(format!(
-        "<h1>My Budget Server</h1><p>API Ready - Visit count: {}</p>",
+        "<h1>Kash</h1><p>API Ready - Visit count: {}</p>",
         new_count
     ))
 }

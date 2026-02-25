@@ -5,8 +5,8 @@ use reqwest::Client;
 use teloxide::dispatching::UpdateFilterExt;
 use tokio::sync::RwLock;
 
-use my_budget_server::constants::DEFAULT_DATA_PATH;
-use my_budget_server::database;
+use kash_server::constants::DEFAULT_DATA_PATH;
+use kash_server::database;
 
 mod constants;
 mod db;

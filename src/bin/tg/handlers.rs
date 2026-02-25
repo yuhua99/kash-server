@@ -2,7 +2,7 @@ use base64::Engine as _;
 use teloxide::prelude::*;
 use teloxide::types::ChatAction;
 
-use my_budget_server::auth;
+use kash_server::auth;
 
 use crate::constants::{MAX_PHOTO_FILE_SIZE, MAX_VOICE_FILE_SIZE};
 use crate::db::{fetch_linked_user_id, load_categories, upsert_telegram_link};

@@ -4,7 +4,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use my_budget_server::models::FriendshipRelation;
+use kash_server::models::FriendshipRelation;
 use serde_json::json;
 use tower::util::ServiceExt;
 

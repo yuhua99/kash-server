@@ -1,4 +1,4 @@
-use my_budget_server::init_main_db;
+use kash_server::init_main_db;
 use std::path::PathBuf;
 
 #[tokio::test]

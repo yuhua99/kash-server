@@ -1,6 +1,6 @@
-use my_budget_server::constants::*;
-use my_budget_server::models::*;
-use my_budget_server::utils::validate_friendship_transition;
+use kash_server::constants::*;
+use kash_server::models::*;
+use kash_server::utils::validate_friendship_transition;
 
 #[test]
 fn serde_send_friend_request_payload() {

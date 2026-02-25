@@ -124,4 +124,3 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
 
     Ok(Arc::new(RwLock::new(conn)))
 }
-

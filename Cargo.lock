@@ -1398,6 +1398,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "kash-server"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "axum 0.8.4",
+ "base64 0.22.1",
+ "dotenv",
+ "libsql",
+ "password-hash",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "teloxide",
+ "tempfile",
+ "time",
+ "tokio",
+ "tower 0.4.13",
+ "tower-http 0.6.6",
+ "tower-sessions",
+ "uuid",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1660,30 +1684,6 @@ dependencies = [
  "libc",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "my-budget-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "axum 0.8.4",
- "base64 0.22.1",
- "dotenv",
- "libsql",
- "password-hash",
- "reqwest",
- "serde",
- "serde_json",
- "teloxide",
- "tempfile",
- "time",
- "tokio",
- "tower 0.4.13",
- "tower-http 0.6.6",
- "tower-sessions",
- "uuid",
 ]
 
 [[package]]

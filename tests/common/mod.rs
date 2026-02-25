@@ -3,7 +3,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use my_budget_server::{AppState, auth, constants::*, database};
+use kash_server::{AppState, auth, constants::*, database};
 use time::Duration;
 use tower::util::ServiceExt;
 use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer, cookie::Key};
@@ -64,63 +64,63 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
         .route("/auth/logout", axum::routing::post(auth::logout))
         .route(
             "/records",
-            axum::routing::post(my_budget_server::records::create_record)
-                .get(my_budget_server::records::get_records),
+            axum::routing::post(kash_server::records::create_record)
+                .get(kash_server::records::get_records),
         )
         .route(
             "/records/{id}",
-            axum::routing::put(my_budget_server::records::update_record)
-                .delete(my_budget_server::records::delete_record),
+            axum::routing::put(kash_server::records::update_record)
+                .delete(kash_server::records::delete_record),
         )
         .route(
             "/records/{id}/settle",
-            axum::routing::put(my_budget_server::records::update_settle),
+            axum::routing::put(kash_server::records::update_settle),
         )
         .route(
             "/records/finalize-pending",
-            axum::routing::post(my_budget_server::records::finalize_pending_record),
+            axum::routing::post(kash_server::records::finalize_pending_record),
         )
         .route(
             "/categories",
-            axum::routing::post(my_budget_server::categories::create_category)
-                .get(my_budget_server::categories::get_categories),
+            axum::routing::post(kash_server::categories::create_category)
+                .get(kash_server::categories::get_categories),
         )
         .route(
             "/categories/{id}",
-            axum::routing::put(my_budget_server::categories::update_category)
-                .delete(my_budget_server::categories::delete_category),
+            axum::routing::put(kash_server::categories::update_category)
+                .delete(kash_server::categories::delete_category),
         )
         .route(
             "/friends/request",
-            axum::routing::post(my_budget_server::friends::send_friend_request),
+            axum::routing::post(kash_server::friends::send_friend_request),
         )
         .route(
             "/friends/search",
-            axum::routing::get(my_budget_server::friends::search_users),
+            axum::routing::get(kash_server::friends::search_users),
         )
         .route(
             "/friends/nickname",
-            axum::routing::patch(my_budget_server::friends::update_nickname),
+            axum::routing::patch(kash_server::friends::update_nickname),
         )
         .route(
             "/friends/list",
-            axum::routing::get(my_budget_server::friends::list_friends),
+            axum::routing::get(kash_server::friends::list_friends),
         )
         .route(
             "/friends/accept",
-            axum::routing::post(my_budget_server::friends::accept_friend),
+            axum::routing::post(kash_server::friends::accept_friend),
         )
         .route(
             "/friends/block",
-            axum::routing::post(my_budget_server::friends::block_friend),
+            axum::routing::post(kash_server::friends::block_friend),
         )
         .route(
             "/friends/unfriend",
-            axum::routing::post(my_budget_server::friends::unfriend),
+            axum::routing::post(kash_server::friends::unfriend),
         )
         .route(
             "/splits/create",
-            axum::routing::post(my_budget_server::splits::create_split),
+            axum::routing::post(kash_server::splits::create_split),
         )
         .layer(session_layer)
         .with_state(app_state.clone());

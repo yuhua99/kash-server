@@ -4,7 +4,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use my_budget_server::models::Category;
+use kash_server::models::Category;
 use serde_json::{Value, json};
 use tower::util::ServiceExt;
 

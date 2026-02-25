@@ -53,15 +53,15 @@ jobs:
         run: mkdir -p artifacts
       - name: Copy binary to artifacts
         run: >
-          cp target/release/my-budget-server
-          artifacts/my-budget-server-linux-x86_64
+          cp target/release/kash-server
+          artifacts/kash-server-linux-x86_64
 
-          chmod +x artifacts/my-budget-server-linux-x86_64
+          chmod +x artifacts/kash-server-linux-x86_64
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: my-budget-server-linux-x86_64
-          path: artifacts/my-budget-server-linux-x86_64
+          name: kash-server-linux-x86_64
+          path: artifacts/kash-server-linux-x86_64
           retention-days: 30
   publish-latest:
     name: Publish Latest Release
@@ -72,7 +72,7 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: my-budget-server-linux-x86_64
+          name: kash-server-linux-x86_64
           path: .
       - name: Publish/Update release (tag=latest)
         uses: softprops/action-gh-release@v2
@@ -80,7 +80,7 @@ jobs:
           tag_name: latest
           name: Latest Build
           files: |
-            ./my-budget-server-linux-x86_64
+            ./kash-server-linux-x86_64
           make_latest: true
           draft: false
           prerelease: false
@@ -93,10 +93,10 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          name: my-budget-server-linux-x86_64
+          name: kash-server-linux-x86_64
           path: .
       - name: Upload Release Asset
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            ./my-budget-server-linux-x86_64
+            ./kash-server-linux-x86_64

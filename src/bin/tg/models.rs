@@ -6,7 +6,7 @@ use serde_json::json;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
-use my_budget_server::Db;
+use kash_server::Db;
 
 use crate::constants::{CONTEXT_MAX_TURNS, CONTEXT_TTL_SECONDS};
 

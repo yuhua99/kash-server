@@ -5,11 +5,11 @@ use serde_json::json;
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use my_budget_server::Db;
-use my_budget_server::categories::validate_category_name;
-use my_budget_server::models::{CreateRecordPayload, Record};
-use my_budget_server::records;
-use my_budget_server::utils::{validate_date, validate_offset, validate_records_limit};
+use kash_server::Db;
+use kash_server::categories::validate_category_name;
+use kash_server::models::{CreateRecordPayload, Record};
+use kash_server::records;
+use kash_server::utils::{validate_date, validate_offset, validate_records_limit};
 
 use crate::helpers::{normalize_amount_by_category, resolve_category_id};
 use crate::models::{BotState, CategoryInfo};

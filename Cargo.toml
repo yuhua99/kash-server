@@ -1,14 +1,14 @@
 [package]
-name = "my-budget-server"
-version = "0.1.0"
+name = "kash-server"
+version = "0.2.0"
 edition = "2024"
 
 [lib]
-name = "my_budget_server"
+name = "kash_server"
 path = "src/lib.rs"
 
 [[bin]]
-name = "my-budget-server"
+name = "kash-server"
 path = "src/main.rs"
 
 [dependencies]

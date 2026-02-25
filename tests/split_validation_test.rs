@@ -1,5 +1,5 @@
-use my_budget_server::models::SplitParticipant;
-use my_budget_server::utils::{calculate_split_amounts, validate_split_participants};
+use kash_server::models::SplitParticipant;
+use kash_server::utils::{calculate_split_amounts, validate_split_participants};
 
 #[test]
 fn test_validate_split_participants_exact_match() {

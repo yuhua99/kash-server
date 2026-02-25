@@ -1,166 +1,163 @@
-# AGENTS.md — Kash Server
+# AGENTS.md — kash-server
 
-Personal expense tracking backend in Rust (edition 2024) using Axum, libsql, and teloxide.
+A personal budget tracking server (Rust, Axum, SQLite via libsql).
+Two binaries: HTTP REST API (`src/main.rs`) and Telegram bot (`src/bin/tg/main.rs`).
+Both share one SQLite file (`data/users.db`) through the `kash_server` library crate.
 
-## Build / Run / Test Commands
+---
+
+## Build & Run
 
 ```bash
-# Build
+# Build everything
 cargo build
-cargo build --release
 
-# Run API server (requires .env with SESSION_SECRET)
-cargo run
+# Build only the HTTP server binary
+cargo build --bin kash-server
 
-# Run Telegram bot binary
+# Build only the Telegram bot binary
+cargo build --bin tg
+
+# Run the HTTP server (requires .env with SESSION_SECRET, etc.)
+cargo run --bin kash-server
+
+# Run the Telegram bot
 cargo run --bin tg
-
-# Check (type-check without codegen — fastest feedback)
-cargo check
-
-# Lint
-cargo clippy -- -D warnings
-
-# Format
-cargo fmt
-cargo fmt -- --check          # CI check only
-
-# Test (no tests exist yet — the framework is wired up)
-cargo test
-cargo test -- --nocapture     # show println output
-cargo test <test_name>        # run a single test by name
-cargo test <module>::         # run all tests in a module
 ```
 
-## Architecture Overview
+---
 
-Two binaries sharing one library crate (`my_budget_server`):
+## Lint
 
-| Binary | Entrypoint | Purpose |
-|---|---|---|
-| `my-budget-server` | `src/main.rs` | Axum HTTP API (auth, records, categories) |
-| `tg` | `src/bin/tg/main.rs` | Telegram bot with OpenAI tool-calling |
-
-Library crate (`src/lib.rs`) exports: `AppState`, `Db`, `DbPool`, `TransactionError`, `with_transaction`.
-
-### Module layout
-
-```
-src/
-  lib.rs          # Crate root — re-exports, AppState struct
-  main.rs         # HTTP server setup, routing, CORS, sessions
-  auth.rs         # Register/login/logout, password hashing (Argon2)
-  records.rs      # Record CRUD handlers + validation
-  categories.rs   # Category CRUD handlers + transaction usage
-  database.rs     # Schema init (main DB + per-user DBs), migrations
-  db_pool.rs      # LRU connection pool, transaction helpers
-  config.rs       # Config struct + ConfigError enum from env vars
-  constants.rs    # All magic numbers and string constants
-  models.rs       # Serde structs for API payloads and domain objects
-  utils.rs        # Shared validators and DB helpers
-  bin/tg/
-    main.rs       # Bot entrypoint, dispatcher setup
-    handlers.rs   # Message routing (text/voice/photo)
-    openai.rs     # Responses API + Whisper transcription
-    db.rs         # Tool execution, record/category DB ops
-    models.rs     # BotState, ChatContext, CategoryInfo
-    helpers.rs    # Context management, category resolution
-    constants.rs  # Bot-specific limits and defaults
+```bash
+# Zero warnings policy — always run with -D warnings
+cargo clippy --tests -- -D warnings
 ```
 
-## Key Dependencies
+Fix all clippy warnings before committing. The CI gate is `clippy --tests -- -D warnings`.
 
-- **axum 0.8** — HTTP framework. Route params use `{id}` syntax (not `:id`).
-- **libsql** — SQLite-compatible async DB (Turso). No ORM; raw SQL everywhere.
-- **tower-sessions 0.14** — Session middleware with in-memory store and signed cookies.
-- **teloxide 0.17** — Telegram bot framework.
-- **serde / serde_json** — All API types derive `Serialize`/`Deserialize`.
-- **anyhow** — Used in DB/infra layers, NOT in handler return types.
-- **argon2** — Password hashing.
-- **uuid** — V4 UUIDs for all entity IDs (stored as TEXT in SQLite).
+---
 
-## Code Style & Conventions
+## Tests
 
-### Error handling
+```bash
+# Run all tests
+cargo test --no-fail-fast
 
-- **Handlers** return `Result<(StatusCode, Json<T>), (StatusCode, String)>`. This is the universal pattern — follow it exactly.
-- **Internal/DB functions** use `anyhow::Result` (see `database.rs`, `db_pool.rs`).
-- **Telegram bot** uses `Result<T, String>` for tool/helper functions, mapping to user-facing error messages.
-- Map errors with `.map_err(|_| ...)` or `.map_err(|e| ...)`. Never use `.unwrap()` in handlers.
-- Error constants live in `constants.rs` (`ERR_DATABASE_ACCESS`, etc.). Use them.
+# Run a single test by name (substring match)
+cargo test <test_name>
 
-### Naming
+# Examples:
+cargo test a1_single_db_init_creates_all_required_tables
+cargo test split_create_happy_path_fans_out_records
+cargo test records_isolation
 
-- **snake_case** for functions, variables, modules.
-- **PascalCase** for types, enums, structs.
-- **SCREAMING_SNAKE_CASE** for constants.
-- Payload structs: `CreateXPayload`, `UpdateXPayload`, `GetXQuery`, `GetXResponse`.
-- Validation functions: `validate_x_name()`, `validate_x_amount()`.
-- Extraction functions: `extract_x_from_row()`.
+# Run all tests in a specific test file
+cargo test --test schema_test
+cargo test --test split_create_test
+cargo test --test records_filters_test
+
+# Run with output visible (useful for debugging panics)
+cargo test <test_name> -- --nocapture
+```
+
+Tests live in `tests/`. Each file is an integration test that spins up a full
+in-memory `TestApp` with a temp-dir SQLite DB via `tests/common/mod.rs`.
+There are no unit test modules inside `src/`.
+
+---
+
+## Environment Variables
+
+Required for the HTTP server (`cargo run`):
+```
+SESSION_SECRET=<at least 64 chars>
+DATABASE_PATH=data          # optional, default: "data"
+SERVER_HOST=0.0.0.0         # optional, default: "0.0.0.0"
+SERVER_PORT=3000            # optional, default: "3000"
+FRONTEND_ORIGIN=http://localhost:8080   # optional
+PRODUCTION=false            # optional; true enables secure cookies
+```
+
+Required for the Telegram bot:
+```
+TELEGRAM_BOT_TOKEN=<token>
+OPENAI_API_KEY=<key>
+OPENAI_MODEL=o4-mini         # optional
+OPENAI_REASONING_EFFORT=low  # optional
+BOT_TIMEZONE=UTC             # optional
+DATABASE_PATH=data           # shares the same DB as the HTTP server
+```
+
+---
+
+## Code Style
+
+### General
+- **Rust edition 2024**. Use all stable features available in it (e.g., `if let` chains).
+- `rustfmt` defaults — run `cargo fmt` before committing.
+- All clippy warnings must be resolved. Suppress with `#[allow(...)]` only when genuinely necessary and add a comment explaining why.
 
 ### Imports
+- Group: std → external crates → internal `crate::` — separated by blank lines, each group sorted alphabetically.
+- Axum extractors are imported explicitly: `use axum::{Json, extract::{Path, State}, http::StatusCode}`.
+- `use crate::constants::*` is acceptable inside handler modules.
+- Prefer `use crate::X` over `kash_server::X` inside `src/`; use `kash_server::X` inside `src/bin/tg/`.
 
-- Group: `std` first, then external crates, then `crate::` imports.
-- Use `crate::` paths for library imports within the library crate.
-- Binary (`src/bin/tg/`) imports library as `my_budget_server::` and local modules as `crate::`.
-- Prefer specific imports over glob (`use crate::constants::*` is the one exception).
+### Naming
+- Types and enums: `PascalCase`.
+- Functions, variables, modules, fields: `snake_case`.
+- Constants: `SCREAMING_SNAKE_CASE` in `src/constants.rs` — add new app-wide literals there.
+- Test functions: descriptive `snake_case` mirroring the behaviour under test (e.g., `split_create_happy_path_fans_out_records`). Prefix with test-set ID where applicable (`a1_`, `b3_`).
+- Test users: use suffixed names per test file to avoid cross-test collisions (`alice_a3`, `bob_a3`).
 
-### Types & Database
+### Error Handling
+- Handler return type is always `Result<(StatusCode, Json<T>), (StatusCode, String)>`.
+- Never use `.unwrap()` in production code (`src/`). Use `?` or `.map_err(|e| ...)`.
+- Use `db_error()` for generic DB failures; `db_error_with_context("what failed")` when context adds value. Both live in `src/utils.rs`.
+- Per-operation error enums (e.g., `FinalizePendingError`, `SplitRecordError`) implement `From<TransactionError>` so `?` works inside `with_transaction` closures.
+- In tests, `.expect("descriptive message")` is preferred over `.unwrap()`.
 
-- All entity IDs are `String` (UUID v4), stored as `TEXT` in SQLite.
-- Dates are `String` in `YYYY-MM-DD` format, validated with `time::Date::parse`.
-- Amounts are `f64` / `REAL`. Expenses are negative, income is positive (normalized by category).
-- `Db` = `Arc<RwLock<Connection>>`. Use `.read().await` for queries, `.write().await` for mutations.
-- Use `DbPool::get_user_db()` for per-user database access (LRU-cached).
+### Database Access
+- `Db = Arc<RwLock<Connection>>` — always acquire `.read().await` for SELECT, `.write().await` for INSERT/UPDATE/DELETE.
+- Never hold a read lock and then try to acquire a write lock in the same scope (deadlock).
+- Use `with_transaction(db, |conn| Box::pin(async move { ... }))` for any multi-statement atomic write.
+- Every `records` and `categories` query **must** include an `owner_user_id = ?` filter. This is the multi-tenancy invariant.
+- All new tables go into `init_main_db()` in `src/database.rs` using `CREATE TABLE IF NOT EXISTS`.
+
+### Models
+- Request payloads: `#[derive(Deserialize)]`, named `*Payload` (e.g., `CreateRecordPayload`).
+- Response types: `#[derive(Serialize)]`, named `*Response` (e.g., `GetRecordsResponse`).
+- Shared domain types (`Record`, `Category`, `User`): `#[derive(Serialize, Deserialize, Debug, Clone)]`.
+- All shared types live in `src/models.rs`. Bot-local types go in `src/bin/tg/models.rs`.
 
 ### Validation
+- All validation helpers return `Result<(), (StatusCode, String)>`.
+- Reuse `validate_string_length`, `validate_date`, `validate_limit`, `validate_offset` from `src/utils.rs`.
+- For ownership checks, call `validate_category_exists(db, user_id, category_id)` (also in `src/utils.rs`).
+- Validate before any DB write. Return `400 BAD_REQUEST` for input errors, `409 CONFLICT` for uniqueness violations, `404 NOT_FOUND` for missing resources, `401 UNAUTHORIZED` for missing session.
 
-- Validate all inputs at handler entry. Check emptiness, length, format.
-- String lengths: constants in `constants.rs` (`MAX_RECORD_NAME_LENGTH`, etc.).
-- Pagination: validate limit (1..MAX_LIMIT) and offset (0..MAX_OFFSET).
-- Category existence: always verify before creating/updating records.
-- Return `(StatusCode::BAD_REQUEST, "message".to_string())` for validation failures.
+### Tests
+- Each integration test file starts with `mod common;`.
+- Use `common::setup_test_app()` for a fresh isolated DB per test (temp dir).
+- Use `common::create_test_user()` + `common::login_user()` to set up fixtures.
+- Send requests via `app.router.clone().oneshot(request)` from `tower::util::ServiceExt`.
+- Parse responses with `serde_json::from_slice` or `serde_json::from_str`; assert on `StatusCode` constants.
+- Prefix test-local helper variables that are unused with `_` (e.g., `let _alice_id = ...`) to suppress warnings, or explicitly consume them with `let _ = (alice_id, bob_id);`.
+- Annotate dead-code helpers used only in some tests with `#[allow(dead_code)]`.
+- Do **not** modify `tests/records_migration_test.rs` — it is out of scope.
 
-### Handler pattern
+### Constants
+- All magic strings and numeric limits go in `src/constants.rs` or `src/bin/tg/constants.rs`.
+- Status strings like `"pending"`, `"accepted"` must use the `FRIEND_STATUS_*` constants, not inline literals.
 
-```rust
-pub async fn handler_name(
-    State(app_state): State<AppState>,
-    session: Session,
-    Json(payload): Json<PayloadType>,    // or Path, Query
-) -> Result<(StatusCode, Json<ResponseType>), (StatusCode, String)> {
-    let user = get_current_user(&session).await?;
-    // validate inputs
-    // get user DB from pool
-    // execute query
-    // return Ok((StatusCode::OK, Json(response)))
-}
-```
+---
 
-### Formatting
+## Architecture Notes (quick reference)
 
-- No `rustfmt.toml` — uses default `cargo fmt` settings.
-- No `clippy.toml` — uses default clippy lints.
-- Edition 2024 — `let-else`, `let chains` (`if let ... && let ...`) are used throughout.
-
-### Things to avoid
-
-- Do not use `as any` or suppress warnings.
-- Do not add `#[allow(...)]` without justification (one existing `#[allow(dead_code)]` on `DbPool::clear`).
-- Do not use `.unwrap()` in handler code paths.
-- Do not introduce new dependencies without good reason.
-- Do not use `println!` for logging (the project does not use a logging framework yet; `println!` appears only in startup).
-
-## CI Pipeline
-
-GitHub Actions (`.github/workflows/build.yml`):
-- Runs `cargo test --verbose` on every push/PR to `main`.
-- Builds release binary on Linux x86_64.
-- Publishes to GitHub Releases on push to `main` (tag `latest`).
-
-## Environment
-
-Requires `.env` file (see `.env.example`). Key vars:
-- `SESSION_SECRET` — required, min 64 chars.
-- `DATABASE_PATH` — defaults to `./data`.
-- `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY` — required only for the `tg` binary.
+- **Single DB**: one `data/users.db` for everything. Multi-tenancy via `owner_user_id`.
+- **No ORM**: raw SQL via `libsql` async API.
+- **Auth**: session cookie (tower-sessions `MemoryStore` + signed key). No JWTs.
+- **Idempotency** (splits): reserve with NULL body → fanout in transaction → commit body. Delete reservation on fanout failure.
+- **Telegram bot**: OpenAI Responses API tool-call loop (`create_record`, `edit_record`, `list_records`). Context stored in `BotState.chat_contexts` (in-memory, TTL-expiring).
+- See `codemap.md` (root) and `src/codemap.md` for the full architectural map.
