@@ -110,6 +110,11 @@ async fn main() -> Result<()> {
         .route("/friends/accept", post(friends::accept_friend))
         .route("/friends/remove", post(friends::remove_friend))
         .route("/splits/create", post(splits::create_split))
+        .route("/splits/pending", get(splits::list_pending_splits))
+        .route(
+            "/splits/unsettled",
+            get(splits::list_unsettled_splits_with_friend),
+        )
         .layer(cors)
         .layer(session_layer)
         .with_state(app_state);

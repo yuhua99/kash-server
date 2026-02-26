@@ -145,6 +145,45 @@ pub struct CreateSplitPayload {
     pub splits: Vec<SplitParticipant>,
 }
 
+#[derive(Deserialize)]
+pub struct PendingSplitsQuery {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct UnsettledSplitsQuery {
+    pub friend_id: String,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SplitListItem {
+    pub record_id: String,
+    pub split_id: String,
+    pub description: String,
+    pub date: String,
+    pub amount: f64,
+    pub debtor_user_id: String,
+    pub creditor_user_id: String,
+    pub counterparty_user_id: String,
+    pub counterparty_name: String,
+    pub requested_by_user_id: String,
+    pub requested_by_name: String,
+    pub pending: bool,
+    pub settle: bool,
+    pub direction: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SplitListResponse {
+    pub splits: Vec<SplitListItem>,
+    pub total_count: u32,
+    pub limit: u32,
+    pub offset: u32,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FinalizePendingPayload {
     pub record_id: String,

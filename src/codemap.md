@@ -69,6 +69,8 @@ HTTP Request
 | POST | `/auth/logout` | `auth::logout` |
 | POST/GET | `/friends/*` | `friends::*` |
 | POST | `/splits/create` | `splits::create_split` |
+| GET | `/splits/pending` | `splits::list_pending_splits` |
+| GET | `/splits/unsettled` | `splits::list_unsettled_splits_with_friend` |
 
 ## Integration
 Exported to `src/bin/tg/` as the `kash_server` library crate:
