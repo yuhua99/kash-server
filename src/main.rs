@@ -115,6 +115,10 @@ async fn main() -> Result<()> {
             "/splits/unsettled",
             get(splits::list_unsettled_splits_with_friend),
         )
+        .route(
+            "/splits/unsettled/{friend_id}/settle_all",
+            put(splits::settle_all_unsettled_splits_with_friend),
+        )
         .layer(cors)
         .layer(session_layer)
         .with_state(app_state);

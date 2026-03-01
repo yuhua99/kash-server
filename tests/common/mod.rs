@@ -126,6 +126,10 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             "/splits/unsettled",
             axum::routing::get(kash_server::splits::list_unsettled_splits_with_friend),
         )
+        .route(
+            "/splits/unsettled/{friend_id}/settle_all",
+            axum::routing::put(kash_server::splits::settle_all_unsettled_splits_with_friend),
+        )
         .layer(session_layer)
         .with_state(app_state.clone());
 

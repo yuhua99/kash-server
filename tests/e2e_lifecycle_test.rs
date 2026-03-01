@@ -308,7 +308,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
         let settle: bool = row.get(4).expect("payer settle");
         let debtor_user_id: Option<String> = row.get(5).expect("payer debtor");
         let creditor_user_id: Option<String> = row.get(6).expect("payer creditor");
-        assert_eq!(amount, -100.0);
+        assert_eq!(amount, -60.0);
         assert_eq!(category_id, alice_category_id);
         assert!(!pending);
         assert_eq!(split_id_db, Some(split_id.clone()));

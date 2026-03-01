@@ -1,9 +1,10 @@
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tower_sessions::Session;
 use uuid::Uuid;
 
@@ -223,8 +224,6 @@ pub async fn list_unsettled_splits_with_friend(
         ));
     }
 
-    validate_friend_is_accepted(&app_state, &current_user.id, &friend_id).await?;
-
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
@@ -232,9 +231,10 @@ pub async fn list_unsettled_splits_with_friend(
 
     let mut count_rows = conn
         .query(
-            "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND pending = 0 AND settle = 0 AND split_id IS NOT NULL AND ((debtor_user_id = ? AND creditor_user_id = ?) OR (debtor_user_id = ? AND creditor_user_id = ?))",
+            "SELECT COUNT(*) FROM records WHERE owner_user_id IN (?, ?) AND pending = 0 AND settle = 0 AND split_id IS NOT NULL AND ((debtor_user_id = ? AND creditor_user_id = ?) OR (debtor_user_id = ? AND creditor_user_id = ?))",
             (
                 current_user.id.as_str(),
+                friend_id.as_str(),
                 current_user.id.as_str(),
                 friend_id.as_str(),
                 friend_id.as_str(),
@@ -256,9 +256,10 @@ pub async fn list_unsettled_splits_with_friend(
 
     let mut rows = conn
         .query(
-            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id = ? AND r.pending = 0 AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.debtor_user_id = ? AND r.creditor_user_id = ?) OR (r.debtor_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
+            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id IN (?, ?) AND r.pending = 0 AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.debtor_user_id = ? AND r.creditor_user_id = ?) OR (r.debtor_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
             (
                 current_user.id.as_str(),
+                friend_id.as_str(),
                 current_user.id.as_str(),
                 friend_id.as_str(),
                 friend_id.as_str(),
@@ -283,6 +284,61 @@ pub async fn list_unsettled_splits_with_friend(
             limit,
             offset,
         }),
+    ))
+}
+
+pub async fn settle_all_unsettled_splits_with_friend(
+    State(app_state): State<AppState>,
+    session: Session,
+    Path(friend_id): Path<String>,
+) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+    let current_user = get_current_user(&session).await?;
+
+    validate_string_length(&friend_id, "Friend ID", MAX_RECORD_NAME_LENGTH)?;
+    let friend_id = friend_id.trim().to_string();
+    if friend_id == current_user.id {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Friend ID cannot be your own user ID".to_string(),
+        ));
+    }
+
+    let user_id = current_user.id.clone();
+
+    let updated_count = with_transaction(&app_state.main_db, |conn| {
+        let user_id = user_id.clone();
+        let friend_id = friend_id.clone();
+
+        Box::pin(async move {
+            let affected = conn
+                .execute(
+                    "UPDATE records SET settle = 1 WHERE owner_user_id IN (?, ?) AND pending = 0 AND settle = 0 AND split_id IS NOT NULL AND ((debtor_user_id = ? AND creditor_user_id = ?) OR (debtor_user_id = ? AND creditor_user_id = ?))",
+                    (
+                        user_id.as_str(),
+                        friend_id.as_str(),
+                        user_id.as_str(),
+                        friend_id.as_str(),
+                        friend_id.as_str(),
+                        user_id.as_str(),
+                    ),
+                )
+                .await
+                .map_err(|_| TransactionError::Commit)?;
+
+            u32::try_from(affected).map_err(|_| TransactionError::Commit)
+        })
+    })
+    .await
+    .map_err(|error| match error {
+        TransactionError::Begin => db_error_with_context("failed to settle splits with friend"),
+        TransactionError::Commit => {
+            db_error_with_context("failed to persist settle-all split updates")
+        }
+    })?;
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "updated_count": updated_count })),
     ))
 }
 
@@ -445,41 +501,6 @@ async fn validate_all_participants_are_friends(
     Ok(())
 }
 
-async fn validate_friend_is_accepted(
-    app_state: &AppState,
-    current_user_id: &str,
-    friend_id: &str,
-) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.read().await;
-    let mut rows = conn
-        .query(
-            "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND to_user_id = ? AND pending = ?",
-            (current_user_id, friend_id, 0i64),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to validate friendship relation"))?;
-
-    let count: i64 = if let Some(row) = rows
-        .next()
-        .await
-        .map_err(|_| db_error_with_context("failed to fetch friendship validation result"))?
-    {
-        row.get(0)
-            .map_err(|_| db_error_with_context("invalid friendship validation result"))?
-    } else {
-        0
-    };
-
-    if count == 0 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Friend ID must be an accepted friend".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
 async fn get_existing_idempotency_response(
     app_state: &AppState,
     user_id: &str,
@@ -551,7 +572,16 @@ async fn create_split_records(
     validate_category_exists(&app_state.main_db, initiator_user_id, &payload.category_id).await?;
 
     let payer_record_id = Uuid::new_v4().to_string();
-    let payer_amount = -(payload.total_amount.abs());
+    let initiator_share = calculated
+        .iter()
+        .find(|(user_id, _)| user_id == initiator_user_id)
+        .map(|(_, amount)| *amount)
+        .ok_or_else(|| db_error_with_context("split calculation missing initiator share"))?;
+    let payer_amount = if initiator_share == 0.0 {
+        0.0
+    } else {
+        -initiator_share.abs()
+    };
 
     // Pre-generate all pending record IDs before entering the transaction
     let pending_record_ids: Vec<String> = calculated

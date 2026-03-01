@@ -163,6 +163,50 @@ async fn settle_record(app: &common::TestApp, cookie: &str, record_id: &str, spl
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+async fn settle_all_with_friend(app: &common::TestApp, cookie: &str, friend_id: &str) -> Value {
+    let request = Request::builder()
+        .method("PUT")
+        .uri(format!("/splits/unsettled/{}/settle_all", friend_id))
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from("{}"))
+        .expect("build settle-all request");
+
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute settle-all request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read settle-all response body");
+    serde_json::from_slice(&body).expect("parse settle-all response body")
+}
+
+async fn remove_friend(app: &common::TestApp, cookie: &str, friend_id: &str) {
+    let payload = json!({ "friend_id": friend_id });
+    let request = Request::builder()
+        .uri("/friends/remove")
+        .method("POST")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("build remove friend request");
+
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute remove friend request");
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
 fn pending_record_id(split_response: &Value) -> String {
     split_response["pending_record_ids"]
         .as_array()
@@ -337,7 +381,22 @@ async fn split_unsettled_with_friend_returns_non_pending_and_excludes_settled() 
         .await
         .expect("execute unknown-friend unsettled request");
 
-    assert_eq!(unknown_friend_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(unknown_friend_response.status(), StatusCode::OK);
+
+    let unknown_friend_body = axum::body::to_bytes(unknown_friend_response.into_body(), usize::MAX)
+        .await
+        .expect("read unknown-friend body");
+    let unknown_friend_json: Value =
+        serde_json::from_slice(&unknown_friend_body).expect("parse unknown-friend body");
+
+    assert_eq!(unknown_friend_json["total_count"], 0);
+    assert_eq!(
+        unknown_friend_json["splits"]
+            .as_array()
+            .expect("splits should be array")
+            .len(),
+        0
+    );
 
     let self_friend_request = Request::builder()
         .uri(format!(
@@ -393,4 +452,189 @@ async fn split_unsettled_with_friend_returns_non_pending_and_excludes_settled() 
             .len(),
         0
     );
+}
+
+#[tokio::test]
+async fn split_unsettled_with_friend_returns_both_directions_for_same_pair() {
+    let app = common::setup_test_app().await.expect("setup failed");
+
+    let alice_id = common::create_test_user(&app.state, "alice", "password123")
+        .await
+        .expect("create alice failed");
+    let bob_id = common::create_test_user(&app.state, "bob", "password123")
+        .await
+        .expect("create bob failed");
+
+    let alice_cookie = common::login_user(&app.router, "alice", "password123")
+        .await
+        .expect("alice login failed");
+    let bob_cookie = common::login_user(&app.router, "bob", "password123")
+        .await
+        .expect("bob login failed");
+
+    send_friend_request(&app, &alice_cookie, "bob").await;
+    accept_friend_request(&app, &bob_cookie, &alice_id).await;
+
+    let alice_category = create_category(&app, &alice_cookie, "Dining", false).await;
+    let bob_category = create_category(&app, &bob_cookie, "Shared", false).await;
+
+    let split_from_alice = create_split(
+        &app,
+        &alice_cookie,
+        &bob_id,
+        &alice_category.id,
+        "split-unsettled-both-1",
+    )
+    .await;
+    let bob_pending_record_id = pending_record_id(&split_from_alice);
+    finalize_pending(&app, &bob_cookie, &bob_pending_record_id, &bob_category.id).await;
+
+    let split_from_bob = create_split(
+        &app,
+        &bob_cookie,
+        &alice_id,
+        &bob_category.id,
+        "split-unsettled-both-2",
+    )
+    .await;
+    let alice_pending_record_id = pending_record_id(&split_from_bob);
+    finalize_pending(
+        &app,
+        &alice_cookie,
+        &alice_pending_record_id,
+        &alice_category.id,
+    )
+    .await;
+
+    let unsettled_request = Request::builder()
+        .uri(format!(
+            "/splits/unsettled?friend_id={}&limit=1000&offset=0",
+            bob_id
+        ))
+        .method("GET")
+        .header("cookie", &alice_cookie)
+        .body(Body::empty())
+        .expect("build unsettled request");
+
+    let unsettled_response = app
+        .router
+        .clone()
+        .oneshot(unsettled_request)
+        .await
+        .expect("execute unsettled request");
+
+    assert_eq!(unsettled_response.status(), StatusCode::OK);
+
+    let unsettled_body = axum::body::to_bytes(unsettled_response.into_body(), usize::MAX)
+        .await
+        .expect("read unsettled body");
+    let unsettled_json: Value =
+        serde_json::from_slice(&unsettled_body).expect("parse unsettled body");
+
+    let unsettled_splits = unsettled_json["splits"]
+        .as_array()
+        .expect("splits should be array");
+    assert_eq!(unsettled_json["total_count"], 2);
+    assert_eq!(unsettled_splits.len(), 2);
+
+    let has_you_owe = unsettled_splits
+        .iter()
+        .any(|item| item["direction"] == "you_owe");
+    let has_they_owe_you = unsettled_splits
+        .iter()
+        .any(|item| item["direction"] == "they_owe_you");
+
+    assert!(has_you_owe, "expected at least one you_owe item");
+    assert!(has_they_owe_you, "expected at least one they_owe_you item");
+
+    remove_friend(&app, &alice_cookie, &bob_id).await;
+
+    let post_remove_request = Request::builder()
+        .uri(format!(
+            "/splits/unsettled?friend_id={}&limit=1000&offset=0",
+            bob_id
+        ))
+        .method("GET")
+        .header("cookie", &alice_cookie)
+        .body(Body::empty())
+        .expect("build post-remove unsettled request");
+
+    let post_remove_response = app
+        .router
+        .clone()
+        .oneshot(post_remove_request)
+        .await
+        .expect("execute post-remove unsettled request");
+
+    assert_eq!(post_remove_response.status(), StatusCode::OK);
+
+    let post_remove_body = axum::body::to_bytes(post_remove_response.into_body(), usize::MAX)
+        .await
+        .expect("read post-remove unsettled body");
+    let post_remove_json: Value =
+        serde_json::from_slice(&post_remove_body).expect("parse post-remove unsettled body");
+
+    assert_eq!(post_remove_json["total_count"], 2);
+
+    let settle_result = settle_all_with_friend(&app, &alice_cookie, &bob_id).await;
+    let updated_count = settle_result["updated_count"]
+        .as_u64()
+        .expect("updated_count should be an integer");
+    assert_eq!(updated_count, 2);
+
+    let alice_post_settle_request = Request::builder()
+        .uri(format!(
+            "/splits/unsettled?friend_id={}&limit=1000&offset=0",
+            bob_id
+        ))
+        .method("GET")
+        .header("cookie", &alice_cookie)
+        .body(Body::empty())
+        .expect("build alice post-settle request");
+
+    let alice_post_settle_response = app
+        .router
+        .clone()
+        .oneshot(alice_post_settle_request)
+        .await
+        .expect("execute alice post-settle request");
+
+    assert_eq!(alice_post_settle_response.status(), StatusCode::OK);
+
+    let alice_post_settle_body =
+        axum::body::to_bytes(alice_post_settle_response.into_body(), usize::MAX)
+            .await
+            .expect("read alice post-settle body");
+    let alice_post_settle_json: Value =
+        serde_json::from_slice(&alice_post_settle_body).expect("parse alice post-settle body");
+
+    assert_eq!(alice_post_settle_json["total_count"], 0);
+
+    let bob_post_settle_request = Request::builder()
+        .uri(format!(
+            "/splits/unsettled?friend_id={}&limit=1000&offset=0",
+            alice_id
+        ))
+        .method("GET")
+        .header("cookie", &bob_cookie)
+        .body(Body::empty())
+        .expect("build bob post-settle request");
+
+    let bob_post_settle_response = app
+        .router
+        .clone()
+        .oneshot(bob_post_settle_request)
+        .await
+        .expect("execute bob post-settle request");
+
+    assert_eq!(bob_post_settle_response.status(), StatusCode::OK);
+
+    let bob_post_settle_body =
+        axum::body::to_bytes(bob_post_settle_response.into_body(), usize::MAX)
+            .await
+            .expect("read bob post-settle body");
+    let bob_post_settle_json: Value =
+        serde_json::from_slice(&bob_post_settle_body).expect("parse bob post-settle body");
+
+    assert_eq!(bob_post_settle_json["total_count"], 0);
 }

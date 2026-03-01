@@ -192,7 +192,7 @@ async fn split_create_happy_path_fans_out_records() {
         let debtor_user_id: Option<String> = row.get(5).expect("debtor_user_id");
         let creditor_user_id: Option<String> = row.get(6).expect("creditor_user_id");
 
-        assert_eq!(amount, -100.0);
+        assert_eq!(amount, -40.0);
         assert_eq!(category_id, expense_category.id);
         assert!(!pending);
         assert_eq!(split_id_db, Some(split_id.clone()));
