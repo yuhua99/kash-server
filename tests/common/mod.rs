@@ -63,6 +63,11 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
         .route("/auth/me", axum::routing::get(auth::me))
         .route("/auth/logout", axum::routing::post(auth::logout))
         .route(
+            "/settings",
+            axum::routing::get(kash_server::settings::get_settings)
+                .put(kash_server::settings::update_settings),
+        )
+        .route(
             "/records",
             axum::routing::post(kash_server::records::create_record)
                 .get(kash_server::records::get_records),
@@ -164,8 +169,13 @@ pub async fn create_test_user(
 
     let conn = app_state.main_db.write().await;
     conn.execute(
-        "INSERT INTO users (id, name, password_hash) VALUES (?, ?, ?)",
-        (user_id.as_str(), username, hash.as_str()),
+        "INSERT INTO users (id, name, password_hash, main_currency_code) VALUES (?, ?, ?, ?)",
+        (
+            user_id.as_str(),
+            username,
+            hash.as_str(),
+            DEFAULT_MAIN_CURRENCY_CODE,
+        ),
     )
     .await
     .map_err(|e| anyhow::anyhow!("Failed to create test user: {}", e))?;

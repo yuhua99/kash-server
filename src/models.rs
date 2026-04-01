@@ -20,6 +20,16 @@ pub struct PublicUser {
     pub username: String,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct UserSettings {
+    pub main_currency_code: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateUserSettingsPayload {
+    pub main_currency_code: String,
+}
+
 #[derive(Deserialize)]
 pub struct LoginPayload {
     pub username: String,

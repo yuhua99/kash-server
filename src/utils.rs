@@ -50,6 +50,19 @@ pub fn validate_date(value: &str) -> Result<(), (StatusCode, String)> {
     Ok(())
 }
 
+pub fn validate_currency_code(value: &str) -> Result<String, (StatusCode, String)> {
+    let normalized = value.trim().to_ascii_uppercase();
+
+    if SUPPORTED_CURRENCY_CODES.contains(&normalized.as_str()) {
+        return Ok(normalized);
+    }
+
+    Err((
+        StatusCode::BAD_REQUEST,
+        format!("Unsupported currency code: {}", value.trim()),
+    ))
+}
+
 pub async fn validate_category_exists(
     db: &crate::Db,
     user_id: &str,

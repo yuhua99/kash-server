@@ -39,8 +39,13 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
     let conn = db.write().await;
 
     conn.execute(
-        "INSERT INTO users (id, name, password_hash) VALUES (?, ?, ?)",
-        (id.as_str(), username, hash.as_str()),
+        "INSERT INTO users (id, name, password_hash, main_currency_code) VALUES (?, ?, ?, ?)",
+        (
+            id.as_str(),
+            username,
+            hash.as_str(),
+            DEFAULT_MAIN_CURRENCY_CODE,
+        ),
     )
     .await?;
 

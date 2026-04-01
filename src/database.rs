@@ -7,7 +7,8 @@ const CREATE_USERS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id             TEXT    PRIMARY KEY,
     name           TEXT    UNIQUE NOT NULL,
-    password_hash  TEXT    NOT NULL
+    password_hash  TEXT    NOT NULL,
+    main_currency_code TEXT NOT NULL DEFAULT 'TWD'
 );
 "#;
 

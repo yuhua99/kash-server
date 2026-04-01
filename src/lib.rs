@@ -6,6 +6,7 @@ pub mod database;
 pub mod friends;
 pub mod models;
 pub mod records;
+pub mod settings;
 pub mod splits;
 pub mod utils;
 

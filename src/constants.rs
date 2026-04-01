@@ -23,6 +23,10 @@ pub const MIN_USERNAME_LENGTH: usize = 4;
 pub const MIN_PASSWORD_LENGTH: usize = 6;
 pub const MAX_NICKNAME_LENGTH: usize = 100;
 
+// Currency settings
+pub const DEFAULT_MAIN_CURRENCY_CODE: &str = "TWD";
+pub const SUPPORTED_CURRENCY_CODES: &[&str] = &["TWD", "USD", "JPY", "EUR", "CNY"];
+
 // Split Status
 pub const SPLIT_STATUS_INITIATED: &str = "initiated";
 pub const SPLIT_STATUS_COMPLETED: &str = "completed";
