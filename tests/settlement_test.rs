@@ -55,7 +55,7 @@ async fn create_split_scenario(
     let split_payload = json!({
         "idempotency_key": "settlement-test-idem-key",
         "total_amount": 100.0,
-        "currency_code": "TWD",
+        "currency": "TWD",
         "description": "Split Payment",
         "date": "2026-02-16",
         "category_id": category_id,

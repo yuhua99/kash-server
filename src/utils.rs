@@ -50,30 +50,30 @@ pub fn validate_date(value: &str) -> Result<(), (StatusCode, String)> {
     Ok(())
 }
 
-pub fn validate_currency_code(value: &str) -> Result<String, (StatusCode, String)> {
-    if SUPPORTED_CURRENCY_CODES.contains(&value) {
+pub fn validate_currency(value: &str) -> Result<String, (StatusCode, String)> {
+    if SUPPORTED_CURRENCIES.contains(&value) {
         return Ok(value.to_string());
     }
 
     Err((
         StatusCode::BAD_REQUEST,
-        format!("Unsupported currency code: {}", value),
+        format!("Unsupported currency: {}", value),
     ))
 }
 
-pub fn validate_currency_code_list(value: &str) -> Result<Vec<String>, (StatusCode, String)> {
+pub fn validate_currency_list(value: &str) -> Result<Vec<String>, (StatusCode, String)> {
     let codes: Vec<&str> = value.split(',').collect();
 
     if codes.is_empty() || codes.iter().any(|code| code.is_empty()) {
         return Err((
             StatusCode::BAD_REQUEST,
-            "Quotes must include at least one currency code".to_string(),
+            "Quotes must include at least one currency".to_string(),
         ));
     }
 
     codes
         .into_iter()
-        .map(validate_currency_code)
+        .map(validate_currency)
         .collect::<Result<Vec<_>, _>>()
 }
 

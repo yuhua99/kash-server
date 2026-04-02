@@ -173,12 +173,12 @@ pub async fn create_test_user(
 
     let conn = app_state.main_db.write().await;
     conn.execute(
-        "INSERT INTO users (id, name, password_hash, main_currency_code) VALUES (?, ?, ?, ?)",
+        "INSERT INTO users (id, name, password_hash, main_currency) VALUES (?, ?, ?, ?)",
         (
             user_id.as_str(),
             username,
             hash.as_str(),
-            DEFAULT_MAIN_CURRENCY_CODE,
+            DEFAULT_MAIN_CURRENCY,
         ),
     )
     .await

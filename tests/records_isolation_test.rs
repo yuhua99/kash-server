@@ -383,7 +383,7 @@ async fn b9_finalize_pending_blocked_for_other_user_record() {
         json!({
             "idempotency_key": "b9-split-1",
             "total_amount": 60.0,
-            "currency_code": "TWD",
+            "currency": "TWD",
             "description": "b9 split",
             "date": "2026-02-20",
             "category_id": alice_cat,
@@ -466,7 +466,7 @@ async fn b10_settle_cross_user_blocked() {
         json!({
             "idempotency_key": "b10-split-1",
             "total_amount": 60.0,
-            "currency_code": "TWD",
+            "currency": "TWD",
             "description": "b10 split",
             "date": "2026-02-20",
             "category_id": alice_cat,

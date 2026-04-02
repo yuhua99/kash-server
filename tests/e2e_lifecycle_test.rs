@@ -97,7 +97,7 @@ async fn create_split(
         json!({
             "idempotency_key": idempotency_key,
             "total_amount": total_amount,
-            "currency_code": "TWD",
+            "currency": "TWD",
             "description": description,
             "date": "2026-02-16",
             "category_id": category_id,

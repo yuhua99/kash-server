@@ -37,7 +37,7 @@ async fn settings_get_returns_default_main_currency() {
         .await
         .expect("read body");
     let parsed: Value = serde_json::from_slice(&body).expect("parse json");
-    assert_eq!(parsed["main_currency_code"], "TWD");
+    assert_eq!(parsed["main_currency"], "TWD");
 }
 
 #[tokio::test]
@@ -50,7 +50,7 @@ async fn settings_put_updates_main_currency() {
         .await
         .expect("login user");
 
-    let payload = serde_json::json!({ "main_currency_code": "USD" });
+    let payload = serde_json::json!({ "main_currency": "USD" });
     let request = Request::builder()
         .uri("/settings")
         .method("PUT")
@@ -71,7 +71,7 @@ async fn settings_put_updates_main_currency() {
     let conn = app.state.main_db.read().await;
     let mut rows = conn
         .query(
-            "SELECT main_currency_code FROM users WHERE id = ?",
+            "SELECT main_currency FROM users WHERE id = ?",
             [user_id.as_str()],
         )
         .await
@@ -81,8 +81,8 @@ async fn settings_put_updates_main_currency() {
         .await
         .expect("next row")
         .expect("user row exists");
-    let main_currency_code: String = row.get(0).expect("read currency");
-    assert_eq!(main_currency_code, "USD");
+    let main_currency: String = row.get(0).expect("read currency");
+    assert_eq!(main_currency, "USD");
 }
 
 #[tokio::test]
@@ -95,7 +95,7 @@ async fn settings_put_rejects_unsupported_currency() {
         .await
         .expect("login user");
 
-    let payload = serde_json::json!({ "main_currency_code": "GBP" });
+    let payload = serde_json::json!({ "main_currency": "GBP" });
     let request = Request::builder()
         .uri("/settings")
         .method("PUT")

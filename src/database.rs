@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     id             TEXT    PRIMARY KEY,
     name           TEXT    UNIQUE NOT NULL,
     password_hash  TEXT    NOT NULL,
-    main_currency_code TEXT NOT NULL DEFAULT 'TWD'
+    main_currency TEXT NOT NULL DEFAULT 'TWD'
 );
 "#;
 
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS records (
     owner_user_id    TEXT    NOT NULL,
     name             TEXT    NOT NULL,
     amount           REAL    NOT NULL,
-    currency_code    TEXT    NOT NULL DEFAULT 'TWD',
+    currency    TEXT    NOT NULL DEFAULT 'TWD',
     category_id      TEXT,
     date             TEXT    NOT NULL,
     pending          BOOLEAN NOT NULL DEFAULT 0,

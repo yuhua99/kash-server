@@ -79,7 +79,7 @@ fn serde_create_split_payload() {
     let json = r#"{
         "idempotency_key":"idempotency-123",
         "total_amount": 120.0,
-        "currency_code": "TWD",
+        "currency": "TWD",
         "description":"Dinner with friends",
         "date":"2025-02-16",
         "category_id":"cat-dining",

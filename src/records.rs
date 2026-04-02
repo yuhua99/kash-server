@@ -13,8 +13,8 @@ use crate::models::{
     UpdateRecordPayload, UpdateSettlePayload,
 };
 use crate::utils::{
-    db_error, db_error_with_context, validate_category_exists, validate_currency_code,
-    validate_date, validate_offset, validate_records_limit, validate_string_length,
+    db_error, db_error_with_context, validate_category_exists, validate_currency, validate_date,
+    validate_offset, validate_records_limit, validate_string_length,
 };
 use crate::{AppState, TransactionError, with_transaction};
 
@@ -119,7 +119,7 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
     let amount: f64 = row
         .get(2)
         .map_err(|_| db_error_with_context("invalid record data"))?;
-    let currency_code: String = row
+    let currency: String = row
         .get(3)
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let category_id: Option<String> = row
@@ -133,7 +133,7 @@ pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, 
         id,
         name,
         amount,
-        currency_code,
+        currency,
         category_id,
         date,
     })
@@ -146,7 +146,7 @@ pub async fn create_record_for_user(
 ) -> Result<Record, (StatusCode, String)> {
     validate_record_name(&payload.name)?;
     validate_record_amount(payload.amount)?;
-    let currency_code = validate_currency_code(&payload.currency_code)?;
+    let currency = validate_currency(&payload.currency)?;
     validate_category_id(&payload.category_id)?;
     validate_date(&payload.date)?;
 
@@ -164,13 +164,13 @@ pub async fn create_record_for_user(
 
     let conn = db.write().await;
     conn.execute(
-        "INSERT INTO records (id, owner_user_id, name, amount, currency_code, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             record_id.as_str(),
             user_id,
             payload.name.trim(),
             normalized_amount,
-            currency_code.as_str(),
+            currency.as_str(),
             category_id.as_str(),
             payload.date.trim(),
         ),
@@ -182,7 +182,7 @@ pub async fn create_record_for_user(
         id: record_id,
         name: payload.name.trim().to_string(),
         amount: normalized_amount,
-        currency_code,
+        currency,
         category_id: Some(category_id),
         date: payload.date.trim().to_string(),
     })
@@ -290,7 +290,7 @@ pub async fn get_records(
         (None, None) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), limit, offset),
                 )
                 .await
@@ -303,7 +303,7 @@ pub async fn get_records(
         (Some(p), None) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, limit, offset),
                 )
                 .await
@@ -316,7 +316,7 @@ pub async fn get_records(
         (None, Some(s)) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), s, limit, offset),
                 )
                 .await
@@ -329,7 +329,7 @@ pub async fn get_records(
         (Some(p), Some(s)) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s, limit, offset),
                 )
                 .await
@@ -395,7 +395,7 @@ pub async fn update_record(
 
     let mut existing_rows = conn
         .query(
-            "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+            "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
             (record_id.as_str(), user.id.as_str()),
         )
         .await
@@ -453,7 +453,7 @@ pub async fn update_record(
         id: record_id,
         name: updated_name.to_string(),
         amount: updated_amount,
-        currency_code: existing_record.currency_code,
+        currency: existing_record.currency,
         category_id: updated_category_id,
         date: updated_date,
     };
@@ -539,7 +539,7 @@ pub async fn finalize_pending_record(
 
             let mut updated_rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -551,7 +551,7 @@ pub async fn finalize_pending_record(
                 .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?
                 .ok_or(FinalizePendingError::NotFound)?;
 
-            let finalized_currency_code: String = row
+            let finalized_currency: String = row
                 .get(3)
                 .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
             let finalized_category_id: Option<String> = row
@@ -568,7 +568,7 @@ pub async fn finalize_pending_record(
                 amount: row
                     .get(2)
                     .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-                currency_code: finalized_currency_code,
+                currency: finalized_currency,
                 category_id: finalized_category_id,
                 date: row
                     .get(5)
@@ -624,7 +624,7 @@ pub async fn update_settle(
         Box::pin(async move {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ? AND owner_user_id = ?",
+                    "SELECT id, name, amount, currency, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ? AND owner_user_id = ?",
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -655,7 +655,7 @@ pub async fn update_settle(
                     id: row.get(0).map_err(|_| TransactionError::Begin)?,
                     name: row.get(1).map_err(|_| TransactionError::Begin)?,
                     amount: row.get(2).map_err(|_| TransactionError::Begin)?,
-                    currency_code: row.get(3).map_err(|_| TransactionError::Begin)?,
+                    currency: row.get(3).map_err(|_| TransactionError::Begin)?,
                     category_id: row.get(4).map_err(|_| TransactionError::Begin)?,
                     date: row.get(5).map_err(|_| TransactionError::Begin)?,
                 };
@@ -671,7 +671,7 @@ pub async fn update_settle(
 
             let mut updated_rows = conn
                 .query(
-                    "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -687,7 +687,7 @@ pub async fn update_settle(
                 id: updated_row.get(0).map_err(|_| TransactionError::Commit)?,
                 name: updated_row.get(1).map_err(|_| TransactionError::Commit)?,
                 amount: updated_row.get(2).map_err(|_| TransactionError::Commit)?,
-                currency_code: updated_row.get(3).map_err(|_| TransactionError::Commit)?,
+                currency: updated_row.get(3).map_err(|_| TransactionError::Commit)?,
                 category_id: updated_row.get(4).map_err(|_| TransactionError::Commit)?,
                 date: updated_row.get(5).map_err(|_| TransactionError::Commit)?,
             };

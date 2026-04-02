@@ -9,9 +9,9 @@ use tower_sessions::Session;
 
 use crate::AppState;
 use crate::auth::get_current_user;
-use crate::constants::FX_ANCHOR_BASE_CURRENCY_CODE;
+use crate::constants::FX_ANCHOR_BASE_CURRENCY;
 use crate::models::{ExchangeRateRow, GetFxRatesQuery, GetFxRatesResponse};
-use crate::utils::{db_error, db_error_with_context, validate_currency_code_list, validate_date};
+use crate::utils::{db_error, db_error_with_context, validate_currency_list, validate_date};
 
 const FRANKFURTER_RATES_URL: &str = "https://api.frankfurter.dev/v2/rates";
 
@@ -38,11 +38,11 @@ pub async fn get_fx_rates(
         ));
     }
 
-    let currencies = validate_currency_code_list(&query.quotes)?;
+    let currencies = validate_currency_list(&query.quotes)?;
     let dates = enumerate_dates(&query.from, &query.to)?;
     let lookup_currencies: Vec<String> = currencies
         .iter()
-        .filter(|currency| currency.as_str() != FX_ANCHOR_BASE_CURRENCY_CODE)
+        .filter(|currency| currency.as_str() != FX_ANCHOR_BASE_CURRENCY)
         .cloned()
         .collect();
 
@@ -70,14 +70,14 @@ fn append_usd_identity_rates(
 ) {
     if !currencies
         .iter()
-        .any(|currency| currency == FX_ANCHOR_BASE_CURRENCY_CODE)
+        .any(|currency| currency == FX_ANCHOR_BASE_CURRENCY)
     {
         return;
     }
 
     rates.extend(dates.iter().cloned().map(|date| ExchangeRateRow {
         date,
-        currency: FX_ANCHOR_BASE_CURRENCY_CODE.to_string(),
+        currency: FX_ANCHOR_BASE_CURRENCY.to_string(),
         rate: 1.0,
     }));
     rates.sort_by(|left, right| {
@@ -163,7 +163,7 @@ async fn fetch_frankfurter_rates(
         .query(&[
             ("from", from),
             ("to", to),
-            ("base", FX_ANCHOR_BASE_CURRENCY_CODE),
+            ("base", FX_ANCHOR_BASE_CURRENCY),
             ("quotes", quotes.as_str()),
         ])
         .send()
