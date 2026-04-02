@@ -3,12 +3,24 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
 };
+use reqwest::Client;
+use serde::Deserialize;
 use tower_sessions::Session;
 
 use crate::AppState;
 use crate::auth::get_current_user;
+use crate::constants::FX_ANCHOR_BASE_CURRENCY_CODE;
 use crate::models::{ExchangeRateRow, GetFxRatesQuery, GetFxRatesResponse};
 use crate::utils::{db_error, db_error_with_context, validate_currency_code_list, validate_date};
+
+const FRANKFURTER_RATES_URL: &str = "https://api.frankfurter.dev/v2/rates";
+
+#[derive(Deserialize)]
+struct FrankfurterRateRow {
+    date: String,
+    quote: String,
+    rate: f64,
+}
 
 pub async fn get_fx_rates(
     State(app_state): State<AppState>,
@@ -27,6 +39,63 @@ pub async fn get_fx_rates(
     }
 
     let currencies = validate_currency_code_list(&query.quotes)?;
+    let dates = enumerate_dates(&query.from, &query.to)?;
+    let lookup_currencies: Vec<String> = currencies
+        .iter()
+        .filter(|currency| currency.as_str() != FX_ANCHOR_BASE_CURRENCY_CODE)
+        .cloned()
+        .collect();
+
+    if !lookup_currencies.is_empty() {
+        let cached_rates =
+            load_cached_rates(&app_state, &query.from, &query.to, &lookup_currencies).await?;
+        if is_missing_any_rate(&cached_rates, &dates, &lookup_currencies) {
+            let fetched_rates =
+                fetch_frankfurter_rates(&query.from, &query.to, &lookup_currencies).await?;
+            upsert_exchange_rates(&app_state, &fetched_rates).await?;
+        }
+    }
+
+    let mut rates =
+        load_cached_rates(&app_state, &query.from, &query.to, &lookup_currencies).await?;
+    append_usd_identity_rates(&mut rates, &dates, &currencies);
+
+    Ok((StatusCode::OK, Json(GetFxRatesResponse { rates })))
+}
+
+fn append_usd_identity_rates(
+    rates: &mut Vec<ExchangeRateRow>,
+    dates: &[String],
+    currencies: &[String],
+) {
+    if !currencies
+        .iter()
+        .any(|currency| currency == FX_ANCHOR_BASE_CURRENCY_CODE)
+    {
+        return;
+    }
+
+    rates.extend(dates.iter().cloned().map(|date| ExchangeRateRow {
+        date,
+        currency: FX_ANCHOR_BASE_CURRENCY_CODE.to_string(),
+        rate: 1.0,
+    }));
+    rates.sort_by(|left, right| {
+        left.date
+            .cmp(&right.date)
+            .then_with(|| left.currency.cmp(&right.currency))
+    });
+}
+
+async fn load_cached_rates(
+    app_state: &AppState,
+    from: &str,
+    to: &str,
+    currencies: &[String],
+) -> Result<Vec<ExchangeRateRow>, (StatusCode, String)> {
+    if currencies.is_empty() {
+        return Ok(Vec::new());
+    }
 
     let placeholders = std::iter::repeat_n("?", currencies.len())
         .collect::<Vec<_>>()
@@ -38,8 +107,8 @@ pub async fn get_fx_rates(
 
     let mut params: Vec<libsql::Value> = Vec::with_capacity(currencies.len() + 2);
     params.extend(currencies.iter().cloned().map(libsql::Value::from));
-    params.push(query.from.clone().into());
-    params.push(query.to.clone().into());
+    params.push(from.to_string().into());
+    params.push(to.to_string().into());
 
     let conn = app_state.main_db.read().await;
     let mut rows = conn
@@ -62,5 +131,114 @@ pub async fn get_fx_rates(
         });
     }
 
-    Ok((StatusCode::OK, Json(GetFxRatesResponse { rates })))
+    Ok(rates)
+}
+
+fn is_missing_any_rate(
+    cached_rates: &[ExchangeRateRow],
+    dates: &[String],
+    currencies: &[String],
+) -> bool {
+    let available = cached_rates
+        .iter()
+        .map(|row| (row.date.as_str(), row.currency.as_str()))
+        .collect::<std::collections::HashSet<_>>();
+
+    dates.iter().any(|date| {
+        currencies
+            .iter()
+            .any(|currency| !available.contains(&(date.as_str(), currency.as_str())))
+    })
+}
+
+async fn fetch_frankfurter_rates(
+    from: &str,
+    to: &str,
+    currencies: &[String],
+) -> Result<Vec<ExchangeRateRow>, (StatusCode, String)> {
+    let client = Client::new();
+    let quotes = currencies.join(",");
+    let response = client
+        .get(FRANKFURTER_RATES_URL)
+        .query(&[
+            ("from", from),
+            ("to", to),
+            ("base", FX_ANCHOR_BASE_CURRENCY_CODE),
+            ("quotes", quotes.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|_| db_error_with_context("failed to fetch exchange rates from Frankfurter"))?;
+
+    if !response.status().is_success() {
+        return Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Frankfurter returned {}", response.status()),
+        ));
+    }
+
+    let rows: Vec<FrankfurterRateRow> = response
+        .json()
+        .await
+        .map_err(|_| db_error_with_context("failed to decode Frankfurter response"))?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| ExchangeRateRow {
+            date: row.date,
+            currency: row.quote,
+            rate: row.rate,
+        })
+        .collect())
+}
+
+async fn upsert_exchange_rates(
+    app_state: &AppState,
+    rates: &[ExchangeRateRow],
+) -> Result<(), (StatusCode, String)> {
+    if rates.is_empty() {
+        return Ok(());
+    }
+
+    let conn = app_state.main_db.write().await;
+    for rate in rates {
+        conn.execute(
+            "INSERT INTO exchange_rates_daily (date, currency, rate) VALUES (?, ?, ?) ON CONFLICT(date, currency) DO UPDATE SET rate = excluded.rate",
+            (rate.date.as_str(), rate.currency.as_str(), rate.rate),
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to store exchange rate cache"))?;
+    }
+
+    Ok(())
+}
+
+fn enumerate_dates(from: &str, to: &str) -> Result<Vec<String>, (StatusCode, String)> {
+    let format = time::format_description::parse("[year]-[month]-[day]").map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid date parser".to_string(),
+        )
+    })?;
+
+    let mut current = time::Date::parse(from, &format)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid from date".to_string()))?;
+    let end = time::Date::parse(to, &format)
+        .map_err(|_| (StatusCode::BAD_REQUEST, "Invalid to date".to_string()))?;
+
+    let mut dates = Vec::new();
+    while current <= end {
+        dates.push(current.format(&format).map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Invalid date format".to_string(),
+            )
+        })?);
+        current = current.next_day().ok_or((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Failed to advance date".to_string(),
+        ))?;
+    }
+
+    Ok(dates)
 }
