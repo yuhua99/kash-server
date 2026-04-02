@@ -31,6 +31,26 @@ pub struct UpdateUserSettingsPayload {
 }
 
 #[derive(Deserialize)]
+pub struct GetFxRatesQuery {
+    pub from: String,
+    pub to: String,
+    pub quotes: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ExchangeRateRow {
+    pub date: String,
+    pub currency: String,
+    // 1 USD = rate * currency
+    pub rate: f64,
+}
+
+#[derive(Serialize)]
+pub struct GetFxRatesResponse {
+    pub rates: Vec<ExchangeRateRow>,
+}
+
+#[derive(Deserialize)]
 pub struct LoginPayload {
     pub username: String,
     pub password: String,

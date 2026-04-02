@@ -100,6 +100,20 @@ const CREATE_IDEMPOTENCY_USER_INDEX: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_idempotency_user ON idempotency_keys(user_id);
 "#;
 
+const CREATE_EXCHANGE_RATES_DAILY_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS exchange_rates_daily (
+    date                TEXT NOT NULL,
+    currency            TEXT NOT NULL,
+    rate                REAL NOT NULL,
+    PRIMARY KEY (date, currency)
+);
+"#;
+
+const CREATE_EXCHANGE_RATES_LOOKUP_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_exchange_rates_lookup
+ON exchange_rates_daily(date, currency);
+"#;
+
 pub type Db = Arc<RwLock<Connection>>;
 
 /// Single shared DB — contains all tables (users, records, categories, friends, etc.)
@@ -121,6 +135,8 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_FRIENDSHIP_TO_INDEX, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
+    conn.execute(CREATE_EXCHANGE_RATES_DAILY_TABLE, ()).await?;
+    conn.execute(CREATE_EXCHANGE_RATES_LOOKUP_INDEX, ()).await?;
 
     Ok(Arc::new(RwLock::new(conn)))
 }

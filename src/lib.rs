@@ -4,6 +4,7 @@ pub mod config;
 pub mod constants;
 pub mod database;
 pub mod friends;
+pub mod fx;
 pub mod models;
 pub mod records;
 pub mod settings;

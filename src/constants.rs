@@ -26,6 +26,7 @@ pub const MAX_NICKNAME_LENGTH: usize = 100;
 // Currency settings
 pub const DEFAULT_MAIN_CURRENCY_CODE: &str = "TWD";
 pub const SUPPORTED_CURRENCY_CODES: &[&str] = &["TWD", "USD", "JPY", "EUR", "CNY"];
+pub const FX_ANCHOR_BASE_CURRENCY_CODE: &str = "USD";
 
 // Split Status
 pub const SPLIT_STATUS_INITIATED: &str = "initiated";

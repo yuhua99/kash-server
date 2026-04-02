@@ -68,6 +68,10 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
                 .put(kash_server::settings::update_settings),
         )
         .route(
+            "/fx/rates",
+            axum::routing::get(kash_server::fx::get_fx_rates),
+        )
+        .route(
             "/records",
             axum::routing::post(kash_server::records::create_record)
                 .get(kash_server::records::get_records),

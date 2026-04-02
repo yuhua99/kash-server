@@ -9,8 +9,8 @@ use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::
 
 // Import everything from the library crate (no duplicate module declarations)
 use kash_server::{
-    AppState, auth, categories, config::Config, constants::*, database, friends, records, settings,
-    splits,
+    AppState, auth, categories, config::Config, constants::*, database, friends, fx, records,
+    settings, splits,
 };
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -87,6 +87,7 @@ async fn main() -> Result<()> {
             "/settings",
             get(settings::get_settings).put(settings::update_settings),
         )
+        .route("/fx/rates", get(fx::get_fx_rates))
         .route(
             "/records",
             post(records::create_record).get(records::get_records),
