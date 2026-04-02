@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS records (
     owner_user_id    TEXT    NOT NULL,
     name             TEXT    NOT NULL,
     amount           REAL    NOT NULL,
+    currency_code    TEXT    NOT NULL DEFAULT 'TWD',
     category_id      TEXT,
     date             TEXT    NOT NULL,
     pending          BOOLEAN NOT NULL DEFAULT 0,

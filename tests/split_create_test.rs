@@ -137,6 +137,7 @@ async fn split_create_happy_path_fans_out_records() {
     let payload = json!({
         "idempotency_key": "split-create-happy-1",
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Dinner split",
         "date": "2026-02-16",
         "category_id": expense_category.id,
@@ -290,6 +291,7 @@ async fn split_create_idempotency_same_key_same_payload_returns_same_response() 
     let payload = json!({
         "idempotency_key": "split-create-idempotency-1",
         "total_amount": 99.99,
+        "currency_code": "TWD",
         "description": "Lunch",
         "date": "2026-02-16",
         "category_id": expense_category.id,
@@ -365,6 +367,7 @@ async fn split_create_idempotency_same_key_different_payload_conflicts() {
     let first_payload = json!({
         "idempotency_key": "split-create-idempotency-2",
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Lunch A",
         "date": "2026-02-16",
         "category_id": expense_category.id,
@@ -376,6 +379,7 @@ async fn split_create_idempotency_same_key_different_payload_conflicts() {
     let second_payload = json!({
         "idempotency_key": "split-create-idempotency-2",
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Lunch B",
         "date": "2026-02-16",
         "category_id": expense_category.id,
@@ -434,6 +438,7 @@ async fn split_create_rejects_non_friend_participant() {
     let payload = json!({
         "idempotency_key": "split-create-friendship-1",
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Dinner",
         "date": "2026-02-16",
         "category_id": expense_category.id,

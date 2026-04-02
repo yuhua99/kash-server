@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use kash_server::Db;
 use kash_server::categories::validate_category_name;
+use kash_server::constants::DEFAULT_MAIN_CURRENCY_CODE;
 use kash_server::models::{CreateRecordPayload, Record};
 use kash_server::records;
 use kash_server::utils::{validate_date, validate_offset, validate_records_limit};
@@ -250,6 +251,7 @@ async fn create_record_tool(
     let payload = CreateRecordPayload {
         name: input.name.trim().to_string(),
         amount: input.amount,
+        currency_code: DEFAULT_MAIN_CURRENCY_CODE.to_string(),
         category_id: category.id.clone(),
         date,
     };
@@ -388,10 +390,11 @@ async fn edit_record_tool(
 
     let affected_rows = conn
         .execute(
-            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
+            "UPDATE records SET name = ?, amount = ?, currency_code = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
             (
                 updated_name.as_str(),
                 updated_amount,
+                existing.currency_code.as_str(),
                 updated_category_id.as_deref(),
                 updated_date.as_str(),
                 existing.id.as_str(),
@@ -506,7 +509,7 @@ async fn list_records_tool(
 
     let mut rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records \
+            "SELECT id, name, amount, currency_code, category_id, date FROM records \
              WHERE owner_user_id = ? \
              AND date BETWEEN ? AND ? \
              AND (? = '' OR category_id = ?) \
@@ -659,7 +662,7 @@ async fn fetch_record_by_exact_name(
 
     let mut rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records WHERE LOWER(name) = LOWER(?) AND owner_user_id = ? ORDER BY date DESC LIMIT 3",
+            "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE LOWER(name) = LOWER(?) AND owner_user_id = ? ORDER BY date DESC LIMIT 3",
             (trimmed, user_id),
         )
         .await
@@ -717,7 +720,7 @@ pub async fn fetch_record_by_id(db: &Db, user_id: &str, record_id: &str) -> Resu
     let conn = db.read().await;
     let mut rows = conn
         .query(
-            "SELECT id, name, amount, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+            "SELECT id, name, amount, currency_code, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
             (record_id, user_id),
         )
         .await

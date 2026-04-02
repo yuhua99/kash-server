@@ -89,6 +89,7 @@ async fn create_split(
     let payload = json!({
         "idempotency_key": idempotency_key,
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Dinner",
         "date": "2026-02-16",
         "category_id": payer_category_id,

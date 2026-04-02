@@ -41,6 +41,7 @@ pub struct Record {
     pub id: String,
     pub name: String,
     pub amount: f64,
+    pub currency_code: String,
     pub category_id: Option<String>,
     pub date: String,
 }
@@ -49,6 +50,7 @@ pub struct Record {
 pub struct CreateRecordPayload {
     pub name: String,
     pub amount: f64,
+    pub currency_code: String,
     pub category_id: String,
     pub date: String,
 }
@@ -149,6 +151,7 @@ pub struct SplitParticipant {
 pub struct CreateSplitPayload {
     pub idempotency_key: String,
     pub total_amount: f64,
+    pub currency_code: String,
     pub description: String,
     pub date: String,
     pub category_id: String,
@@ -175,6 +178,7 @@ pub struct SplitListItem {
     pub description: String,
     pub date: String,
     pub amount: f64,
+    pub currency_code: String,
     pub debtor_user_id: String,
     pub creditor_user_id: String,
     pub counterparty_user_id: String,

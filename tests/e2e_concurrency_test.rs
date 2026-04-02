@@ -104,6 +104,7 @@ async fn test_concurrent_split_creation_idempotency_e2e_concurrency() {
     let shared_payload = Arc::new(json!({
         "idempotency_key": "e2e-concurrency-split-1",
         "total_amount": 100.0,
+        "currency_code": "TWD",
         "description": "Concurrent split create",
         "date": "2026-02-16",
         "category_id": category_id,
@@ -239,6 +240,7 @@ async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
         json!({
             "idempotency_key": "e2e-concurrency-finalize-1",
             "total_amount": 100.0,
+            "currency_code": "TWD",
             "description": "Concurrent finalize split",
             "date": "2026-02-16",
             "category_id": alice_category_id,

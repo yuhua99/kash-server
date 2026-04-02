@@ -16,8 +16,8 @@ use crate::models::{
 };
 use crate::utils::{
     calculate_split_amounts, db_error, db_error_with_context, validate_category_exists,
-    validate_date, validate_offset, validate_records_limit, validate_split_participants,
-    validate_string_length,
+    validate_currency_code, validate_date, validate_offset, validate_records_limit,
+    validate_split_participants, validate_string_length,
 };
 use crate::{AppState, TransactionError, with_transaction};
 
@@ -186,7 +186,7 @@ pub async fn list_pending_splits(
 
     let mut rows = conn
         .query(
-            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id = ? AND r.pending = 1 AND r.split_id IS NOT NULL ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
+            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency_code, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id = ? AND r.pending = 1 AND r.split_id IS NOT NULL ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
             (current_user.id.as_str(), limit, offset),
         )
         .await
@@ -256,7 +256,7 @@ pub async fn list_unsettled_splits_with_friend(
 
     let mut rows = conn
         .query(
-            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id IN (?, ?) AND r.pending = 0 AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.debtor_user_id = ? AND r.creditor_user_id = ?) OR (r.debtor_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
+            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency_code, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id IN (?, ?) AND r.pending = 0 AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.debtor_user_id = ? AND r.creditor_user_id = ?) OR (r.debtor_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
             (
                 current_user.id.as_str(),
                 friend_id.as_str(),
@@ -361,23 +361,26 @@ fn split_list_item_from_row(
     let amount: f64 = row
         .get(4)
         .map_err(|_| db_error_with_context("invalid split list amount"))?;
-    let debtor_user_id: Option<String> = row
+    let currency_code: String = row
         .get(5)
+        .map_err(|_| db_error_with_context("invalid split list currency"))?;
+    let debtor_user_id: Option<String> = row
+        .get(6)
         .map_err(|_| db_error_with_context("invalid split list debtor"))?;
     let creditor_user_id: Option<String> = row
-        .get(6)
+        .get(7)
         .map_err(|_| db_error_with_context("invalid split list creditor"))?;
     let creditor_name: String = row
-        .get(7)
+        .get(8)
         .map_err(|_| db_error_with_context("invalid split list creditor name"))?;
     let debtor_name: String = row
-        .get(8)
+        .get(9)
         .map_err(|_| db_error_with_context("invalid split list debtor name"))?;
     let pending: bool = row
-        .get(9)
+        .get(10)
         .map_err(|_| db_error_with_context("invalid split list pending flag"))?;
     let settle: bool = row
-        .get(10)
+        .get(11)
         .map_err(|_| db_error_with_context("invalid split list settle flag"))?;
 
     let split_id =
@@ -424,6 +427,7 @@ fn split_list_item_from_row(
         description,
         date,
         amount: amount.abs(),
+        currency_code,
         debtor_user_id,
         creditor_user_id: creditor_user_id.clone(),
         counterparty_user_id,
@@ -447,6 +451,7 @@ fn validate_split_create_payload(
     )?;
     validate_string_length(&payload.description, "Description", 255)?;
     validate_string_length(&payload.category_id, "Category ID", 100)?;
+    validate_currency_code(&payload.currency_code)?;
     validate_date(&payload.date)?;
     validate_split_participants(&payload.splits, initiator_user_id)
         .map_err(|e| (StatusCode::BAD_REQUEST, e))?;
@@ -595,6 +600,7 @@ async fn create_split_records(
         let pending_ids = pending_record_ids.clone();
         let description = payload.description.trim().to_string();
         let category_id = payload.category_id.trim().to_string();
+        let currency_code = validate_currency_code(&payload.currency_code)?;
         let date = payload.date.trim().to_string();
         let split_id_str = split_id.to_string();
         let initiator_id = initiator_user_id.to_string();
@@ -609,6 +615,7 @@ async fn create_split_records(
             let payer_id = payer_id.clone();
             let description = description.clone();
             let category_id = category_id.clone();
+            let currency_code = currency_code.clone();
             let date = date.clone();
             let split_id_str = split_id_str.clone();
             let initiator_id = initiator_id.clone();
@@ -618,12 +625,13 @@ async fn create_split_records(
             Box::pin(async move {
                 // Payer record
                 conn.execute(
-                    "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO records (id, owner_user_id, name, amount, currency_code, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         payer_id.as_str(),
                         initiator_id.as_str(),
                         description.as_str(),
                         payer_amount,
+                        currency_code.as_str(),
                         category_id.as_str(),
                         date.as_str(),
                         false,
@@ -642,12 +650,13 @@ async fn create_split_records(
                 {
                     let pending_amount = -(amount.abs());
                     conn.execute(
-                        "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO records (id, owner_user_id, name, amount, currency_code, category_id, date, pending, split_id, settle, debtor_user_id, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             pending_record_id.as_str(),
                             participant_user_id.as_str(),
                             description.as_str(),
                             pending_amount,
+                            currency_code.as_str(),
                             Option::<&str>::None,
                             date.as_str(),
                             true,

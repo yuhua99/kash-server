@@ -105,6 +105,7 @@ async fn create_split(
         json!({
             "idempotency_key": idempotency_key,
             "total_amount": 90.0,
+            "currency_code": "TWD",
             "description": "split test",
             "date": "2026-02-20",
             "category_id": category_id,
@@ -188,6 +189,7 @@ async fn d15_create_split_writes_all_records_atomically() {
         json!({
             "idempotency_key": "d15-split-1",
             "total_amount": 90.0,
+            "currency_code": "TWD",
             "description": "d15 split",
             "date": "2026-02-20",
             "category_id": cat,
@@ -256,6 +258,7 @@ async fn d16_idempotency_same_key_same_payload_no_duplicate_writes() {
     let payload = json!({
         "idempotency_key": "d16-split-1",
         "total_amount": 60.0,
+        "currency_code": "TWD",
         "description": "d16 split",
         "date": "2026-02-20",
         "category_id": cat,
@@ -319,6 +322,7 @@ async fn d17_idempotency_same_key_different_payload_conflicts() {
     let first_payload = json!({
         "idempotency_key": "d17-split-1",
         "total_amount": 60.0,
+        "currency_code": "TWD",
         "description": "original split",
         "date": "2026-02-20",
         "category_id": cat,
@@ -378,6 +382,7 @@ async fn d18_create_split_rolls_back_on_failure() {
         json!({
             "idempotency_key": "d18-split-1",
             "total_amount": 60.0,
+            "currency_code": "TWD",
             "description": "d18 failing split",
             "date": "2026-02-20",
             "category_id": cat,
@@ -430,6 +435,7 @@ async fn e19_no_duplicate_payer_record_on_retry() {
     let payload = json!({
         "idempotency_key": "e19-retry-split-1",
         "total_amount": 60.0,
+        "currency_code": "TWD",
         "description": "e19 retry split",
         "date": "2026-02-20",
         "category_id": cat,
@@ -563,6 +569,7 @@ async fn e21_stale_null_body_idempotency_key_does_not_replay() {
     let payload = json!({
         "idempotency_key": key,
         "total_amount": 60.0,
+        "currency_code": "TWD",
         "description": "e21 stale key test",
         "date": "2026-02-20",
         "category_id": cat,
@@ -619,6 +626,7 @@ async fn f22_concurrent_split_same_key_single_write() {
     let shared_payload = Arc::new(json!({
         "idempotency_key": "f22-concurrent-split-1",
         "total_amount": 60.0,
+        "currency_code": "TWD",
         "description": "f22 concurrent",
         "date": "2026-02-20",
         "category_id": cat,
@@ -712,6 +720,7 @@ async fn f23_concurrent_finalize_only_one_succeeds() {
         json!({
             "idempotency_key": "f23-finalize-split-1",
             "total_amount": 60.0,
+            "currency_code": "TWD",
             "description": "f23 split",
             "date": "2026-02-20",
             "category_id": alice_cat,
@@ -800,6 +809,7 @@ async fn f24_concurrent_settle_result_is_consistent() {
         json!({
             "idempotency_key": "f24-settle-split-1",
             "total_amount": 60.0,
+            "currency_code": "TWD",
             "description": "f24 split",
             "date": "2026-02-20",
             "category_id": alice_cat,
