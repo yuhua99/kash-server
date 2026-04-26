@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use axum::{
     Json,
     extract::{Query, State},
@@ -58,7 +60,27 @@ pub async fn get_fx_rates(
 
     let mut rates =
         load_cached_rates(&app_state, &query.from, &query.to, &lookup_currencies).await?;
+    let mut pre_range_rates = HashMap::new();
+    if let Some(first_date) = dates.first() {
+        let available_on_first_date = rates
+            .iter()
+            .filter(|row| row.date == *first_date)
+            .map(|row| row.currency.as_str())
+            .collect::<std::collections::HashSet<_>>();
+
+        for currency in &lookup_currencies {
+            if available_on_first_date.contains(currency.as_str()) {
+                continue;
+            }
+
+            if let Some(rate) = load_latest_rate_before(&app_state, first_date, currency).await? {
+                pre_range_rates.insert(currency.clone(), rate);
+            }
+        }
+    }
+
     append_usd_identity_rates(&mut rates, &dates, &currencies);
+    forward_fill_missing_rates(&mut rates, &dates, &currencies, &pre_range_rates);
 
     Ok((StatusCode::OK, Json(GetFxRatesResponse { rates })))
 }
@@ -80,6 +102,47 @@ fn append_usd_identity_rates(
         currency: FX_ANCHOR_BASE_CURRENCY.to_string(),
         rate: 1.0,
     }));
+    rates.sort_by(|left, right| {
+        left.date
+            .cmp(&right.date)
+            .then_with(|| left.currency.cmp(&right.currency))
+    });
+}
+
+fn forward_fill_missing_rates(
+    rates: &mut Vec<ExchangeRateRow>,
+    dates: &[String],
+    currencies: &[String],
+    pre_range_rates: &HashMap<String, f64>,
+) {
+    let mut known_rates = rates
+        .iter()
+        .map(|row| ((row.date.clone(), row.currency.clone()), row.rate))
+        .collect::<HashMap<_, _>>();
+    let mut synthetic_rows = Vec::new();
+
+    for currency in currencies {
+        let mut last_known_rate = pre_range_rates.get(currency).copied();
+
+        for date in dates {
+            let key = (date.clone(), currency.clone());
+            if let Some(rate) = known_rates.get(&key) {
+                last_known_rate = Some(*rate);
+                continue;
+            }
+
+            if let Some(rate) = last_known_rate {
+                synthetic_rows.push(ExchangeRateRow {
+                    date: date.clone(),
+                    currency: currency.clone(),
+                    rate,
+                });
+                known_rates.insert(key, rate);
+            }
+        }
+    }
+
+    rates.extend(synthetic_rows);
     rates.sort_by(|left, right| {
         left.date
             .cmp(&right.date)
@@ -134,20 +197,60 @@ async fn load_cached_rates(
     Ok(rates)
 }
 
+async fn load_latest_rate_before(
+    app_state: &AppState,
+    date: &str,
+    currency: &str,
+) -> Result<Option<f64>, (StatusCode, String)> {
+    let conn = app_state.main_db.read().await;
+    let mut rows = conn
+        .query(
+            "SELECT rate FROM exchange_rates_daily WHERE currency = ? AND date < ? ORDER BY date DESC LIMIT 1",
+            (currency, date),
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to query latest pre-range exchange rate"))?;
+
+    let row = rows.next().await.map_err(|_| db_error())?;
+    row.map(|r| {
+        r.get(0)
+            .map_err(|_| db_error_with_context("invalid pre-range fx rate value"))
+    })
+    .transpose()
+}
+
 fn is_missing_any_rate(
     cached_rates: &[ExchangeRateRow],
     dates: &[String],
     currencies: &[String],
 ) -> bool {
+    let Some(first_weekday) = first_weekday_in_range(dates) else {
+        return false;
+    };
+
     let available = cached_rates
         .iter()
         .map(|row| (row.date.as_str(), row.currency.as_str()))
         .collect::<std::collections::HashSet<_>>();
 
-    dates.iter().any(|date| {
-        currencies
-            .iter()
-            .any(|currency| !available.contains(&(date.as_str(), currency.as_str())))
+    currencies
+        .iter()
+        .any(|currency| !available.contains(&(first_weekday, currency.as_str())))
+}
+
+fn first_weekday_in_range(dates: &[String]) -> Option<&str> {
+    let format = time::format_description::parse("[year]-[month]-[day]").ok()?;
+
+    dates.iter().find_map(|date| {
+        time::Date::parse(date, &format)
+            .ok()
+            .filter(|parsed| {
+                !matches!(
+                    parsed.weekday(),
+                    time::Weekday::Saturday | time::Weekday::Sunday
+                )
+            })
+            .map(|_| date.as_str())
     })
 }
 
