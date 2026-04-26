@@ -247,6 +247,7 @@ async fn c14_category_in_use_check_scoped_to_owner() {
         json!({
             "name": "taxi",
             "amount": -20.0,
+            "currency": "TWD",
             "date": "2026-02-20",
             "category_id": bob_cat_id
         }),

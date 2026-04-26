@@ -136,6 +136,7 @@ async fn create_record(
         json!({
             "name": name,
             "amount": -50.0,
+            "currency": "TWD",
             "date": "2026-02-20",
             "category_id": category_id
         }),

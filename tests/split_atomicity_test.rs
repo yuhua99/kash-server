@@ -335,6 +335,7 @@ async fn d17_idempotency_same_key_different_payload_conflicts() {
     let second_payload = json!({
         "idempotency_key": "d17-split-1",
         "total_amount": 80.0,           // different amount
+        "currency": "TWD",
         "description": "modified split",
         "date": "2026-02-20",
         "category_id": cat,
