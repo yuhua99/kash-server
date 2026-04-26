@@ -11,7 +11,7 @@ mod common;
 #[tokio::test]
 async fn a1_single_db_init_creates_all_required_tables() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
 
     // All tables must exist in the single shared DB
     for table in &[
@@ -44,7 +44,7 @@ async fn a1_single_db_init_creates_all_required_tables() {
 #[tokio::test]
 async fn a2_records_owner_user_id_column_not_null_and_index_exists() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
 
     // Verify the column exists via PRAGMA table_info
     let mut rows = conn
@@ -135,7 +135,7 @@ async fn a3_categories_uniqueness_is_per_user() {
 #[tokio::test]
 async fn a4_idempotency_keys_uniqueness_is_per_user_and_endpoint() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
 
     // The table must NOT have a simple PRIMARY KEY on `key` alone.
     // Instead uniqueness must be on (user_id, endpoint, key).

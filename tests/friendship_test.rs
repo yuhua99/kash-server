@@ -53,7 +53,7 @@ async fn test_send_friend_request_happy_path() {
     );
 
     // Verify both directed rows exist in database
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? OR to_user_id = ?",
@@ -718,7 +718,7 @@ async fn test_accept_friend_happy_path() {
     assert_eq!(relation.user_id, user_a_id);
     assert!(!relation.pending);
 
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
 
     let mut rows_ab = conn
         .query(
@@ -893,7 +893,7 @@ async fn test_remove_friend_happy_path() {
     let remove_response = app.router.clone().oneshot(remove_request).await.unwrap();
     assert_eq!(remove_response.status(), StatusCode::OK);
 
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",

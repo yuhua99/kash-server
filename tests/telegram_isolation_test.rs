@@ -104,7 +104,7 @@ async fn link_telegram_user(
     chat_id: i64,
 ) {
     use time::OffsetDateTime;
-    let conn = app.state.main_db.write().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let created_at = OffsetDateTime::now_utc().unix_timestamp();
     conn.execute(
         "INSERT INTO telegram_users (telegram_user_id, user_id, chat_id, created_at) \
@@ -124,7 +124,7 @@ async fn link_telegram_user(
 /// Count records in the shared DB owned by a given user_id.
 #[allow(dead_code)]
 async fn count_records_in_shared_db(app: &common::TestApp, owner_user_id: &str) -> i64 {
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM records WHERE owner_user_id = ?",
@@ -178,7 +178,7 @@ async fn g25_tg_list_records_returns_only_linked_user_records() {
 
     // Simulate what the bot does: query records for the linked user_id from the shared DB.
     // After migration this must be `SELECT ... FROM records WHERE owner_user_id = ?`.
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT id, name FROM records WHERE owner_user_id = ?",
@@ -265,7 +265,7 @@ async fn g26_tg_edit_record_cannot_modify_other_user_record() {
     // Simulate the bot trying to edit Bob's record on behalf of Alice:
     // The migration must ensure the UPDATE is scoped to alice_id.
     {
-        let conn = app.state.main_db.write().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let result = conn
             .execute(
                 // This is the query the bot will use after migration:
@@ -283,7 +283,7 @@ async fn g26_tg_edit_record_cannot_modify_other_user_record() {
 
     // Verify Bob's record is unchanged in the shared DB
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT name FROM records WHERE id = ? AND owner_user_id = ?",

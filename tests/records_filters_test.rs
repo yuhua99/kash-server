@@ -11,7 +11,7 @@ async fn test_records_filter_pending_only() -> anyhow::Result<()> {
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -21,7 +21,7 @@ async fn test_records_filter_pending_only() -> anyhow::Result<()> {
 
     // Insert test records with different pending states
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         // Pending record
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -79,7 +79,7 @@ async fn test_records_filter_settle_only() -> anyhow::Result<()> {
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -90,7 +90,7 @@ async fn test_records_filter_settle_only() -> anyhow::Result<()> {
     // Insert test records with different settle states
     {
         // Settled record
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
@@ -147,7 +147,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -157,7 +157,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
 
     // Insert test records with different combinations
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         // pending=true, settle=false
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -254,7 +254,7 @@ async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Resu
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -264,7 +264,7 @@ async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Resu
 
     // Insert test records with different states
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -320,7 +320,7 @@ async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -330,7 +330,7 @@ async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
 
     // Insert test records with different dates and pending states
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
@@ -404,7 +404,7 @@ async fn test_records_filter_pending_false() -> anyhow::Result<()> {
 
     // Create a category first
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             ("cat1", user_id.as_str(), "Food", false),
@@ -414,7 +414,7 @@ async fn test_records_filter_pending_false() -> anyhow::Result<()> {
 
     // Insert test records
     {
-        let conn = test_app.state.main_db.write().await;
+        let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (

@@ -17,7 +17,7 @@ async fn fx_rates_returns_cached_rows() {
         .await
         .expect("login user");
 
-    let conn = app.state.main_db.write().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     conn.execute(
         "INSERT INTO exchange_rates_daily (date, currency, rate) VALUES (?, ?, ?)",
         ("2026-04-01", "JPY", 154.24),

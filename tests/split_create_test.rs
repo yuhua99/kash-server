@@ -171,7 +171,7 @@ async fn split_create_happy_path_fans_out_records() {
     assert_eq!(pending_record_ids.len(), 2);
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
@@ -203,7 +203,7 @@ async fn split_create_happy_path_fans_out_records() {
     }
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
@@ -234,7 +234,7 @@ async fn split_create_happy_path_fans_out_records() {
     }
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",

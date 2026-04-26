@@ -12,6 +12,7 @@ use crate::models::{
     AcceptFriendPayload, FriendshipRelation, PublicUser, RemoveFriendPayload,
     SendFriendRequestPayload, UpdateNicknamePayload,
 };
+use crate::utils::db_error;
 
 pub async fn send_friend_request(
     State(app_state): State<AppState>,
@@ -49,7 +50,7 @@ pub async fn send_friend_request(
     let a_to_b_id = Uuid::new_v4().to_string();
     let b_to_a_id = Uuid::new_v4().to_string();
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
@@ -70,6 +71,7 @@ pub async fn send_friend_request(
                 return Err("FRIENDSHIP_EXISTS".to_string());
             }
         }
+        drop(rows);
 
         conn.execute(
             "INSERT INTO friendship (id, from_user_id, to_user_id, pending, nickname, requester_user_id) VALUES (?, ?, ?, ?, NULL, ?)",
@@ -174,7 +176,7 @@ pub async fn search_users(
 
     let search_pattern = format!("{}%", params.query);
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT id, name FROM users WHERE name LIKE ? LIMIT ? OFFSET ?",
@@ -225,7 +227,7 @@ pub async fn update_nickname(
         }
     }
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
@@ -249,7 +251,7 @@ pub async fn update_nickname(
     drop(rows);
     drop(conn);
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     conn.execute(
         "UPDATE friendship SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",
@@ -322,7 +324,7 @@ pub async fn list_friends(
     let limit = query.limit.unwrap_or(20).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0).min(MAX_OFFSET);
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     // pending=true  → incoming only (requester_user_id != current user)
     // pending=false or omitted → accepted friends (pending = 0)
@@ -429,7 +431,7 @@ pub async fn accept_friend(
     let current_user = get_current_user(&session).await?;
     let user_id = &current_user.id;
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     let mut rows = conn
         .query(
@@ -486,7 +488,7 @@ pub async fn accept_friend(
         ));
     }
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
@@ -540,7 +542,7 @@ pub async fn remove_friend(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
@@ -572,7 +574,7 @@ pub async fn remove_friend(
     drop(rows);
     drop(conn);
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

@@ -68,7 +68,7 @@ async fn settings_put_updates_main_currency() {
 
     assert_eq!(response.status(), StatusCode::OK);
 
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT main_currency FROM users WHERE id = ?",

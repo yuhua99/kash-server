@@ -82,7 +82,7 @@ pub async fn validate_category_exists(
     user_id: &str,
     category_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = db.read().await;
+    let conn = db.connect().map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",

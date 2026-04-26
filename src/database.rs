@@ -1,7 +1,6 @@
 use anyhow::Result;
-use libsql::{Builder, Connection};
+use libsql::{Builder, Database};
 use std::{path::Path, sync::Arc};
-use tokio::sync::RwLock;
 
 const CREATE_USERS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
@@ -114,7 +113,7 @@ CREATE INDEX IF NOT EXISTS idx_exchange_rates_lookup
 ON exchange_rates_daily(date, currency);
 "#;
 
-pub type Db = Arc<RwLock<Connection>>;
+pub type Db = Arc<Database>;
 
 /// Single shared DB — contains all tables (users, records, categories, friends, etc.)
 pub async fn init_main_db(data_dir: &str) -> Result<Db> {
@@ -122,6 +121,11 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     let path = Path::new(data_dir).join("users.db");
     let db = Builder::new_local(path).build().await?;
     let conn = db.connect()?;
+
+    let mut journal_rows = conn.query("PRAGMA journal_mode = WAL", ()).await?;
+    while journal_rows.next().await?.is_some() {}
+    let mut timeout_rows = conn.query("PRAGMA busy_timeout = 5000", ()).await?;
+    while timeout_rows.next().await?.is_some() {}
 
     conn.execute(CREATE_USERS_TABLE, ()).await?;
     conn.execute(CREATE_TELEGRAM_USERS_TABLE, ()).await?;
@@ -138,5 +142,5 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_EXCHANGE_RATES_DAILY_TABLE, ()).await?;
     conn.execute(CREATE_EXCHANGE_RATES_LOOKUP_INDEX, ()).await?;
 
-    Ok(Arc::new(RwLock::new(conn)))
+    Ok(Arc::new(db))
 }

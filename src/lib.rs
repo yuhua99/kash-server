@@ -36,7 +36,7 @@ where
     F: for<'a> FnOnce(&'a Connection) -> Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>,
     E: From<TransactionError>,
 {
-    let conn = db_conn.write().await;
+    let conn = db_conn.connect().map_err(|_| TransactionError::Begin)?;
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|_| TransactionError::Begin)?;

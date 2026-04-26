@@ -164,7 +164,7 @@ pub async fn list_pending_splits(
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     let mut count_rows = conn
         .query(
@@ -227,7 +227,7 @@ pub async fn list_unsettled_splits_with_friend(
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     let mut count_rows = conn
         .query(
@@ -471,7 +471,7 @@ async fn validate_all_participants_are_friends(
     current_user_id: &str,
     participants: &[SplitParticipant],
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     for participant in participants {
         let mut rows = conn
@@ -512,7 +512,7 @@ async fn get_existing_idempotency_response(
     idempotency_key: &str,
 ) -> Result<Option<CachedIdempotency>, (StatusCode, String)> {
     let maybe_cached = {
-        let conn = app_state.main_db.read().await;
+        let conn = app_state.main_db.connect().map_err(|_| db_error())?;
         let mut rows = conn
             .query(
                 "SELECT response_status, response_body, payload_hash FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
@@ -688,7 +688,7 @@ async fn reserve_idempotency_entry(
     created_at: &str,
     expires_at: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
         "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         (
@@ -715,7 +715,7 @@ async fn commit_idempotency_entry(
     response_status: i64,
     response_body: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
         "UPDATE idempotency_keys SET response_status = ?, response_body = ? WHERE key = ? AND user_id = ? AND endpoint = ?",
         (
@@ -737,7 +737,7 @@ async fn delete_idempotency_reservation(
     idempotency_key: &str,
     user_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
         "DELETE FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ? AND response_body IS NULL",
         (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),

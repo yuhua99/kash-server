@@ -171,7 +171,7 @@ pub async fn create_test_user(
 
     let user_id = Uuid::new_v4().to_string();
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().expect("connect db");
     conn.execute(
         "INSERT INTO users (id, name, password_hash, main_currency) VALUES (?, ?, ?, ?)",
         (

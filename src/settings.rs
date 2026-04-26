@@ -11,7 +11,7 @@ pub async fn get_settings(
     session: Session,
 ) -> Result<(StatusCode, Json<UserSettings>), (StatusCode, String)> {
     let user = get_current_user(&session).await?;
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT main_currency FROM users WHERE id = ?",
@@ -39,7 +39,7 @@ pub async fn update_settings(
     let user = get_current_user(&session).await?;
     let main_currency = validate_currency(&payload.main_currency)?;
 
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
         "UPDATE users SET main_currency = ? WHERE id = ?",
         (main_currency.as_str(), user.id.as_str()),

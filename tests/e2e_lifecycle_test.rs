@@ -225,7 +225,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     assert_eq!(pending_record_ids.len(), 2);
 
     let bob_pending_record_id = {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
@@ -257,7 +257,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     };
 
     let charlie_pending_record_id = {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
@@ -289,7 +289,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
     };
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
@@ -437,7 +437,7 @@ async fn test_pending_relation_prevents_split_e2e_lifecycle() {
     assert!(error_message.contains("not an accepted friend"));
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT COUNT(*) FROM records WHERE name = ? AND owner_user_id = ?",

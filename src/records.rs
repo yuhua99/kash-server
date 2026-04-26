@@ -155,14 +155,14 @@ pub async fn create_record_for_user(
     validate_category_exists(db, user_id, &category_id).await?;
 
     let is_income = {
-        let conn = db.read().await;
+        let conn = db.connect().map_err(|_| db_error())?;
         get_category_is_income(&conn, user_id, &category_id).await?
     };
     let normalized_amount = normalize_amount_by_category(payload.amount, is_income);
 
     let record_id = Uuid::new_v4().to_string();
 
-    let conn = db.write().await;
+    let conn = db.connect().map_err(|_| db_error())?;
     conn.execute(
         "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
@@ -206,7 +206,7 @@ pub async fn get_records(
     let user = get_current_user(&session).await?;
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
-    let conn = app_state.main_db.read().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     if let Some(ref start_date) = query.start_date {
         validate_date(start_date)?;
@@ -391,7 +391,7 @@ pub async fn update_record(
         validate_category_exists(db, &user.id, category_id).await?;
     }
 
-    let conn = db.write().await;
+    let conn = db.connect().map_err(|_| db_error())?;
 
     let mut existing_rows = conn
         .query(
@@ -590,7 +590,7 @@ pub async fn delete_record(
     Path(record_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let user = get_current_user(&session).await?;
-    let conn = app_state.main_db.write().await;
+    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
     let affected_rows = conn
         .execute(

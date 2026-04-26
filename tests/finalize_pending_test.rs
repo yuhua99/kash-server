@@ -194,7 +194,7 @@ async fn finalize_pending_happy_path_finalizes_record_and_updates_split_status()
     assert_eq!(finalize_json["category_id"], bob_category.id);
 
     {
-        let conn = app.state.main_db.read().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
                 "SELECT pending, category_id FROM records WHERE id = ?",

@@ -25,7 +25,9 @@ pub async fn upsert_telegram_link(
     chat_id: i64,
     user_id: &str,
 ) -> Result<(), String> {
-    let conn = db.write().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
     let created_at = OffsetDateTime::now_utc().unix_timestamp();
 
     conn.execute(
@@ -48,7 +50,9 @@ pub async fn fetch_linked_user_id(
     db: &Db,
     telegram_user_id: i64,
 ) -> Result<Option<String>, String> {
-    let conn = db.read().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
     let mut rows = conn
         .query(
             "SELECT user_id FROM telegram_users WHERE telegram_user_id = ?",
@@ -76,7 +80,9 @@ pub async fn fetch_linked_user_id(
 // ---------------------------------------------------------------------------
 
 pub async fn load_categories(db: &Db, user_id: &str) -> Result<Vec<CategoryInfo>, String> {
-    let conn = db.read().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
     let mut rows = conn
         .query(
             "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? ORDER BY name ASC",
@@ -114,7 +120,9 @@ pub async fn get_or_create_category(
     let fallback = if trimmed.is_empty() { "Other" } else { trimmed };
     validate_category_name(fallback).map_err(|(_, message)| message)?;
 
-    let conn = db.write().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
 
     let mut existing = conn
         .query(
@@ -363,7 +371,9 @@ async fn edit_record_tool(
     let updated_category_id = new_category_id.or_else(|| existing.category_id.clone());
     let updated_date = new_date.unwrap_or_else(|| existing.date.clone());
 
-    let conn = db.write().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
 
     let updated_amount = if let Some(amount) = input.amount {
         if let Some(ref category_id) = updated_category_id {
@@ -472,7 +482,9 @@ async fn list_records_tool(
         .map(str::to_string)
         .unwrap_or_default();
 
-    let conn = db.read().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
 
     let mut count_rows = conn
         .query(
@@ -658,7 +670,9 @@ async fn fetch_record_by_exact_name(
         return Err("record_name cannot be empty".to_string());
     }
 
-    let conn = db.read().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
 
     let mut rows = conn
         .query(
@@ -717,7 +731,9 @@ async fn get_category_is_income(
 }
 
 pub async fn fetch_record_by_id(db: &Db, user_id: &str, record_id: &str) -> Result<Record, String> {
-    let conn = db.read().await;
+    let conn = db
+        .connect()
+        .map_err(|_| "Failed to connect to database".to_string())?;
     let mut rows = conn
         .query(
             "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",

@@ -127,7 +127,7 @@ async fn test_settle_happy_path_owner() -> anyhow::Result<()> {
     );
 
     // Verify record is settled
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -174,7 +174,7 @@ async fn test_settle_happy_path_debtor() -> anyhow::Result<()> {
     );
 
     // Verify record is settled
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -219,7 +219,7 @@ async fn test_settle_happy_path_creditor_sees_debtor_settled() -> anyhow::Result
         "Debtor should be able to settle their own record"
     );
 
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ?",
@@ -357,7 +357,7 @@ async fn test_settle_filters_out_settled_records() -> anyhow::Result<()> {
 
     let category_id = Uuid::new_v4().to_string();
     {
-        let conn = app.state.main_db.write().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
             (

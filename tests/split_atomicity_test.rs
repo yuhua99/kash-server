@@ -120,7 +120,7 @@ async fn create_split(
 /// (per-user DBs) this will always return 0 for the shared DB, which
 /// causes the assertion inside the test to fail → intentional red state.
 async fn count_records_for_user(app: &common::TestApp, user_id: &str) -> i64 {
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM records WHERE owner_user_id = ?",
@@ -134,7 +134,7 @@ async fn count_records_for_user(app: &common::TestApp, user_id: &str) -> i64 {
 
 /// Return all record ids for a user from the shared DB.
 async fn record_ids_for_user(app: &common::TestApp, user_id: &str) -> Vec<String> {
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query("SELECT id FROM records WHERE owner_user_id = ?", [user_id])
         .await
@@ -544,7 +544,7 @@ async fn e21_stale_null_body_idempotency_key_does_not_replay() {
         let now = OffsetDateTime::now_utc();
         let expires = now + time::Duration::hours(24);
         let fmt = time::format_description::well_known::Rfc3339;
-        let conn = app.state.main_db.write().await;
+        let conn = app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO idempotency_keys \
              (key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) \
@@ -864,7 +864,7 @@ async fn f24_concurrent_settle_result_is_consistent() {
     }
 
     // Record must be settled exactly once in the shared DB
-    let conn = app.state.main_db.read().await;
+    let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
             "SELECT settle FROM records WHERE id = ? AND owner_user_id = ?",
