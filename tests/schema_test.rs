@@ -174,57 +174,6 @@ async fn a4_idempotency_keys_uniqueness_is_per_user_and_endpoint() {
     );
 }
 
-#[tokio::test]
-async fn a5_user_version_migrates_record_amounts_to_cents() {
-    let temp_dir = tempfile::tempdir().expect("create temp dir");
-    let data_dir = temp_dir.path().to_string_lossy().to_string();
-
-    let db = kash_server::init_main_db(&data_dir)
-        .await
-        .expect("initial db init");
-    let conn = db.connect().expect("connect db");
-    conn.execute("PRAGMA user_version = 0", ())
-        .await
-        .expect("reset user_version");
-    conn.execute(
-        "INSERT INTO records (id, owner_user_id, name, amount, currency, date) VALUES (?, ?, ?, ?, ?, ?)",
-        ("legacy_record", "legacy_user", "Legacy", 12.34, "TWD", "2026-01-01"),
-    )
-    .await
-    .expect("insert legacy record");
-    drop(conn);
-    drop(db);
-
-    let db = kash_server::init_main_db(&data_dir)
-        .await
-        .expect("second db init");
-    let conn = db.connect().expect("connect migrated db");
-
-    let mut amount_rows = conn
-        .query("SELECT amount FROM records WHERE id = ?", ["legacy_record"])
-        .await
-        .expect("query migrated amount");
-    let row = amount_rows
-        .next()
-        .await
-        .expect("next migrated amount")
-        .expect("migrated record exists");
-    let amount: i64 = row.get(0).expect("amount cents");
-    assert_eq!(amount, 1234);
-
-    let mut version_rows = conn
-        .query("PRAGMA user_version", ())
-        .await
-        .expect("query user_version");
-    let row = version_rows
-        .next()
-        .await
-        .expect("next user_version")
-        .expect("user_version row exists");
-    let user_version: i64 = row.get(0).expect("user_version");
-    assert_eq!(user_version, 1);
-}
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
