@@ -3,6 +3,7 @@ use libsql::Connection;
 
 use crate::constants::{MAX_CATEGORY_NAME_LENGTH, MAX_RECORD_NAME_LENGTH};
 use crate::errors::{db_error, db_error_with_context};
+use crate::money::to_cents;
 use crate::validation::validate_string_length;
 
 pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -10,7 +11,14 @@ pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
 }
 
 pub fn validate_record_amount(amount: f64) -> Result<(), (StatusCode, String)> {
-    if amount == 0.0 {
+    if !amount.is_finite() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Record amount must be a valid finite number".to_string(),
+        ));
+    }
+
+    if to_cents(amount) == 0 {
         return Err((
             StatusCode::BAD_REQUEST,
             "Record amount cannot be zero".to_string(),
@@ -23,7 +31,7 @@ pub fn validate_category_id(category_id: &str) -> Result<(), (StatusCode, String
     validate_string_length(category_id, "Category ID", MAX_CATEGORY_NAME_LENGTH)
 }
 
-pub(crate) fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
+pub(crate) fn normalize_amount_by_category(amount: i64, is_income: bool) -> i64 {
     if is_income {
         amount.abs()
     } else {

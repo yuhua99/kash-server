@@ -170,11 +170,11 @@ fn test_calculate_split_amounts_exact_match() {
 
     assert_eq!(
         map.get("A").copied(),
-        Some(500.0),
+        Some(50000),
         "Initiator should get 500.0"
     );
-    assert_eq!(map.get("B").copied(), Some(300.0), "B should get 300.0");
-    assert_eq!(map.get("C").copied(), Some(200.0), "C should get 200.0");
+    assert_eq!(map.get("B").copied(), Some(30000), "B should get 300.0");
+    assert_eq!(map.get("C").copied(), Some(20000), "C should get 200.0");
 }
 
 #[test]
@@ -205,15 +205,15 @@ fn test_calculate_split_amounts_with_remainder() {
 
     assert_eq!(
         map.get("A").copied(),
-        Some(400.0),
+        Some(40000),
         "Initiator should get 400.0"
     );
-    assert_eq!(map.get("B").copied(), Some(350.0), "B should get 350.0");
-    assert_eq!(map.get("C").copied(), Some(250.0), "C should get 250.0");
+    assert_eq!(map.get("B").copied(), Some(35000), "B should get 350.0");
+    assert_eq!(map.get("C").copied(), Some(25000), "C should get 250.0");
 
     // Verify sum equals total
-    let sum: f64 = map.values().sum();
-    assert_eq!(sum, 1000.0, "Sum should equal total");
+    let sum: i64 = map.values().sum();
+    assert_eq!(sum, 100000, "Sum should equal total cents");
 }
 
 #[test]
@@ -254,9 +254,9 @@ fn test_calculate_split_amounts_sum_equals_total() {
         map.insert(user_id, amount);
     }
 
-    assert_eq!(map.get("A").copied(), Some(0.0), "Initiator should get 0.0");
-    assert_eq!(map.get("B").copied(), Some(600.0), "B should get 600.0");
-    assert_eq!(map.get("C").copied(), Some(400.0), "C should get 400.0");
+    assert_eq!(map.get("A").copied(), Some(0), "Initiator should get 0.0");
+    assert_eq!(map.get("B").copied(), Some(60000), "B should get 600.0");
+    assert_eq!(map.get("C").copied(), Some(40000), "C should get 400.0");
 }
 
 #[test]
@@ -288,13 +288,41 @@ fn test_calculate_split_amounts_floating_point_rounding() {
     let a_amount = map.get("A").copied().unwrap();
 
     // Verify amounts are rounded to 2 decimals
-    assert_eq!(b_amount, 33.33, "B amount should be 33.33");
-    assert_eq!(c_amount, 33.33, "C amount should be 33.33");
-    assert_eq!(a_amount, 33.34, "A (initiator) should get the remainder");
+    assert_eq!(b_amount, 3333, "B amount should be 3333 cents");
+    assert_eq!(c_amount, 3333, "C amount should be 3333 cents");
+    assert_eq!(a_amount, 3334, "A (initiator) should get the remainder");
 
     // Verify sum equals total
     let sum = a_amount + b_amount + c_amount;
-    assert_eq!(sum, 100.0, "Sum should equal total");
+    assert_eq!(sum, 10000, "Sum should equal total cents");
+}
+
+#[test]
+fn test_calculate_split_amounts_three_participants_leaves_one_cent_for_initiator() {
+    let total = 100.0;
+    let splits = vec![
+        SplitParticipant {
+            user_id: "B".to_string(),
+            amount: 33.33,
+        },
+        SplitParticipant {
+            user_id: "C".to_string(),
+            amount: 33.33,
+        },
+        SplitParticipant {
+            user_id: "D".to_string(),
+            amount: 33.33,
+        },
+    ];
+
+    let amounts = calculate_split_amounts(total, splits, "A").expect("split calculation");
+    let mut map = std::collections::HashMap::new();
+    for (user_id, amount) in amounts {
+        map.insert(user_id, amount);
+    }
+
+    assert_eq!(map.get("A").copied(), Some(1));
+    assert_eq!(map.values().sum::<i64>(), 10000);
 }
 
 #[test]
@@ -319,10 +347,10 @@ fn test_calculate_split_amounts_single_participant() {
 
     assert_eq!(
         map.get("A").copied(),
-        Some(300.0),
+        Some(30000),
         "Initiator should get 300.0"
     );
-    assert_eq!(map.get("B").copied(), Some(200.0), "B should get 200.0");
+    assert_eq!(map.get("B").copied(), Some(20000), "B should get 200.0");
 }
 
 #[test]
@@ -357,15 +385,15 @@ fn test_calculate_split_amounts_multiple_participants() {
 
     assert_eq!(
         map.get("A").copied(),
-        Some(450.0),
+        Some(45000),
         "Initiator should get 450.0"
     );
-    assert_eq!(map.get("B").copied(), Some(400.0), "B should get 400.0");
-    assert_eq!(map.get("C").copied(), Some(350.0), "C should get 350.0");
-    assert_eq!(map.get("D").copied(), Some(300.0), "D should get 300.0");
+    assert_eq!(map.get("B").copied(), Some(40000), "B should get 400.0");
+    assert_eq!(map.get("C").copied(), Some(35000), "C should get 350.0");
+    assert_eq!(map.get("D").copied(), Some(30000), "D should get 300.0");
 
-    let sum: f64 = map.values().sum();
-    assert_eq!(sum, 1500.0, "Sum should equal total");
+    let sum: i64 = map.values().sum();
+    assert_eq!(sum, 150000, "Sum should equal total cents");
 }
 
 #[test]
@@ -435,7 +463,7 @@ fn test_remainder_to_initiator_happy_path() {
     // 350 + 250 = 600, remainder = 1000 - 600 = 400 goes to initiator
     assert_eq!(
         map.get("A").copied(),
-        Some(400.0),
+        Some(40000),
         "Remainder must go to initiator"
     );
 }
@@ -464,6 +492,6 @@ fn test_split_validation_and_calculation_integration() {
     assert!(calc_result.is_ok());
 
     let amounts = calc_result.unwrap();
-    let sum: f64 = amounts.iter().map(|(_, amt)| amt).sum();
-    assert_eq!(sum, total, "All amounts must sum to total");
+    let sum: i64 = amounts.iter().map(|(_, amt)| amt).sum();
+    assert_eq!(sum, 100000, "All amounts must sum to total cents");
 }

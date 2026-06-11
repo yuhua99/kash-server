@@ -5,6 +5,7 @@ use crate::auth::get_current_user;
 use crate::constants::MAX_RECORD_NAME_LENGTH;
 use crate::errors::db_error_with_context;
 use crate::models::{FinalizePendingPayload, Record};
+use crate::money::to_decimal;
 use crate::validation::validate_string_length;
 use crate::{AppState, TransactionError, with_transaction};
 
@@ -143,6 +144,9 @@ pub async fn finalize_pending_record(
             let finalized_category_id: Option<String> = row
                 .get(4)
                 .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
+            let amount_cents: i64 = row
+                .get(2)
+                .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
 
             let record = Record {
                 id: row
@@ -151,9 +155,7 @@ pub async fn finalize_pending_record(
                 name: row
                     .get(1)
                     .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-                amount: row
-                    .get(2)
-                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
+                amount: to_decimal(amount_cents),
                 currency: finalized_currency,
                 category_id: finalized_category_id,
                 date: row

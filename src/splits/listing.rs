@@ -10,6 +10,7 @@ use crate::auth::get_current_user;
 use crate::constants::MAX_RECORD_NAME_LENGTH;
 use crate::errors::{db_error, db_error_with_context};
 use crate::models::{PendingSplitsQuery, SplitListItem, SplitListResponse, UnsettledSplitsQuery};
+use crate::money::to_decimal;
 use crate::validation::{validate_offset, validate_records_limit, validate_string_length};
 use crate::{AppState, TransactionError, with_transaction};
 
@@ -216,7 +217,7 @@ fn split_list_item_from_row(
     let date: String = row
         .get(3)
         .map_err(|_| db_error_with_context("invalid split list date"))?;
-    let amount: f64 = row
+    let amount_cents: i64 = row
         .get(4)
         .map_err(|_| db_error_with_context("invalid split list amount"))?;
     let currency: String = row
@@ -284,7 +285,7 @@ fn split_list_item_from_row(
         split_id,
         description,
         date,
-        amount: amount.abs(),
+        amount: to_decimal(amount_cents.abs()),
         currency,
         debtor_user_id,
         creditor_user_id: creditor_user_id.clone(),

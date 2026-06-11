@@ -1,12 +1,5 @@
-/// Validates split participants for consistency and validity.
-///
-/// Checks:
-/// - No duplicate user_ids (including initiator appearing in splits)
-/// - All amounts are strictly positive (> 0.0)
-/// - Amounts are finite (no NaN or infinity)
-///
-/// # Errors
-/// Returns descriptive error messages for validation failures.
+use crate::money::to_cents;
+
 pub fn validate_split_participants(
     splits: &[crate::models::SplitParticipant],
     initiator_id: &str,
@@ -19,59 +12,48 @@ pub fn validate_split_participants(
             return Err(format!("Duplicate participant: {}", split.user_id));
         }
 
-        if split.amount <= 0.0 {
-            return Err("Amount must be positive".to_string());
-        }
-
         if !split.amount.is_finite() {
             return Err("Amount must be a valid finite number".to_string());
+        }
+
+        if split.amount <= 0.0 || to_cents(split.amount) == 0 {
+            return Err("Amount must be positive".to_string());
         }
     }
 
     Ok(())
 }
 
-/// Calculates final split amounts with deterministic remainder assignment.
-///
-/// If the sum of split amounts is less than the total, the remainder is
-/// assigned to the initiator. Returns all participants (including initiator)
-/// with their final amounts, rounded to 2 decimals.
-///
-/// # Errors
-/// Returns error if:
-/// - Split sum exceeds total_amount
-/// - Any amount is not finite
 pub fn calculate_split_amounts(
     total: f64,
     splits: Vec<crate::models::SplitParticipant>,
     initiator_id: &str,
-) -> Result<Vec<(String, f64)>, String> {
-    if !total.is_finite() || total <= 0.0 {
+) -> Result<Vec<(String, i64)>, String> {
+    if !total.is_finite() || total <= 0.0 || to_cents(total) == 0 {
         return Err("Total amount must be a positive finite number".to_string());
     }
 
-    let mut total_split = 0.0;
-    for split in &splits {
-        let rounded = (split.amount * 100.0).round() / 100.0;
-        total_split += rounded;
+    let total_cents = to_cents(total);
+    let mut participant_amounts = Vec::with_capacity(splits.len());
+    for split in splits {
+        if !split.amount.is_finite() {
+            return Err("Amount must be a valid finite number".to_string());
+        }
+        if split.amount <= 0.0 || to_cents(split.amount) == 0 {
+            return Err("Amount must be positive".to_string());
+        }
+        participant_amounts.push((split.user_id, to_cents(split.amount)));
     }
+    let total_split_cents: i64 = participant_amounts.iter().map(|(_, amount)| amount).sum();
+    let initiator_amount = total_cents - total_split_cents;
 
-    total_split = (total_split * 100.0).round() / 100.0;
-
-    if total_split > total {
+    if initiator_amount < 0 {
         return Err("Split sum exceeds total".to_string());
     }
 
-    let mut result = Vec::new();
-
-    let initiator_amount = total - total_split;
-    let initiator_amount = (initiator_amount * 100.0).round() / 100.0;
+    let mut result = Vec::with_capacity(participant_amounts.len() + 1);
     result.push((initiator_id.to_string(), initiator_amount));
-
-    for split in splits {
-        let rounded = (split.amount * 100.0).round() / 100.0;
-        result.push((split.user_id, rounded));
-    }
+    result.extend(participant_amounts);
 
     Ok(result)
 }

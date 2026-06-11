@@ -8,6 +8,7 @@ use tower_sessions::Session;
 use crate::auth::get_current_user;
 use crate::errors::db_error_with_context;
 use crate::models::{Record, UpdateSettlePayload};
+use crate::money::to_decimal;
 use crate::{AppState, TransactionError, with_transaction};
 
 pub async fn update_settle(
@@ -44,10 +45,11 @@ pub async fn update_settle(
             drop(rows);
 
             if settle {
+                let amount_cents: i64 = row.get(2).map_err(|_| TransactionError::Begin)?;
                 let record = Record {
                     id: row.get(0).map_err(|_| TransactionError::Begin)?,
                     name: row.get(1).map_err(|_| TransactionError::Begin)?,
-                    amount: row.get(2).map_err(|_| TransactionError::Begin)?,
+                    amount: to_decimal(amount_cents),
                     currency: row.get(3).map_err(|_| TransactionError::Begin)?,
                     category_id: row.get(4).map_err(|_| TransactionError::Begin)?,
                     date: row.get(5).map_err(|_| TransactionError::Begin)?,
@@ -76,10 +78,11 @@ pub async fn update_settle(
                 .map_err(|_| TransactionError::Commit)?
                 .ok_or(TransactionError::Commit)?;
 
+            let amount_cents: i64 = updated_row.get(2).map_err(|_| TransactionError::Commit)?;
             let record = Record {
                 id: updated_row.get(0).map_err(|_| TransactionError::Commit)?,
                 name: updated_row.get(1).map_err(|_| TransactionError::Commit)?,
-                amount: updated_row.get(2).map_err(|_| TransactionError::Commit)?,
+                amount: to_decimal(amount_cents),
                 currency: updated_row.get(3).map_err(|_| TransactionError::Commit)?,
                 category_id: updated_row.get(4).map_err(|_| TransactionError::Commit)?,
                 date: updated_row.get(5).map_err(|_| TransactionError::Commit)?,

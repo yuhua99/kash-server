@@ -25,6 +25,7 @@ pub const MAX_NICKNAME_LENGTH: usize = 100;
 
 // Currency settings
 pub const DEFAULT_MAIN_CURRENCY: &str = "TWD";
+pub const MINOR_UNITS_PER_MAJOR: i64 = 100;
 pub const SUPPORTED_CURRENCIES: &[&str] = &["TWD", "USD", "JPY", "EUR", "CNY"];
 pub const FX_ANCHOR_BASE_CURRENCY: &str = "USD";
 

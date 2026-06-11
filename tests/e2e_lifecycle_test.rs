@@ -239,14 +239,14 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
             .expect("next bob row")
             .expect("bob split row exists");
         let id: String = row.get(0).expect("bob id");
-        let amount: f64 = row.get(1).expect("bob amount");
+        let amount: i64 = row.get(1).expect("bob amount");
         let category_id: Option<String> = row.get(2).expect("bob category");
         let pending: bool = row.get(3).expect("bob pending");
         let split_id_db: Option<String> = row.get(4).expect("bob split_id");
         let settle: bool = row.get(5).expect("bob settle");
         let debtor_user_id: Option<String> = row.get(6).expect("bob debtor");
         let creditor_user_id: Option<String> = row.get(7).expect("bob creditor");
-        assert_eq!(amount, -20.0);
+        assert_eq!(amount, -2000);
         assert_eq!(category_id, None);
         assert!(pending);
         assert_eq!(split_id_db, Some(split_id.clone()));
@@ -271,14 +271,14 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
             .expect("next charlie row")
             .expect("charlie split row exists");
         let id: String = row.get(0).expect("charlie id");
-        let amount: f64 = row.get(1).expect("charlie amount");
+        let amount: i64 = row.get(1).expect("charlie amount");
         let category_id: Option<String> = row.get(2).expect("charlie category");
         let pending: bool = row.get(3).expect("charlie pending");
         let split_id_db: Option<String> = row.get(4).expect("charlie split_id");
         let settle: bool = row.get(5).expect("charlie settle");
         let debtor_user_id: Option<String> = row.get(6).expect("charlie debtor");
         let creditor_user_id: Option<String> = row.get(7).expect("charlie creditor");
-        assert_eq!(amount, -20.0);
+        assert_eq!(amount, -2000);
         assert_eq!(category_id, None);
         assert!(pending);
         assert_eq!(split_id_db, Some(split_id.clone()));
@@ -302,14 +302,14 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
             .await
             .expect("next payer row")
             .expect("payer row exists");
-        let amount: f64 = row.get(0).expect("payer amount");
+        let amount: i64 = row.get(0).expect("payer amount");
         let category_id: String = row.get(1).expect("payer category");
         let pending: bool = row.get(2).expect("payer pending");
         let split_id_db: Option<String> = row.get(3).expect("payer split_id");
         let settle: bool = row.get(4).expect("payer settle");
         let debtor_user_id: Option<String> = row.get(5).expect("payer debtor");
         let creditor_user_id: Option<String> = row.get(6).expect("payer creditor");
-        assert_eq!(amount, -60.0);
+        assert_eq!(amount, -6000);
         assert_eq!(category_id, alice_category_id);
         assert!(!pending);
         assert_eq!(split_id_db, Some(split_id.clone()));

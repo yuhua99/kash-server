@@ -13,6 +13,7 @@ use crate::errors::{db_error, db_error_with_context};
 use crate::models::{
     CreateRecordPayload, GetRecordsQuery, GetRecordsResponse, Record, UpdateRecordPayload,
 };
+use crate::money::{to_cents, to_decimal};
 use crate::validation::{
     validate_category_exists, validate_currency, validate_date, validate_offset,
     validate_records_limit,
@@ -30,7 +31,7 @@ fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     let name: String = row
         .get(1)
         .map_err(|_| db_error_with_context("invalid record data"))?;
-    let amount: f64 = row
+    let amount_cents: i64 = row
         .get(2)
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let currency: String = row
@@ -46,7 +47,7 @@ fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     Ok(Record {
         id,
         name,
-        amount,
+        amount: to_decimal(amount_cents),
         currency,
         category_id,
         date,
@@ -72,7 +73,7 @@ async fn create_record_for_user(
         let conn = db.connect().map_err(|_| db_error())?;
         get_category_is_income(&conn, user_id, &category_id).await?
     };
-    let normalized_amount = normalize_amount_by_category(payload.amount, is_income);
+    let normalized_amount = normalize_amount_by_category(to_cents(payload.amount), is_income);
 
     let record_id = Uuid::new_v4().to_string();
 
@@ -95,7 +96,7 @@ async fn create_record_for_user(
     Ok(Record {
         id: record_id,
         name: payload.name.trim().to_string(),
-        amount: normalized_amount,
+        amount: to_decimal(normalized_amount),
         currency,
         category_id: Some(category_id),
         date: payload.date.trim().to_string(),
@@ -332,7 +333,7 @@ pub async fn update_record(
         if let Some(ref category_id) = updated_category_id {
             let amount = payload.amount.unwrap_or(existing_record.amount);
             let is_income = get_category_is_income(&conn, &user.id, category_id).await?;
-            normalize_amount_by_category(amount, is_income)
+            normalize_amount_by_category(to_cents(amount), is_income)
         } else {
             return Err((
                 StatusCode::BAD_REQUEST,
@@ -340,7 +341,7 @@ pub async fn update_record(
             ));
         }
     } else {
-        existing_record.amount
+        to_cents(existing_record.amount)
     };
     let updated_date = payload.date.unwrap_or(existing_record.date);
 
@@ -369,7 +370,7 @@ pub async fn update_record(
     let updated_record = Record {
         id: record_id,
         name: updated_name.to_string(),
-        amount: updated_amount,
+        amount: to_decimal(updated_amount),
         currency: existing_record.currency,
         category_id: updated_category_id,
         date: updated_date,

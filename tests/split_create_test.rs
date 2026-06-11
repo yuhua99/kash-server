@@ -198,7 +198,7 @@ async fn split_create_happy_path_fans_out_records() {
             .await
             .expect("next payer row")
             .expect("payer row should exist");
-        let amount: f64 = row.get(0).expect("amount");
+        let amount: i64 = row.get(0).expect("amount");
         let category_id: String = row.get(1).expect("category_id");
         let pending: bool = row.get(2).expect("pending");
         let split_id_db: Option<String> = row.get(3).expect("split_id");
@@ -206,7 +206,7 @@ async fn split_create_happy_path_fans_out_records() {
         let debtor_user_id: Option<String> = row.get(5).expect("debtor_user_id");
         let creditor_user_id: Option<String> = row.get(6).expect("creditor_user_id");
 
-        assert_eq!(amount, -40.0);
+        assert_eq!(amount, -4000);
         assert_eq!(category_id, expense_category.id);
         assert!(!pending);
         assert_eq!(split_id_db, Some(split_id.clone()));
@@ -229,7 +229,7 @@ async fn split_create_happy_path_fans_out_records() {
             .await
             .expect("next bob row")
             .expect("bob pending row should exist");
-        let amount: f64 = row.get(0).expect("bob amount");
+        let amount: i64 = row.get(0).expect("bob amount");
         let category_id: Option<String> = row.get(1).expect("bob category_id");
         let pending: bool = row.get(2).expect("bob pending");
         let split_id_db: Option<String> = row.get(3).expect("bob split_id");
@@ -237,7 +237,7 @@ async fn split_create_happy_path_fans_out_records() {
         let debtor_user_id: Option<String> = row.get(5).expect("bob debtor");
         let creditor_user_id: Option<String> = row.get(6).expect("bob creditor");
 
-        assert_eq!(amount, -30.0);
+        assert_eq!(amount, -3000);
         assert_eq!(category_id, None);
         assert!(pending);
         assert_eq!(split_id_db, Some(split_id.clone()));
@@ -260,7 +260,7 @@ async fn split_create_happy_path_fans_out_records() {
             .await
             .expect("next charlie row")
             .expect("charlie pending row should exist");
-        let amount: f64 = row.get(0).expect("charlie amount");
+        let amount: i64 = row.get(0).expect("charlie amount");
         let category_id: Option<String> = row.get(1).expect("charlie category_id");
         let pending: bool = row.get(2).expect("charlie pending");
         let split_id_db: Option<String> = row.get(3).expect("charlie split_id");
@@ -268,7 +268,7 @@ async fn split_create_happy_path_fans_out_records() {
         let debtor_user_id: Option<String> = row.get(5).expect("charlie debtor");
         let creditor_user_id: Option<String> = row.get(6).expect("charlie creditor");
 
-        assert_eq!(amount, -30.0);
+        assert_eq!(amount, -3000);
         assert_eq!(category_id, None);
         assert!(pending);
         assert_eq!(split_id_db, Some(split_id));

@@ -173,13 +173,13 @@ async fn test_concurrent_split_creation_idempotency_e2e_concurrency() {
         let pending_count: i64 = row.get(0).expect("pending count");
         let min_pending: Option<bool> = row.get(1).expect("min pending");
         let max_pending: Option<bool> = row.get(2).expect("max pending");
-        let min_amount: Option<f64> = row.get(3).expect("min amount");
-        let max_amount: Option<f64> = row.get(4).expect("max amount");
+        let min_amount: Option<i64> = row.get(3).expect("min amount");
+        let max_amount: Option<i64> = row.get(4).expect("max amount");
         assert_eq!(pending_count, 1);
         assert_eq!(min_pending, Some(true));
         assert_eq!(max_pending, Some(true));
-        assert_eq!(min_amount, Some(-40.0));
-        assert_eq!(max_amount, Some(-40.0));
+        assert_eq!(min_amount, Some(-4000));
+        assert_eq!(max_amount, Some(-4000));
     }
 
     if !created_bodies.is_empty() {
@@ -328,12 +328,12 @@ async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
             .expect("finalized row exists");
         let pending: bool = row.get(0).expect("pending");
         let category_id: Option<String> = row.get(1).expect("category id");
-        let amount: f64 = row.get(2).expect("amount");
+        let amount: i64 = row.get(2).expect("amount");
         let debtor_user_id: Option<String> = row.get(3).expect("debtor id");
         let creditor_user_id: Option<String> = row.get(4).expect("creditor id");
         assert!(!pending);
         assert_eq!(category_id, Some(bob_category_id));
-        assert_eq!(amount, -35.0);
+        assert_eq!(amount, -3500);
         assert_eq!(debtor_user_id, Some(bob_id));
         assert_eq!(creditor_user_id, Some(alice_id));
     }

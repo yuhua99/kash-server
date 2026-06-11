@@ -211,8 +211,8 @@ async fn create_split_records(
         .find(|(user_id, _)| user_id == initiator_user_id)
         .map(|(_, amount)| *amount)
         .ok_or_else(|| db_error_with_context("split calculation missing initiator share"))?;
-    let payer_amount = if initiator_share == 0.0 {
-        0.0
+    let payer_amount = if initiator_share == 0 {
+        0
     } else {
         -initiator_share.abs()
     };
@@ -245,7 +245,7 @@ async fn create_split_records(
         let split_id_str = split_id.to_string();
         let initiator_id = initiator_user_id.to_string();
         let payer_id = payer_record_id.clone();
-        let participants: Vec<(String, f64)> = calculated
+        let participants: Vec<(String, i64)> = calculated
             .iter()
             .filter(|(uid, _)| uid != initiator_user_id)
             .map(|(uid, amt)| (uid.clone(), *amt))

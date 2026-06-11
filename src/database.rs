@@ -1,5 +1,5 @@
 use anyhow::Result;
-use libsql::{Builder, Database};
+use libsql::{Builder, Connection, Database};
 use std::{path::Path, sync::Arc};
 
 const CREATE_USERS_TABLE: &str = r#"
@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS records (
     id               TEXT    PRIMARY KEY,
     owner_user_id    TEXT    NOT NULL,
     name             TEXT    NOT NULL,
-    amount           REAL    NOT NULL,
+    amount           INTEGER NOT NULL,
     currency    TEXT    NOT NULL DEFAULT 'TWD',
     category_id      TEXT,
     date             TEXT    NOT NULL,
@@ -103,6 +103,39 @@ ON exchange_rates_daily(date, currency);
 
 pub type Db = Arc<Database>;
 
+async fn migrate_money_amounts_to_cents(conn: &Connection) -> Result<()> {
+    let mut rows = conn.query("PRAGMA user_version", ()).await?;
+    let user_version: i64 = if let Some(row) = rows.next().await? {
+        row.get(0)?
+    } else {
+        0
+    };
+
+    if user_version == 0 {
+        conn.execute("BEGIN IMMEDIATE", ()).await?;
+        let migration = async {
+            conn.execute(
+                "UPDATE records SET amount = CAST(ROUND(amount * 100) AS INTEGER)",
+                (),
+            )
+            .await?;
+            conn.execute("PRAGMA user_version = 1", ()).await?;
+            Ok::<(), libsql::Error>(())
+        };
+        match migration.await {
+            Ok(()) => {
+                conn.execute("COMMIT", ()).await?;
+            }
+            Err(e) => {
+                let _ = conn.execute("ROLLBACK", ()).await;
+                return Err(e.into());
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Single shared DB — contains all tables (users, records, categories, friends, etc.)
 pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     tokio::fs::create_dir_all(data_dir).await?;
@@ -128,6 +161,8 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
     conn.execute(CREATE_EXCHANGE_RATES_DAILY_TABLE, ()).await?;
     conn.execute(CREATE_EXCHANGE_RATES_LOOKUP_INDEX, ()).await?;
+
+    migrate_money_amounts_to_cents(&conn).await?;
 
     Ok(Arc::new(db))
 }
