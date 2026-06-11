@@ -20,10 +20,8 @@ CREATE TABLE IF NOT EXISTS records (
     currency    TEXT    NOT NULL DEFAULT 'TWD',
     category_id      TEXT,
     date             TEXT    NOT NULL,
-    pending          BOOLEAN NOT NULL DEFAULT 0,
     split_id         TEXT,
     settle           BOOLEAN NOT NULL DEFAULT 0,
-    debtor_user_id   TEXT,
     creditor_user_id TEXT
 );
 "#;

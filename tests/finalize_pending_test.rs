@@ -197,7 +197,7 @@ async fn finalize_pending_happy_path_finalizes_record_and_updates_split_status()
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT pending, category_id FROM records WHERE id = ?",
+                "SELECT (split_id IS NOT NULL AND category_id IS NULL), category_id FROM records WHERE id = ?",
                 [pending_record_id.as_str()],
             )
             .await

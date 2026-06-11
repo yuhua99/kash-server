@@ -103,6 +103,19 @@ fn extract_split_create_ids(body: &Value) -> (String, String, Vec<String>) {
     (split_id, payer_record_id, pending_ids)
 }
 
+async fn count_records_for_user(app: &common::TestApp, user_id: &str) -> i64 {
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM records WHERE owner_user_id = ?",
+            [user_id],
+        )
+        .await
+        .expect("count records query");
+    let row = rows.next().await.expect("next row").expect("row exists");
+    row.get(0).expect("count")
+}
+
 #[tokio::test]
 async fn split_create_happy_path_fans_out_records() {
     let app = common::setup_test_app().await.expect("setup failed");
@@ -174,7 +187,7 @@ async fn split_create_happy_path_fans_out_records() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
+                "SELECT amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE id = ?",
                 [payer_record_id.as_str()],
             )
             .await
@@ -206,7 +219,7 @@ async fn split_create_happy_path_fans_out_records() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                "SELECT amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
                 (split_id.as_str(), bob_id.as_str()),
             )
             .await
@@ -237,7 +250,7 @@ async fn split_create_happy_path_fans_out_records() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                "SELECT amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
                 (split_id.as_str(), charlie_id.as_str()),
             )
             .await
@@ -339,6 +352,101 @@ async fn split_create_idempotency_same_key_same_payload_returns_same_response() 
     assert_eq!(first_status, StatusCode::CREATED);
     assert_eq!(second_status, first_status);
     assert_eq!(second_body, first_body);
+    assert_eq!(count_records_for_user(&app, &alice_id).await, 1);
+    assert_eq!(count_records_for_user(&app, &bob_id).await, 1);
+}
+
+#[tokio::test]
+async fn split_create_expired_idempotency_entry_is_ignored() {
+    let app = common::setup_test_app().await.expect("setup failed");
+
+    let alice_id = common::create_test_user(&app.state, "alice_expired", "password123")
+        .await
+        .expect("create alice failed");
+    let bob_id = common::create_test_user(&app.state, "bob_expired", "password123")
+        .await
+        .expect("create bob failed");
+
+    let alice_cookie = common::login_user(&app.router, "alice_expired", "password123")
+        .await
+        .expect("alice login failed");
+    let bob_cookie = common::login_user(&app.router, "bob_expired", "password123")
+        .await
+        .expect("bob login failed");
+
+    send_friend_request(&app, &alice_cookie, "bob_expired").await;
+    accept_friend_request(&app, &bob_cookie, &alice_id).await;
+
+    let expense_category = create_category(&app, &alice_cookie, "Dining", false).await;
+    let idempotency_key = "split-create-expired-idempotency-1";
+
+    let payload = json!({
+        "idempotency_key": idempotency_key,
+        "total_amount": 99.99,
+        "currency": "TWD",
+        "description": "Expired idempotency key",
+        "date": "2026-02-16",
+        "category_id": expense_category.id,
+        "splits": [
+            { "user_id": bob_id, "amount": 33.33 }
+        ]
+    });
+
+    let first_request = Request::builder()
+        .uri("/splits/create")
+        .method("POST")
+        .header("cookie", alice_cookie.clone())
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("build first split request");
+    let first_response = app
+        .router
+        .clone()
+        .oneshot(first_request)
+        .await
+        .expect("execute first split request");
+    assert_eq!(first_response.status(), StatusCode::CREATED);
+    let first_body = axum::body::to_bytes(first_response.into_body(), usize::MAX)
+        .await
+        .expect("read first response body");
+
+    let expired_at = (time::OffsetDateTime::now_utc() - time::Duration::hours(1))
+        .format(&time::format_description::well_known::Rfc3339)
+        .expect("format expiration");
+    let conn = app.state.main_db.connect().expect("connect db");
+    conn.execute(
+        "UPDATE idempotency_keys SET expires_at = ? WHERE key = ? AND user_id = ? AND endpoint = ?",
+        (
+            expired_at.as_str(),
+            idempotency_key,
+            alice_id.as_str(),
+            "/splits/create",
+        ),
+    )
+    .await
+    .expect("backdate idempotency entry");
+
+    let second_request = Request::builder()
+        .uri("/splits/create")
+        .method("POST")
+        .header("cookie", alice_cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(payload.to_string()))
+        .expect("build second split request");
+    let second_response = app
+        .router
+        .clone()
+        .oneshot(second_request)
+        .await
+        .expect("execute second split request");
+    assert_eq!(second_response.status(), StatusCode::CREATED);
+    let second_body = axum::body::to_bytes(second_response.into_body(), usize::MAX)
+        .await
+        .expect("read second response body");
+
+    assert_ne!(second_body, first_body);
+    assert_eq!(count_records_for_user(&app, &alice_id).await, 2);
+    assert_eq!(count_records_for_user(&app, &bob_id).await, 2);
 }
 
 #[tokio::test]

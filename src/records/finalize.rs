@@ -86,7 +86,7 @@ pub async fn finalize_pending_record(
 
             let mut existing_rows = conn
                 .query(
-                    "SELECT pending FROM records WHERE id = ? AND owner_user_id = ?",
+                    "SELECT (split_id IS NOT NULL AND category_id IS NULL) FROM records WHERE id = ? AND owner_user_id = ?",
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -109,13 +109,11 @@ pub async fn finalize_pending_record(
 
             let affected_rows = conn
                 .execute(
-                    "UPDATE records SET pending = ?, category_id = ? WHERE id = ? AND owner_user_id = ? AND pending = ?",
+                    "UPDATE records SET category_id = ? WHERE id = ? AND owner_user_id = ? AND (split_id IS NOT NULL AND category_id IS NULL)",
                     (
-                        false,
                         category_id.as_str(),
                         record_id.as_str(),
                         owner_user_id.as_str(),
-                        true,
                     ),
                 )
                 .await

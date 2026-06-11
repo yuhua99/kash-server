@@ -110,16 +110,25 @@ async fn json_get(app: &common::TestApp, uri: &str, cookie: &str) -> (StatusCode
 }
 
 /// Create a category via API and return its id.
-async fn create_category(app: &common::TestApp, cookie: &str, name: &str) -> String {
+async fn create_category_with_type(
+    app: &common::TestApp,
+    cookie: &str,
+    name: &str,
+    is_income: bool,
+) -> String {
     let (status, body) = json_post(
         app,
         "/categories",
         cookie,
-        json!({ "name": name, "is_income": false }),
+        json!({ "name": name, "is_income": is_income }),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED, "create category {name}");
     body["id"].as_str().expect("category id").to_string()
+}
+
+async fn create_category(app: &common::TestApp, cookie: &str, name: &str) -> String {
+    create_category_with_type(app, cookie, name, false).await
 }
 
 /// Create a plain (non-split) record via API and return its id.
@@ -247,6 +256,41 @@ async fn b6_user_a_cannot_update_user_b_record() {
         status == StatusCode::NOT_FOUND || status == StatusCode::FORBIDDEN,
         "Alice must not be able to update Bob's record, got {status}"
     );
+}
+
+#[tokio::test]
+async fn b6_update_record_category_only_renormalizes_amount_sign() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let _user_id = common::create_test_user(&app.state, "alice_b6_sign", "pw")
+        .await
+        .expect("create alice");
+    let cookie = common::login_user(&app.router, "alice_b6_sign", "pw")
+        .await
+        .expect("login alice");
+
+    let expense_cat = create_category_with_type(&app, &cookie, "ExpenseCat", false).await;
+    let income_cat = create_category_with_type(&app, &cookie, "IncomeCat", true).await;
+    let record_id = create_record(&app, &cookie, "SignRecord", &expense_cat).await;
+
+    let (income_status, income_body) = json_put(
+        &app,
+        &format!("/records/{record_id}"),
+        &cookie,
+        json!({ "category_id": income_cat }),
+    )
+    .await;
+    assert_eq!(income_status, StatusCode::OK);
+    assert_eq!(income_body["amount"].as_f64().expect("amount"), 50.0);
+
+    let (expense_status, expense_body) = json_put(
+        &app,
+        &format!("/records/{record_id}"),
+        &cookie,
+        json!({ "category_id": expense_cat }),
+    )
+    .await;
+    assert_eq!(expense_status, StatusCode::OK);
+    assert_eq!(expense_body["amount"].as_f64().expect("amount"), -50.0);
 }
 
 // ---------------------------------------------------------------------------

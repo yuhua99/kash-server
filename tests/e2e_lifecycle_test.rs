@@ -228,7 +228,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                "SELECT id, amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
                 (split_id.as_str(), bob_id.as_str()),
             )
             .await
@@ -260,7 +260,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT id, amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
+                "SELECT id, amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE split_id = ? AND owner_user_id = ?",
                 (split_id.as_str(), charlie_id.as_str()),
             )
             .await
@@ -292,7 +292,7 @@ async fn test_full_lifecycle_happy_path_e2e_lifecycle() {
         let conn = app.state.main_db.connect().expect("connect db");
         let mut rows = conn
             .query(
-                "SELECT amount, category_id, pending, split_id, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ?",
+                "SELECT amount, category_id, (split_id IS NOT NULL AND category_id IS NULL), split_id, settle, owner_user_id, creditor_user_id FROM records WHERE id = ?",
                 [payer_record_id.as_str()],
             )
             .await

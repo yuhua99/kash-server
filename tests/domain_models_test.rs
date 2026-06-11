@@ -109,9 +109,8 @@ fn serde_finalize_pending_payload() {
 
 #[test]
 fn serde_update_settle_payload() {
-    let json = r#"{"split_id":"split-001"}"#;
-    let payload: UpdateSettlePayload = serde_json::from_str(json).unwrap();
-    assert_eq!(payload.split_id, "split-001");
+    let json = r#"{}"#;
+    let _payload: UpdateSettlePayload = serde_json::from_str(json).unwrap();
 }
 
 #[test]

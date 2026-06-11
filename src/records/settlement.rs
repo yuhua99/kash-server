@@ -27,8 +27,8 @@ pub async fn update_settle(
         Box::pin(async move {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
+                    "SELECT id, name, amount, currency, category_id, date, settle FROM records WHERE id = ? AND (owner_user_id = ? OR creditor_user_id = ?)",
+                    (record_id.as_str(), owner_user_id.as_str(), user_id.as_str()),
                 )
                 .await
                 .map_err(|_| TransactionError::Begin)?;
@@ -40,18 +40,8 @@ pub async fn update_settle(
                 .ok_or(TransactionError::Begin)?;
 
             let settle: bool = row.get(6).map_err(|_| TransactionError::Begin)?;
-            let debtor_user_id: Option<String> = row.get(7).map_err(|_| TransactionError::Begin)?;
-            let creditor_user_id: Option<String> = row.get(8).map_err(|_| TransactionError::Begin)?;
 
             drop(rows);
-
-            let is_owner = owner_user_id == user_id;
-            let is_debtor = debtor_user_id.as_ref() == Some(&user_id);
-            let is_creditor = creditor_user_id.as_ref() == Some(&user_id);
-
-            if !is_owner && !is_debtor && !is_creditor {
-                return Err(TransactionError::Begin);
-            }
 
             if settle {
                 let record = Record {
@@ -66,16 +56,16 @@ pub async fn update_settle(
             }
 
             conn.execute(
-                "UPDATE records SET settle = ? WHERE id = ? AND owner_user_id = ?",
-                (true, record_id.as_str(), owner_user_id.as_str()),
+                "UPDATE records SET settle = ? WHERE id = ? AND (owner_user_id = ? OR creditor_user_id = ?)",
+                (true, record_id.as_str(), owner_user_id.as_str(), user_id.as_str()),
             )
             .await
             .map_err(|_| TransactionError::Commit)?;
 
             let mut updated_rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND (owner_user_id = ? OR creditor_user_id = ?)",
+                    (record_id.as_str(), owner_user_id.as_str(), user_id.as_str()),
                 )
                 .await
                 .map_err(|_| TransactionError::Commit)?;

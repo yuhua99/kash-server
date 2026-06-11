@@ -133,7 +133,7 @@ pub async fn get_records(
     let start_date = query.start_date.unwrap_or_else(|| "0000-01-01".to_string());
     let end_date = query.end_date.unwrap_or_else(|| "9999-12-31".to_string());
 
-    let pending = query.pending.map(|p| if p { 1 } else { 0 });
+    let pending = query.pending;
     let settle = query.settle.map(|s| if s { 1 } else { 0 });
 
     let total_count: u32 = match (pending, settle) {
@@ -155,7 +155,7 @@ pub async fn get_records(
         (Some(p), None) => {
             let mut count_rows = conn
                 .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ?",
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p),
                 )
                 .await
@@ -185,7 +185,7 @@ pub async fn get_records(
         (Some(p), Some(s)) => {
             let mut count_rows = conn
                 .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ?",
+                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? AND settle = ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s),
                 )
                 .await
@@ -217,7 +217,7 @@ pub async fn get_records(
         (Some(p), None) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, limit, offset),
                 )
                 .await
@@ -243,7 +243,7 @@ pub async fn get_records(
         (Some(p), Some(s)) => {
             let mut rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND pending = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
                     (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s, limit, offset),
                 )
                 .await
@@ -322,12 +322,15 @@ pub async fn update_record(
     };
 
     let updated_name = payload.name.as_deref().unwrap_or(&existing_record.name);
+    drop(existing_rows);
+
     let updated_category_id = payload
         .category_id
         .clone()
         .or(existing_record.category_id.clone());
-    let updated_amount = if let Some(amount) = payload.amount {
+    let updated_amount = if payload.amount.is_some() || payload.category_id.is_some() {
         if let Some(ref category_id) = updated_category_id {
+            let amount = payload.amount.unwrap_or(existing_record.amount);
             let is_income = get_category_is_income(&conn, &user.id, category_id).await?;
             normalize_amount_by_category(amount, is_income)
         } else {

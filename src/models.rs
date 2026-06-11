@@ -225,9 +225,7 @@ pub struct FinalizePendingPayload {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct UpdateSettlePayload {
-    pub split_id: String,
-}
+pub struct UpdateSettlePayload {}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SplitRecord {

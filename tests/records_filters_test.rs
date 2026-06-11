@@ -24,22 +24,22 @@ async fn test_records_filter_pending_only() -> anyhow::Result<()> {
         let conn = test_app.state.main_db.connect().expect("connect db");
         // Pending record
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec1",
                 user_id.as_str(),
                 "Lunch",
                 -50.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-01",
-                true,
+                Some("split_rec1"),
             ),
         )
         .await?;
 
         // Non-pending record
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec2",
                 user_id.as_str(),
@@ -47,7 +47,7 @@ async fn test_records_filter_pending_only() -> anyhow::Result<()> {
                 -100.0,
                 "cat1",
                 "2024-01-02",
-                false,
+                Option::<&str>::None,
             ),
         )
         .await?;
@@ -160,15 +160,15 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
         let conn = test_app.state.main_db.connect().expect("connect db");
         // pending=true, settle=false
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec1",
                 user_id.as_str(),
                 "Lunch",
                 -50.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-01",
-                true,
+                Some("split_rec1"),
                 false,
             ),
         )
@@ -176,15 +176,15 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
 
         // pending=true, settle=true (both true)
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec2",
                 user_id.as_str(),
                 "Dinner",
                 -100.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-02",
-                true,
+                Some("split_rec2"),
                 true,
             ),
         )
@@ -192,7 +192,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
 
         // pending=false, settle=false
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec3",
                 user_id.as_str(),
@@ -200,7 +200,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
                 -30.0,
                 "cat1",
                 "2024-01-03",
-                false,
+                Option::<&str>::None,
                 false,
             ),
         )
@@ -208,7 +208,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
 
         // pending=false, settle=true
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec4",
                 user_id.as_str(),
@@ -216,7 +216,7 @@ async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()>
                 -20.0,
                 "cat1",
                 "2024-01-04",
-                false,
+                Option::<&str>::None,
                 true,
             ),
         )
@@ -266,22 +266,22 @@ async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Resu
     {
         let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec1",
                 user_id.as_str(),
                 "Lunch",
                 -50.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-01",
-                true,
+                Some("split_rec1"),
                 false,
             ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec2",
                 user_id.as_str(),
@@ -289,7 +289,7 @@ async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Resu
                 -100.0,
                 "cat1",
                 "2024-01-02",
-                false,
+                Option::<&str>::None,
                 true,
             ),
         )
@@ -332,21 +332,21 @@ async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
     {
         let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec1",
                 user_id.as_str(),
                 "Lunch",
                 -50.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-01",
-                true,
+                Some("split_rec1"),
             ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec2",
                 user_id.as_str(),
@@ -354,21 +354,21 @@ async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
                 -100.0,
                 "cat1",
                 "2024-01-05",
-                false,
+                Option::<&str>::None,
             ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec3",
                 user_id.as_str(),
                 "Breakfast",
                 -30.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-10",
-                true,
+                Some("split_rec3"),
             ),
         )
         .await?;
@@ -416,21 +416,21 @@ async fn test_records_filter_pending_false() -> anyhow::Result<()> {
     {
         let conn = test_app.state.main_db.connect().expect("connect db");
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec1",
                 user_id.as_str(),
                 "Lunch",
                 -50.0,
-                "cat1",
+                Option::<&str>::None,
                 "2024-01-01",
-                true,
+                Some("split_rec1"),
             ),
         )
         .await?;
 
         conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, pending) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 "rec2",
                 user_id.as_str(),
@@ -438,7 +438,7 @@ async fn test_records_filter_pending_false() -> anyhow::Result<()> {
                 -100.0,
                 "cat1",
                 "2024-01-02",
-                false,
+                Option::<&str>::None,
             ),
         )
         .await?;

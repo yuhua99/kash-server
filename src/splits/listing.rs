@@ -26,7 +26,7 @@ pub async fn list_pending_splits(
 
     let mut count_rows = conn
         .query(
-            "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND pending = 1 AND split_id IS NOT NULL",
+            "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND split_id IS NOT NULL AND category_id IS NULL",
             [current_user.id.as_str()],
         )
         .await
@@ -44,7 +44,7 @@ pub async fn list_pending_splits(
 
     let mut rows = conn
         .query(
-            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id = ? AND r.pending = 1 AND r.split_id IS NOT NULL ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
+            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency, r.owner_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), (r.split_id IS NOT NULL AND r.category_id IS NULL), r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.owner_user_id WHERE r.owner_user_id = ? AND r.split_id IS NOT NULL AND r.category_id IS NULL ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
             (current_user.id.as_str(), limit, offset),
         )
         .await
@@ -89,7 +89,7 @@ pub async fn list_unsettled_splits_with_friend(
 
     let mut count_rows = conn
         .query(
-            "SELECT COUNT(*) FROM records WHERE owner_user_id IN (?, ?) AND pending = 0 AND settle = 0 AND split_id IS NOT NULL AND ((debtor_user_id = ? AND creditor_user_id = ?) OR (debtor_user_id = ? AND creditor_user_id = ?))",
+            "SELECT COUNT(*) FROM records WHERE owner_user_id IN (?, ?) AND NOT (split_id IS NOT NULL AND category_id IS NULL) AND settle = 0 AND split_id IS NOT NULL AND ((owner_user_id = ? AND creditor_user_id = ?) OR (owner_user_id = ? AND creditor_user_id = ?))",
             (
                 current_user.id.as_str(),
                 friend_id.as_str(),
@@ -114,7 +114,7 @@ pub async fn list_unsettled_splits_with_friend(
 
     let mut rows = conn
         .query(
-            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency, r.debtor_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), r.pending, r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.debtor_user_id WHERE r.owner_user_id IN (?, ?) AND r.pending = 0 AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.debtor_user_id = ? AND r.creditor_user_id = ?) OR (r.debtor_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
+            "SELECT r.id, r.split_id, r.name, r.date, r.amount, r.currency, r.owner_user_id, r.creditor_user_id, COALESCE(creditor_user.name, ''), COALESCE(debtor_user.name, ''), (r.split_id IS NOT NULL AND r.category_id IS NULL), r.settle FROM records r LEFT JOIN users creditor_user ON creditor_user.id = r.creditor_user_id LEFT JOIN users debtor_user ON debtor_user.id = r.owner_user_id WHERE r.owner_user_id IN (?, ?) AND NOT (r.split_id IS NOT NULL AND r.category_id IS NULL) AND r.settle = 0 AND r.split_id IS NOT NULL AND ((r.owner_user_id = ? AND r.creditor_user_id = ?) OR (r.owner_user_id = ? AND r.creditor_user_id = ?)) ORDER BY r.date DESC, r.id DESC LIMIT ? OFFSET ?",
             (
                 current_user.id.as_str(),
                 friend_id.as_str(),
@@ -170,7 +170,7 @@ pub async fn settle_all_unsettled_splits_with_friend(
         Box::pin(async move {
             let affected = conn
                 .execute(
-                    "UPDATE records SET settle = 1 WHERE owner_user_id IN (?, ?) AND pending = 0 AND settle = 0 AND split_id IS NOT NULL AND ((debtor_user_id = ? AND creditor_user_id = ?) OR (debtor_user_id = ? AND creditor_user_id = ?))",
+                    "UPDATE records SET settle = 1 WHERE owner_user_id IN (?, ?) AND NOT (split_id IS NOT NULL AND category_id IS NULL) AND settle = 0 AND split_id IS NOT NULL AND ((owner_user_id = ? AND creditor_user_id = ?) OR (owner_user_id = ? AND creditor_user_id = ?))",
                     (
                         user_id.as_str(),
                         friend_id.as_str(),

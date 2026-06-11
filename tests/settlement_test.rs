@@ -189,6 +189,48 @@ async fn test_settle_happy_path_debtor() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn test_settle_happy_path_creditor_can_settle_debtor_record() -> anyhow::Result<()> {
+    let app = setup_test_app().await?;
+
+    let payer_id = create_test_user(&app.state, "payer", "password").await?;
+    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
+
+    let payer_cookie = login_user(&app.router, "payer", "password").await?;
+
+    let (_split_id, _payer_record_id, debtor_record_id) =
+        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
+
+    let payload = json!({});
+
+    let request = Request::builder()
+        .method("PUT")
+        .uri(format!("/records/{}/settle", debtor_record_id))
+        .header("content-type", "application/json")
+        .header("cookie", &payer_cookie)
+        .body(Body::from(payload.to_string()))?;
+
+    let response = app.router.clone().oneshot(request).await?;
+    assert_eq!(
+        response.status(),
+        StatusCode::OK,
+        "Creditor should be able to settle debtor record"
+    );
+
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT settle FROM records WHERE id = ?",
+            [debtor_record_id.as_str()],
+        )
+        .await?;
+    let row = rows.next().await?.expect("Record should exist");
+    let settle: bool = row.get(0)?;
+    assert!(settle, "Record should be marked as settled");
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn test_settle_happy_path_creditor_sees_debtor_settled() -> anyhow::Result<()> {
     let app = setup_test_app().await?;
 
