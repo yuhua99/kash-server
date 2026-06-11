@@ -12,8 +12,9 @@ use tower_sessions::Session;
 use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::FX_ANCHOR_BASE_CURRENCY;
+use crate::errors::{db_error, db_error_with_context};
 use crate::models::{ExchangeRateRow, GetFxRatesQuery, GetFxRatesResponse};
-use crate::utils::{db_error, db_error_with_context, validate_currency_list, validate_date};
+use crate::validation::{validate_currency_list, validate_date};
 
 const FRANKFURTER_RATES_URL: &str = "https://api.frankfurter.dev/v2/rates";
 

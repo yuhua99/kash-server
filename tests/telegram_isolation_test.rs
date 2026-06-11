@@ -7,7 +7,7 @@
 /// They are expected to FAIL (red) until the migration is implemented.
 ///
 /// NOTE: The `execute_tool_call` function and its helpers live in
-/// `src/bin/tg/db.rs` which is a binary-only module and cannot be imported
+/// `src/bin/tg/tools.rs` which is a binary-only module and cannot be imported
 /// from integration tests.  Instead, we test the *observable behaviour* via
 /// the shared DB: after using the bot helpers we inspect the shared DB to
 /// verify that cross-user data leakage does not occur.

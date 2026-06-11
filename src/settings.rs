@@ -3,8 +3,9 @@ use tower_sessions::Session;
 
 use crate::AppState;
 use crate::auth::get_current_user;
+use crate::errors::{db_error, db_error_with_context};
 use crate::models::{UpdateUserSettingsPayload, UserSettings};
-use crate::utils::{db_error, db_error_with_context, validate_currency};
+use crate::validation::validate_currency;
 
 pub async fn get_settings(
     State(app_state): State<AppState>,

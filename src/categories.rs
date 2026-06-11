@@ -8,14 +8,12 @@ use uuid::Uuid;
 
 use crate::auth::get_current_user;
 use crate::constants::*;
+use crate::errors::{db_error, db_error_with_context};
 use crate::models::{
     Category, CreateCategoryPayload, GetCategoriesQuery, GetCategoriesResponse,
     UpdateCategoryPayload,
 };
-use crate::utils::{
-    db_error, db_error_with_context, validate_categories_limit, validate_offset,
-    validate_string_length,
-};
+use crate::validation::{validate_categories_limit, validate_offset, validate_string_length};
 use crate::{AppState, Db, TransactionError, with_transaction};
 
 pub fn validate_category_name(name: &str) -> Result<(), (StatusCode, String)> {
@@ -350,7 +348,6 @@ pub async fn delete_category(
         {
             return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
         }
-
     }
 
     validate_category_not_in_use(&app_state.main_db, &user.id, &category_id).await?;

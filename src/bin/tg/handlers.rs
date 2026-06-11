@@ -4,13 +4,21 @@ use teloxide::types::ChatAction;
 
 use kash_server::auth;
 
+use crate::categories::load_categories;
 use crate::constants::{MAX_PHOTO_FILE_SIZE, MAX_VOICE_FILE_SIZE};
-use crate::db::{fetch_linked_user_id, load_categories, upsert_telegram_link};
-use crate::helpers::{
-    cleanup_expired_contexts, get_context_messages, push_context_turn, telegram_user_id,
-};
+use crate::context::{cleanup_expired_contexts, get_context_messages, push_context_turn};
+use crate::links::{fetch_linked_user_id, upsert_telegram_link};
 use crate::models::{BotError, BotState, ContextKey};
 use crate::openai::{respond_with_tools, transcribe_voice};
+
+fn telegram_user_id(msg: &Message) -> Result<i64, String> {
+    let user = msg
+        .from
+        .as_ref()
+        .ok_or_else(|| "Unable to read Telegram user id.".to_string())?;
+
+    i64::try_from(user.id.0).map_err(|_| "Invalid Telegram user id.".to_string())
+}
 
 // ---------------------------------------------------------------------------
 // Top-level message dispatcher

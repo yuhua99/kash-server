@@ -4,8 +4,8 @@ use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::constants::{DEFAULT_WHISPER_MODEL, TOOL_MAX_ROUNDS};
-use crate::db::execute_tool_call;
 use crate::models::{BotState, CategoryInfo};
+use crate::tools::execute_tool_call;
 
 #[derive(Deserialize)]
 struct WhisperTranscriptionResponse {

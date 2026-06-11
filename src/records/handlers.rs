@@ -3,113 +3,27 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
+use libsql::Row;
 use tower_sessions::Session;
 use uuid::Uuid;
 
+use crate::AppState;
 use crate::auth::get_current_user;
-use crate::constants::*;
+use crate::errors::{db_error, db_error_with_context};
 use crate::models::{
-    CreateRecordPayload, FinalizePendingPayload, GetRecordsQuery, GetRecordsResponse, Record,
-    UpdateRecordPayload, UpdateSettlePayload,
+    CreateRecordPayload, GetRecordsQuery, GetRecordsResponse, Record, UpdateRecordPayload,
 };
-use crate::utils::{
-    db_error, db_error_with_context, validate_category_exists, validate_currency, validate_date,
-    validate_offset, validate_records_limit, validate_string_length,
+use crate::validation::{
+    validate_category_exists, validate_currency, validate_date, validate_offset,
+    validate_records_limit,
 };
-use crate::{AppState, TransactionError, with_transaction};
 
-enum FinalizePendingError {
-    Transaction(TransactionError),
-    Db(&'static str),
-    NotFound,
-    CategoryNotFound,
-    Conflict,
-}
+use super::validation::{
+    get_category_is_income, normalize_amount_by_category, validate_category_id,
+    validate_record_amount, validate_record_name,
+};
 
-impl From<TransactionError> for FinalizePendingError {
-    fn from(value: TransactionError) -> Self {
-        Self::Transaction(value)
-    }
-}
-
-impl From<FinalizePendingError> for (StatusCode, String) {
-    fn from(value: FinalizePendingError) -> Self {
-        match value {
-            FinalizePendingError::Transaction(TransactionError::Begin) => {
-                db_error_with_context("failed to begin transaction")
-            }
-            FinalizePendingError::Transaction(TransactionError::Commit) => {
-                db_error_with_context("failed to commit transaction")
-            }
-            FinalizePendingError::Db(ctx) => db_error_with_context(ctx),
-            FinalizePendingError::NotFound => {
-                (StatusCode::NOT_FOUND, "Record not found".to_string())
-            }
-            FinalizePendingError::CategoryNotFound => (
-                StatusCode::BAD_REQUEST,
-                "Category does not exist".to_string(),
-            ),
-            FinalizePendingError::Conflict => (
-                StatusCode::CONFLICT,
-                "Record already finalized or being finalized".to_string(),
-            ),
-        }
-    }
-}
-
-pub fn validate_record_name(name: &str) -> Result<(), (StatusCode, String)> {
-    validate_string_length(name, "Record name", MAX_RECORD_NAME_LENGTH)
-}
-
-pub fn validate_record_amount(amount: f64) -> Result<(), (StatusCode, String)> {
-    if amount == 0.0 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Record amount cannot be zero".to_string(),
-        ));
-    }
-    Ok(())
-}
-
-pub fn validate_category_id(category_id: &str) -> Result<(), (StatusCode, String)> {
-    validate_string_length(category_id, "Category ID", MAX_CATEGORY_NAME_LENGTH)
-}
-
-fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
-    if is_income {
-        amount.abs()
-    } else {
-        -amount.abs()
-    }
-}
-
-async fn get_category_is_income(
-    conn: &libsql::Connection,
-    user_id: &str,
-    category_id: &str,
-) -> Result<bool, (StatusCode, String)> {
-    let mut rows = conn
-        .query(
-            "SELECT is_income FROM categories WHERE id = ? AND owner_user_id = ?",
-            (category_id, user_id),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to query category type"))?;
-
-    if let Some(row) = rows.next().await.map_err(|_| db_error())? {
-        let is_income: bool = row
-            .get(0)
-            .map_err(|_| db_error_with_context("invalid category data"))?;
-        Ok(is_income)
-    } else {
-        Err((
-            StatusCode::BAD_REQUEST,
-            "Category does not exist".to_string(),
-        ))
-    }
-}
-
-pub fn extract_record_from_row(row: libsql::Row) -> Result<Record, (StatusCode, String)> {
+pub fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     let id: String = row
         .get(0)
         .map_err(|_| db_error_with_context("invalid record data"))?;
@@ -461,129 +375,6 @@ pub async fn update_record(
     Ok((StatusCode::OK, Json(updated_record)))
 }
 
-pub async fn finalize_pending_record(
-    State(app_state): State<AppState>,
-    session: Session,
-    Json(payload): Json<FinalizePendingPayload>,
-) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
-    let user = get_current_user(&session).await?;
-    validate_category_id(&payload.category_id)?;
-    validate_string_length(&payload.record_id, "Record ID", MAX_RECORD_NAME_LENGTH)?;
-
-    let db = &app_state.main_db;
-    let category_id = payload.category_id.trim().to_string();
-    let record_id = payload.record_id.trim().to_string();
-
-    let record = with_transaction(db, |conn| {
-        let category_id = category_id.clone();
-        let record_id = record_id.clone();
-        let owner_user_id = user.id.clone();
-        Box::pin(async move {
-            let mut category_rows = conn
-                .query(
-                    "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
-                    (category_id.as_str(), owner_user_id.as_str()),
-                )
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to validate category"))?;
-
-            if category_rows
-                .next()
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to validate category"))?
-                .is_none()
-            {
-                return Err(FinalizePendingError::CategoryNotFound);
-            }
-
-            let mut existing_rows = conn
-                .query(
-                    "SELECT pending FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
-                )
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?;
-
-            let pending: bool = if let Some(row) = existing_rows
-                .next()
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to query pending record"))?
-            {
-                row.get(0)
-                    .map_err(|_| FinalizePendingError::Db("invalid pending record data"))?
-            } else {
-                return Err(FinalizePendingError::NotFound);
-            };
-
-            if !pending {
-                return Err(FinalizePendingError::Conflict);
-            }
-
-            let affected_rows = conn
-                .execute(
-                    "UPDATE records SET pending = ?, category_id = ? WHERE id = ? AND owner_user_id = ? AND pending = ?",
-                    (
-                        false,
-                        category_id.as_str(),
-                        record_id.as_str(),
-                        owner_user_id.as_str(),
-                        true,
-                    ),
-                )
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to finalize pending record"))?;
-
-            if affected_rows == 0 {
-                return Err(FinalizePendingError::Conflict);
-            }
-
-            let mut updated_rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
-                )
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?;
-
-            let row = updated_rows
-                .next()
-                .await
-                .map_err(|_| FinalizePendingError::Db("failed to load finalized record"))?
-                .ok_or(FinalizePendingError::NotFound)?;
-
-            let finalized_currency: String = row
-                .get(3)
-                .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
-            let finalized_category_id: Option<String> = row
-                .get(4)
-                .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?;
-
-            let record = Record {
-                id: row
-                    .get(0)
-                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-                name: row
-                    .get(1)
-                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-                amount: row
-                    .get(2)
-                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-                currency: finalized_currency,
-                category_id: finalized_category_id,
-                date: row
-                    .get(5)
-                    .map_err(|_| FinalizePendingError::Db("invalid finalized record data"))?,
-            };
-
-            Ok(record)
-        })
-    })
-    .await
-    .map_err(|e: FinalizePendingError| -> (StatusCode, String) { e.into() })?;
-
-    Ok((StatusCode::OK, Json(record)))
-}
-
 pub async fn delete_record(
     State(app_state): State<AppState>,
     session: Session,
@@ -605,101 +396,4 @@ pub async fn delete_record(
     }
 
     Ok(StatusCode::NO_CONTENT)
-}
-
-pub async fn update_settle(
-    State(app_state): State<AppState>,
-    session: Session,
-    Path(record_id): Path<String>,
-    Json(_payload): Json<UpdateSettlePayload>,
-) -> Result<(StatusCode, Json<Record>), (StatusCode, String)> {
-    let current_user = get_current_user(&session).await?;
-    let user_id = current_user.id.clone();
-    let db = &app_state.main_db;
-
-    let record = with_transaction(db, |conn| {
-        let record_id = record_id.clone();
-        let user_id = user_id.clone();
-        let owner_user_id = user_id.clone();
-        Box::pin(async move {
-            let mut rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date, settle, debtor_user_id, creditor_user_id FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
-                )
-                .await
-                .map_err(|_| TransactionError::Begin)?;
-
-            let row = rows
-                .next()
-                .await
-                .map_err(|_| TransactionError::Begin)?
-                .ok_or(TransactionError::Begin)?;
-
-            let settle: bool = row.get(6).map_err(|_| TransactionError::Begin)?;
-            let debtor_user_id: Option<String> = row.get(7).map_err(|_| TransactionError::Begin)?;
-            let creditor_user_id: Option<String> = row.get(8).map_err(|_| TransactionError::Begin)?;
-
-            drop(rows);
-
-            let is_owner = owner_user_id == user_id;
-            let is_debtor = debtor_user_id.as_ref() == Some(&user_id);
-            let is_creditor = creditor_user_id.as_ref() == Some(&user_id);
-
-            if !is_owner && !is_debtor && !is_creditor {
-                return Err(TransactionError::Begin);
-            }
-
-            if settle {
-                let record = Record {
-                    id: row.get(0).map_err(|_| TransactionError::Begin)?,
-                    name: row.get(1).map_err(|_| TransactionError::Begin)?,
-                    amount: row.get(2).map_err(|_| TransactionError::Begin)?,
-                    currency: row.get(3).map_err(|_| TransactionError::Begin)?,
-                    category_id: row.get(4).map_err(|_| TransactionError::Begin)?,
-                    date: row.get(5).map_err(|_| TransactionError::Begin)?,
-                };
-                return Ok(record);
-            }
-
-            conn.execute(
-                "UPDATE records SET settle = ? WHERE id = ? AND owner_user_id = ?",
-                (true, record_id.as_str(), owner_user_id.as_str()),
-            )
-            .await
-            .map_err(|_| TransactionError::Commit)?;
-
-            let mut updated_rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
-                    (record_id.as_str(), owner_user_id.as_str()),
-                )
-                .await
-                .map_err(|_| TransactionError::Commit)?;
-
-            let updated_row = updated_rows
-                .next()
-                .await
-                .map_err(|_| TransactionError::Commit)?
-                .ok_or(TransactionError::Commit)?;
-
-            let record = Record {
-                id: updated_row.get(0).map_err(|_| TransactionError::Commit)?,
-                name: updated_row.get(1).map_err(|_| TransactionError::Commit)?,
-                amount: updated_row.get(2).map_err(|_| TransactionError::Commit)?,
-                currency: updated_row.get(3).map_err(|_| TransactionError::Commit)?,
-                category_id: updated_row.get(4).map_err(|_| TransactionError::Commit)?,
-                date: updated_row.get(5).map_err(|_| TransactionError::Commit)?,
-            };
-
-            Ok(record)
-        })
-    })
-    .await
-    .map_err(|e| match e {
-        TransactionError::Begin => (StatusCode::NOT_FOUND, "Record not found".to_string()),
-        TransactionError::Commit => db_error_with_context("failed to update settlement status"),
-    })?;
-
-    Ok((StatusCode::OK, Json(record)))
 }

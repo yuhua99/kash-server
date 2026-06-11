@@ -8,12 +8,14 @@ use tokio::sync::RwLock;
 use kash_server::constants::DEFAULT_DATA_PATH;
 use kash_server::database;
 
+mod categories;
 mod constants;
-mod db;
+mod context;
 mod handlers;
-mod helpers;
+mod links;
 mod models;
 mod openai;
+mod tools;
 
 use models::{BotError, BotState};
 

@@ -1,5 +1,5 @@
 use kash_server::models::SplitParticipant;
-use kash_server::utils::{calculate_split_amounts, validate_split_participants};
+use kash_server::splits::{calculate_split_amounts, validate_split_participants};
 
 #[test]
 fn test_validate_split_participants_exact_match() {

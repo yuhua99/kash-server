@@ -3,163 +3,25 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::json;
 use time::OffsetDateTime;
-use uuid::Uuid;
 
 use kash_server::Db;
-use kash_server::categories::validate_category_name;
 use kash_server::constants::DEFAULT_MAIN_CURRENCY;
 use kash_server::models::{CreateRecordPayload, Record};
 use kash_server::records;
-use kash_server::utils::{validate_date, validate_offset, validate_records_limit};
+use kash_server::validation::{validate_date, validate_offset, validate_records_limit};
 
-use crate::helpers::{normalize_amount_by_category, resolve_category_id};
-use crate::models::{BotState, CategoryInfo};
+use crate::categories::{
+    format_category_options, get_category_is_income, load_categories, resolve_category_filter_id,
+    resolve_category_id, resolve_or_create_category,
+};
+use crate::models::BotState;
 
-// ---------------------------------------------------------------------------
-// Telegram user link
-// ---------------------------------------------------------------------------
-
-pub async fn upsert_telegram_link(
-    db: &Db,
-    telegram_user_id: i64,
-    chat_id: i64,
-    user_id: &str,
-) -> Result<(), String> {
-    let conn = db
-        .connect()
-        .map_err(|_| "Failed to connect to database".to_string())?;
-    let created_at = OffsetDateTime::now_utc().unix_timestamp();
-
-    conn.execute(
-        "INSERT INTO telegram_users (telegram_user_id, user_id, chat_id, created_at) VALUES (?, ?, ?, ?)\
-        ON CONFLICT(telegram_user_id) DO UPDATE SET user_id = excluded.user_id, chat_id = excluded.chat_id",
-        (
-            telegram_user_id.to_string(),
-            user_id,
-            chat_id.to_string(),
-            created_at,
-        ),
-    )
-    .await
-    .map_err(|_| "Failed to link Telegram user".to_string())?;
-
-    Ok(())
-}
-
-pub async fn fetch_linked_user_id(
-    db: &Db,
-    telegram_user_id: i64,
-) -> Result<Option<String>, String> {
-    let conn = db
-        .connect()
-        .map_err(|_| "Failed to connect to database".to_string())?;
-    let mut rows = conn
-        .query(
-            "SELECT user_id FROM telegram_users WHERE telegram_user_id = ?",
-            [telegram_user_id.to_string()],
-        )
-        .await
-        .map_err(|_| "Failed to lookup Telegram user".to_string())?;
-
-    if let Some(row) = rows
-        .next()
-        .await
-        .map_err(|_| "Failed to lookup Telegram user".to_string())?
-    {
-        let user_id: String = row
-            .get(0)
-            .map_err(|_| "Failed to read Telegram user".to_string())?;
-        Ok(Some(user_id))
+fn normalize_amount_by_category(amount: f64, is_income: bool) -> f64 {
+    if is_income {
+        amount.abs()
     } else {
-        Ok(None)
+        -amount.abs()
     }
-}
-
-// ---------------------------------------------------------------------------
-// Category helpers
-// ---------------------------------------------------------------------------
-
-pub async fn load_categories(db: &Db, user_id: &str) -> Result<Vec<CategoryInfo>, String> {
-    let conn = db
-        .connect()
-        .map_err(|_| "Failed to connect to database".to_string())?;
-    let mut rows = conn
-        .query(
-            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? ORDER BY name ASC",
-            [user_id],
-        )
-        .await
-        .map_err(|_| "Failed to query categories".to_string())?;
-
-    let mut categories = Vec::new();
-    while let Some(row) = rows
-        .next()
-        .await
-        .map_err(|_| "Failed to query categories".to_string())?
-    {
-        let id: String = row.get(0).map_err(|_| "Invalid category".to_string())?;
-        let name: String = row.get(1).map_err(|_| "Invalid category".to_string())?;
-        let is_income: bool = row.get(2).map_err(|_| "Invalid category".to_string())?;
-        categories.push(CategoryInfo {
-            id,
-            name,
-            is_income,
-        });
-    }
-
-    Ok(categories)
-}
-
-pub async fn get_or_create_category(
-    db: &Db,
-    user_id: &str,
-    name: &str,
-    is_income: bool,
-) -> Result<CategoryInfo, String> {
-    let trimmed = name.trim();
-    let fallback = if trimmed.is_empty() { "Other" } else { trimmed };
-    validate_category_name(fallback).map_err(|(_, message)| message)?;
-
-    let conn = db
-        .connect()
-        .map_err(|_| "Failed to connect to database".to_string())?;
-
-    let mut existing = conn
-        .query(
-            "SELECT id, name, is_income FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?)",
-            (user_id, fallback),
-        )
-        .await
-        .map_err(|_| "Failed to query categories".to_string())?;
-
-    if let Some(row) = existing
-        .next()
-        .await
-        .map_err(|_| "Failed to query categories".to_string())?
-    {
-        let id: String = row.get(0).map_err(|_| "Invalid category".to_string())?;
-        let name: String = row.get(1).map_err(|_| "Invalid category".to_string())?;
-        let is_income: bool = row.get(2).map_err(|_| "Invalid category".to_string())?;
-        return Ok(CategoryInfo {
-            id,
-            name,
-            is_income,
-        });
-    }
-
-    let category_id = Uuid::new_v4().to_string();
-    conn.execute(
-        "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-        (category_id.as_str(), user_id, fallback, is_income),
-    )
-    .await
-    .map_err(|_| "Failed to create category".to_string())?;
-
-    Ok(CategoryInfo {
-        id: category_id,
-        name: fallback.to_string(),
-        is_income,
-    })
 }
 
 // ---------------------------------------------------------------------------
@@ -590,76 +452,6 @@ async fn list_records_tool(
     }))
 }
 
-fn resolve_category_filter_id(
-    categories: &[CategoryInfo],
-    category_id: Option<&str>,
-    category_name: Option<&str>,
-) -> Result<String, String> {
-    let provided_id = category_id.unwrap_or("").trim();
-    let provided_name = category_name.unwrap_or("").trim();
-
-    if provided_id.is_empty() && provided_name.is_empty() {
-        return Ok(String::new());
-    }
-
-    resolve_category_id(categories, provided_id, provided_name).ok_or_else(|| {
-        format!(
-            "Category not found. Available categories: {}",
-            format_category_options(categories)
-        )
-    })
-}
-
-async fn resolve_or_create_category(
-    db: &Db,
-    user_id: &str,
-    categories: &[CategoryInfo],
-    category_id: Option<&str>,
-    category_name: Option<&str>,
-    is_income: Option<bool>,
-) -> Result<CategoryInfo, String> {
-    let provided_id = category_id.unwrap_or("").trim();
-    let provided_name = category_name.unwrap_or("").trim();
-
-    if let Some(resolved_id) = resolve_category_id(categories, provided_id, provided_name)
-        && let Some(category) = categories
-            .iter()
-            .find(|category| category.id == resolved_id)
-    {
-        return Ok(category.clone());
-    }
-
-    if !provided_name.is_empty()
-        && let Some(income_flag) = is_income
-    {
-        return get_or_create_category(db, user_id, provided_name, income_flag).await;
-    }
-
-    if categories.is_empty() {
-        return Err(
-            "No categories found. Please provide category_name and is_income when creating the first record."
-                .to_string(),
-        );
-    }
-
-    Err(format!(
-        "Category not found. Available categories: {}",
-        format_category_options(categories)
-    ))
-}
-
-fn format_category_options(categories: &[CategoryInfo]) -> String {
-    if categories.is_empty() {
-        return "(none)".to_string();
-    }
-
-    categories
-        .iter()
-        .map(|category| format!("{} ({})", category.name, category.id))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 async fn fetch_record_by_exact_name(
     db: &Db,
     user_id: &str,
@@ -703,30 +495,6 @@ async fn fetch_record_by_exact_name(
                 .collect::<Vec<_>>()
                 .join(", ")
         )),
-    }
-}
-
-async fn get_category_is_income(
-    conn: &libsql::Connection,
-    user_id: &str,
-    category_id: &str,
-) -> Result<bool, String> {
-    let mut rows = conn
-        .query(
-            "SELECT is_income FROM categories WHERE id = ? AND owner_user_id = ?",
-            (category_id, user_id),
-        )
-        .await
-        .map_err(|_| "Failed to query category type".to_string())?;
-
-    if let Some(row) = rows
-        .next()
-        .await
-        .map_err(|_| "Failed to query category type".to_string())?
-    {
-        row.get(0).map_err(|_| "Invalid category data".to_string())
-    } else {
-        Err("Category does not exist".to_string())
     }
 }
 
