@@ -23,7 +23,7 @@ use super::validation::{
     validate_record_amount, validate_record_name,
 };
 
-pub fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
+fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     let id: String = row
         .get(0)
         .map_err(|_| db_error_with_context("invalid record data"))?;
@@ -53,7 +53,7 @@ pub fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)>
     })
 }
 
-pub async fn create_record_for_user(
+async fn create_record_for_user(
     db: &crate::Db,
     user_id: &str,
     payload: CreateRecordPayload,

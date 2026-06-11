@@ -20,7 +20,6 @@ async fn a1_single_db_init_creates_all_required_tables() {
         "idempotency_keys",
         "records",
         "categories",
-        "telegram_users",
     ] {
         let mut rows = conn
             .query(

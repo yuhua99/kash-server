@@ -1,8 +1,7 @@
 # AGENTS.md — kash-server
 
 A personal budget tracking server (Rust, Axum, SQLite via libsql).
-Two binaries: HTTP REST API (`src/main.rs`) and Telegram bot (`src/bin/tg/main.rs`).
-Both share one SQLite file (`data/users.db`) through the `kash_server` library crate.
+Single HTTP REST API binary (`src/main.rs`) using one SQLite file (`data/users.db`) through the `kash_server` library crate.
 
 ## Architecture contract
 
@@ -22,14 +21,12 @@ Source layout:
 - `src/constants.rs` owns app-wide literals and numeric limits.
 - `src/errors.rs` owns shared HTTP error constructors (`db_error`, `db_error_with_context`).
 - `src/validation.rs` owns shared request-input validation helpers.
-- `src/bin/tg/` owns the Telegram bot: `handlers.rs` (update routing), `openai.rs` (Responses API loop), `links.rs` (Telegram↔user linking), `categories.rs` (category resolution), `tools.rs` (AI tool execution), `context.rs` (conversation context), `models.rs`, `constants.rs`.
 - `tests/` owns behavior: integration tests against a full in-memory `TestApp`.
 
 Boundary rules:
 
 - Handlers must not bypass validation or write SQL without the `owner_user_id` filter.
 - `src/database.rs` must not contain domain logic; domain modules must not run schema DDL.
-- Bot code (`src/bin/tg/`) consumes the library via `kash_server::X`; inside `src/` use `crate::X`.
 - Models must not perform DB or network calls.
 - All new tables go into `init_main_db()` using `CREATE TABLE IF NOT EXISTS`.
 
@@ -47,7 +44,7 @@ Avoid `utils.rs`, `helpers.rs`, `misc.rs`, `shared.rs`, `common.rs` (outside `te
 ## Type system and naming rules
 
 - Rust edition 2024 — use its stable features (e.g., `if let` chains).
-- Types and enums: `PascalCase`. Functions, variables, modules, fields: `snake_case`. Constants: `SCREAMING_SNAKE_CASE` in `src/constants.rs` or `src/bin/tg/constants.rs`.
+- Types and enums: `PascalCase`. Functions, variables, modules, fields: `snake_case`. Constants: `SCREAMING_SNAKE_CASE` in `src/constants.rs`.
 - Request payloads: `#[derive(Deserialize)]`, named `*Payload`. Responses: `#[derive(Serialize)]`, named `*Response`. Shared domain types: `#[derive(Serialize, Deserialize, Debug, Clone)]`.
 - Prefer enums over constrained strings; avoid silent `_ => default` for user input.
 - Keep `Option<T>` for real optionality, not unclear state.

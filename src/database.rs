@@ -11,16 +11,6 @@ CREATE TABLE IF NOT EXISTS users (
 );
 "#;
 
-const CREATE_TELEGRAM_USERS_TABLE: &str = r#"
-CREATE TABLE IF NOT EXISTS telegram_users (
-    telegram_user_id TEXT PRIMARY KEY,
-    user_id          TEXT NOT NULL,
-    chat_id          TEXT NOT NULL,
-    created_at       INTEGER NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
-);
-"#;
-
 const CREATE_RECORDS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS records (
     id               TEXT    PRIMARY KEY,
@@ -128,7 +118,6 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     while timeout_rows.next().await?.is_some() {}
 
     conn.execute(CREATE_USERS_TABLE, ()).await?;
-    conn.execute(CREATE_TELEGRAM_USERS_TABLE, ()).await?;
     conn.execute(CREATE_RECORDS_TABLE, ()).await?;
     conn.execute(CREATE_CATEGORIES_TABLE, ()).await?;
     conn.execute(CREATE_RECORDS_DATE_INDEX, ()).await?;
