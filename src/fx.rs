@@ -174,7 +174,9 @@ async fn load_cached_rates(
     params.push(from.to_string().into());
     params.push(to.to_string().into());
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let mut rows = conn
         .query(&sql, params)
         .await
@@ -203,7 +205,9 @@ async fn load_latest_rate_before(
     date: &str,
     currency: &str,
 ) -> Result<Option<f64>, (StatusCode, String)> {
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT rate FROM exchange_rates_daily WHERE currency = ? AND date < ? ORDER BY date DESC LIMIT 1",
@@ -304,7 +308,9 @@ async fn upsert_exchange_rates(
         return Ok(());
     }
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     for rate in rates {
         conn.execute(
             "INSERT INTO exchange_rates_daily (date, currency, rate) VALUES (?, ?, ?) ON CONFLICT(date, currency) DO UPDATE SET rate = excluded.rate",

@@ -22,7 +22,9 @@ pub(super) async fn get_existing_idempotency_response(
     idempotency_key: &str,
 ) -> Result<Option<CachedIdempotency>, (StatusCode, String)> {
     let maybe_cached = {
-        let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+        let conn = crate::database::db_conn(&app_state.main_db)
+            .await
+            .map_err(|_| db_error())?;
         let mut rows = conn
             .query(
                 "SELECT id, response_status, response_body, payload_hash, expires_at, created_at FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
@@ -124,7 +126,9 @@ pub(super) async fn reserve_idempotency_entry(
     expires_at: &str,
 ) -> Result<String, (StatusCode, String)> {
     let reservation_id = Uuid::new_v4().to_string();
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     conn.execute(
         "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         (
@@ -148,7 +152,9 @@ pub(super) async fn delete_idempotency_reservation(
     app_state: &AppState,
     reservation_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     conn.execute(
         "DELETE FROM idempotency_keys WHERE id = ? AND response_body IS NULL",
         [reservation_id],
@@ -164,7 +170,9 @@ async fn delete_idempotency_entry(
     idempotency_key: &str,
     user_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     conn.execute(
         "DELETE FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
         (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),

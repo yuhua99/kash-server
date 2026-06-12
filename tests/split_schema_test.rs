@@ -1,5 +1,5 @@
-use kash_server::init_main_db;
-use std::path::PathBuf;
+use kash_server::{database::db_conn, init_main_db};
+use std::{path::PathBuf, sync::Arc};
 
 #[tokio::test]
 async fn split_schema_tables_exist() {
@@ -16,7 +16,7 @@ async fn split_schema_tables_exist() {
         .build()
         .await
         .expect("failed to build db");
-    let conn = db.connect().expect("failed to connect");
+    let conn = db_conn(&Arc::new(db)).await.expect("failed to connect");
 
     // Test 1: Verify friendship table exists
     let mut rows = conn
@@ -88,6 +88,13 @@ async fn split_schema_tables_exist() {
     );
 
     // Test 7: Verify UNIQUE constraint on idempotency_keys is enforced
+    conn.execute(
+        "INSERT INTO users (id, name, password_hash) VALUES ('user_123', 'schema_user', 'hash')",
+        (),
+    )
+    .await
+    .expect("insert user failed");
+
     // Insert a test key
     conn.execute(
         "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, created_at, expires_at) 

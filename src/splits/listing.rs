@@ -23,7 +23,9 @@ pub async fn list_pending_splits(
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     let mut count_rows = conn
         .query(
@@ -86,7 +88,9 @@ pub async fn list_unsettled_splits_with_friend(
     let limit = validate_records_limit(query.limit)?;
     let offset = validate_offset(query.offset)?;
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     let mut count_rows = conn
         .query(

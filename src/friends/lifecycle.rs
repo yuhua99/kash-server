@@ -49,7 +49,9 @@ pub async fn send_friend_request(
     let a_to_b_id = Uuid::new_v4().to_string();
     let b_to_a_id = Uuid::new_v4().to_string();
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
@@ -139,7 +141,9 @@ pub async fn accept_friend(
     let current_user = get_current_user(&session).await?;
     let user_id = &current_user.id;
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     let mut rows = conn
         .query(
@@ -196,7 +200,9 @@ pub async fn accept_friend(
         ));
     }
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     conn.execute("BEGIN TRANSACTION", ())
         .await
@@ -250,7 +256,9 @@ pub async fn remove_friend(
 ) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT COUNT(*) FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
@@ -282,7 +290,9 @@ pub async fn remove_friend(
     drop(rows);
     drop(conn);
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     conn.execute("BEGIN TRANSACTION", ())
         .await
         .map_err(|e: libsql::Error| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;

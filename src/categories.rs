@@ -43,7 +43,7 @@ pub async fn validate_category_not_in_use(
     user_id: &str,
     category_id: &str,
 ) -> Result<(), (StatusCode, String)> {
-    let conn = db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(db).await.map_err(|_| db_error())?;
 
     let mut rows = conn
         .query(
@@ -176,7 +176,9 @@ pub async fn get_categories(
         validate_string_length(search, "Search term", MAX_SEARCH_TERM_LENGTH)?;
     }
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     let total_count: u32 = if let Some(search) = &search_term {
         let search_pattern = format!("%{}%", search);
@@ -259,7 +261,9 @@ pub async fn update_category(
         ));
     };
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     let mut existing_rows = conn
         .query(
@@ -331,7 +335,9 @@ pub async fn delete_category(
     let user = get_current_user(&session).await?;
 
     {
-        let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+        let conn = crate::database::db_conn(&app_state.main_db)
+            .await
+            .map_err(|_| db_error())?;
         let mut existing_rows = conn
             .query(
                 "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
@@ -352,7 +358,9 @@ pub async fn delete_category(
 
     validate_category_not_in_use(&app_state.main_db, &user.id, &category_id).await?;
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let affected_rows = conn
         .execute(
             "DELETE FROM categories WHERE id = ? AND owner_user_id = ?",

@@ -1,7 +1,6 @@
 /// Tests A1-A4: Single shared DB schema
 ///
-/// These tests verify the *target* schema after migration.
-/// They are expected to FAIL (red) until the migration is implemented.
+/// These tests verify the *target* schema.
 mod common;
 
 // ---------------------------------------------------------------------------
@@ -11,7 +10,9 @@ mod common;
 #[tokio::test]
 async fn a1_single_db_init_creates_all_required_tables() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.connect().expect("connect db");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
 
     // All tables must exist in the single shared DB
     for table in &[
@@ -37,13 +38,15 @@ async fn a1_single_db_init_creates_all_required_tables() {
 }
 
 // ---------------------------------------------------------------------------
-// A2: records.owner_user_id is NOT NULL and an index exists
+// A2: records.owner_user_id is NOT NULL, references users, and has the composite hot-path index
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn a2_records_owner_user_id_column_not_null_and_index_exists() {
+async fn a2_records_owner_user_id_column_not_null_fk_and_index_exists() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.connect().expect("connect db");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
 
     // Verify the column exists via PRAGMA table_info
     let mut rows = conn
@@ -53,6 +56,8 @@ async fn a2_records_owner_user_id_column_not_null_and_index_exists() {
 
     let mut found_owner = false;
     let mut owner_notnull = false;
+    let mut date_notnull = false;
+    let mut settle_notnull = false;
     while let Some(row) = rows.next().await.expect("next table_info row") {
         let col_name: String = row.get(1).expect("col name");
         if col_name == "owner_user_id" {
@@ -60,23 +65,42 @@ async fn a2_records_owner_user_id_column_not_null_and_index_exists() {
             let notnull: i64 = row.get(3).expect("notnull flag");
             owner_notnull = notnull != 0;
         }
+        if col_name == "date" {
+            let notnull: i64 = row.get(3).expect("notnull flag");
+            date_notnull = notnull != 0;
+        }
+        if col_name == "settle" {
+            let notnull: i64 = row.get(3).expect("notnull flag");
+            settle_notnull = notnull != 0;
+        }
     }
     assert!(found_owner, "records.owner_user_id column must exist");
     assert!(owner_notnull, "records.owner_user_id must be NOT NULL");
+    assert!(date_notnull, "records.date must be NOT NULL");
+    assert!(settle_notnull, "records.settle must be NOT NULL");
 
-    // Verify that at least one index covers owner_user_id
+    let mut fk_rows = conn
+        .query(
+            "SELECT \"table\" FROM pragma_foreign_key_list('records') WHERE \"from\" = 'owner_user_id'",
+            (),
+        )
+        .await
+        .expect("query records foreign keys");
+    let fk_row = fk_rows.next().await.expect("next fk row");
+    assert!(
+        fk_row.is_some(),
+        "records.owner_user_id must reference users(id)"
+    );
+
     let mut idx_rows = conn
         .query(
-            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='records' AND sql LIKE '%owner_user_id%'",
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='records' AND name='idx_records_owner_date'",
             (),
         )
         .await
         .expect("query indexes on records");
     let idx_row = idx_rows.next().await.expect("next index row");
-    assert!(
-        idx_row.is_some(),
-        "an index on records(owner_user_id) must exist"
-    );
+    assert!(idx_row.is_some(), "idx_records_owner_date must exist");
 }
 
 // ---------------------------------------------------------------------------
@@ -116,8 +140,8 @@ async fn a3_categories_uniqueness_is_per_user() {
         "bob should create Dining (different owner)"
     );
 
-    // Alice tries to create a second "Dining" — must be rejected
-    let alice_dup_status = create_category_status(&app, &alice_cookie, "Dining").await;
+    // Alice tries to create a second "Dining" with different case — must be rejected
+    let alice_dup_status = create_category_status(&app, &alice_cookie, "dining").await;
     assert_eq!(
         alice_dup_status,
         axum::http::StatusCode::CONFLICT,
@@ -134,7 +158,9 @@ async fn a3_categories_uniqueness_is_per_user() {
 #[tokio::test]
 async fn a4_idempotency_keys_uniqueness_is_per_user_and_endpoint() {
     let app = common::setup_test_app().await.expect("setup failed");
-    let conn = app.state.main_db.connect().expect("connect db");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
 
     // The table must NOT have a simple PRIMARY KEY on `key` alone.
     // Instead uniqueness must be on (user_id, endpoint, key).
@@ -171,6 +197,58 @@ async fn a4_idempotency_keys_uniqueness_is_per_user_and_endpoint() {
     assert!(
         found_compound,
         "idempotency_keys must have a unique index on (user_id, endpoint, key)"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// A5: Constraints are enforced at runtime, not just declared
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a5_orphan_record_insert_is_rejected_by_foreign_key() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
+
+    let result = conn
+        .execute(
+            "INSERT INTO records (id, owner_user_id, name, amount, currency, date) VALUES (?, ?, ?, ?, ?, ?)",
+            ("rec-a5", "no-such-user", "orphan", 100i64, "TWD", "2026-01-01"),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "insert with nonexistent owner_user_id must violate the foreign key"
+    );
+}
+
+#[tokio::test]
+async fn a5_category_name_uniqueness_is_case_insensitive_in_db() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let user_id = common::create_test_user(&app.state, "alice_a5", "password123")
+        .await
+        .expect("create user");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
+
+    conn.execute(
+        "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, 0)",
+        ("cat-a5-1", user_id.as_str(), "Food"),
+    )
+    .await
+    .expect("insert first category");
+
+    let result = conn
+        .execute(
+            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, 0)",
+            ("cat-a5-2", user_id.as_str(), "food"),
+        )
+        .await;
+    assert!(
+        result.is_err(),
+        "case-insensitive duplicate category name must violate the unique index"
     );
 }
 

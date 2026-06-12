@@ -55,7 +55,9 @@ pub async fn search_users(
 
     let search_pattern = format!("{}%", params.query);
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT id, name FROM users WHERE name LIKE ? LIMIT ? OFFSET ?",
@@ -100,7 +102,9 @@ pub async fn list_friends(
     let limit = query.limit.unwrap_or(20).clamp(1, MAX_LIMIT);
     let offset = query.offset.unwrap_or(0).min(MAX_OFFSET);
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     // pending=true  → incoming only (requester_user_id != current user)
     // pending=false or omitted → accepted friends (pending = 0)

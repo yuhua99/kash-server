@@ -178,7 +178,9 @@ async fn validate_all_participants_are_friends(
     current_user_id: &str,
     participants: &[SplitParticipant],
 ) -> Result<(), (StatusCode, String)> {
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     for participant in participants {
         let mut rows = conn

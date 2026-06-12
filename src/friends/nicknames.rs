@@ -33,7 +33,9 @@ pub async fn update_nickname(
         }
     }
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
     let mut rows = conn
         .query(
             "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
@@ -57,7 +59,9 @@ pub async fn update_nickname(
     drop(rows);
     drop(conn);
 
-    let conn = app_state.main_db.connect().map_err(|_| db_error())?;
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
 
     conn.execute(
         "UPDATE friendship SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",

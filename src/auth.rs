@@ -15,7 +15,7 @@ pub async fn get_user_by_username_public(
     db: &Db,
     username: &str,
 ) -> anyhow::Result<Option<PublicUser>> {
-    let conn = db.connect()?;
+    let conn = crate::database::db_conn(db).await?;
     let mut rows = conn
         .query("SELECT id, name FROM users WHERE name = ?", [username])
         .await?;
@@ -36,7 +36,7 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?
         .to_string();
     let id = Uuid::new_v4().to_string();
-    let conn = db.connect()?;
+    let conn = crate::database::db_conn(db).await?;
 
     conn.execute(
         "INSERT INTO users (id, name, password_hash, main_currency) VALUES (?, ?, ?, ?)",
@@ -106,7 +106,7 @@ pub async fn register(
 }
 
 async fn get_user_by_username(db: &Db, username: &str) -> anyhow::Result<Option<User>> {
-    let conn = db.connect()?;
+    let conn = crate::database::db_conn(db).await?;
     let mut rows = conn
         .query(
             "SELECT id, name, password_hash FROM users WHERE name = ?",
