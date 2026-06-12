@@ -52,11 +52,11 @@ async fn test_send_friend_request_happy_path() {
         "default nickname should be the friend's username"
     );
 
-    // Verify both directed rows exist in database
+    // Verify a single canonical row exists in database
     let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
-            "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? OR to_user_id = ?",
+            "SELECT COUNT(*) FROM friendship WHERE user_low_id = ? OR user_high_id = ?",
             (_user_a_id.as_str(), _user_a_id.as_str()),
         )
         .await
@@ -64,7 +64,7 @@ async fn test_send_friend_request_happy_path() {
 
     if let Some(row) = rows.next().await.unwrap() {
         let count: i64 = row.get(0).unwrap();
-        assert_eq!(count, 2, "Expected two directed rows (A->B and B->A)");
+        assert_eq!(count, 1, "Expected one friendship row for the pair");
     }
 }
 
@@ -232,34 +232,22 @@ async fn test_accept_friend_happy_path() {
 
     let conn = app.state.main_db.connect().expect("connect db");
 
-    let mut rows_ab = conn
+    let mut rows = conn
         .query(
-            "SELECT pending FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
+            "SELECT pending FROM friendship WHERE user_low_id = MIN(?1, ?2) AND user_high_id = MAX(?1, ?2)",
             (user_a_id.as_str(), user_b_id.as_str()),
         )
         .await
         .unwrap();
 
-    if let Some(row) = rows_ab.next().await.unwrap() {
+    if let Some(row) = rows.next().await.unwrap() {
         let pending: i64 = row.get(0).unwrap();
-        assert_eq!(pending, 0i64, "A->B row should be accepted (pending=0)");
+        assert_eq!(
+            pending, 0i64,
+            "friendship row should be accepted (pending=0)"
+        );
     } else {
-        panic!("A->B row not found");
-    }
-
-    let mut rows_ba = conn
-        .query(
-            "SELECT pending FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
-            (user_b_id.as_str(), user_a_id.as_str()),
-        )
-        .await
-        .unwrap();
-
-    if let Some(row) = rows_ba.next().await.unwrap() {
-        let pending: i64 = row.get(0).unwrap();
-        assert_eq!(pending, 0i64, "B->A row should be accepted (pending=0)");
-    } else {
-        panic!("B->A row not found");
+        panic!("friendship row not found");
     }
 }
 
@@ -408,20 +396,15 @@ async fn test_remove_friend_happy_path() {
     let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
         .query(
-            "SELECT COUNT(*) FROM friendship WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)",
-            (
-                user_a_id.as_str(),
-                user_b_id.as_str(),
-                user_b_id.as_str(),
-                user_a_id.as_str(),
-            ),
+            "SELECT COUNT(*) FROM friendship WHERE user_low_id = MIN(?1, ?2) AND user_high_id = MAX(?1, ?2)",
+            (user_a_id.as_str(), user_b_id.as_str()),
         )
         .await
         .unwrap();
 
     if let Some(row) = rows.next().await.unwrap() {
         let count: i64 = row.get(0).unwrap();
-        assert_eq!(count, 0, "Both directed rows should be deleted");
+        assert_eq!(count, 0, "Friendship row should be deleted");
     }
 }
 

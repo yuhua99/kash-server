@@ -6,8 +6,49 @@ use tower_sessions::Session;
 use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::errors::db_error;
+use crate::errors::db_error_with_context;
 use crate::models::{FriendshipRelation, UpdateNicknamePayload};
+use crate::{TransactionError, with_transaction};
+
+use super::ordered_user_pair;
+
+enum UpdateNicknameError {
+    Transaction(TransactionError),
+    DbCheck,
+    DbUpdate,
+    DbSelect,
+    NotFound,
+}
+
+impl From<TransactionError> for UpdateNicknameError {
+    fn from(e: TransactionError) -> Self {
+        Self::Transaction(e)
+    }
+}
+
+impl From<UpdateNicknameError> for (StatusCode, String) {
+    fn from(e: UpdateNicknameError) -> Self {
+        match e {
+            UpdateNicknameError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            UpdateNicknameError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            UpdateNicknameError::DbCheck => {
+                db_error_with_context("failed to check friendship relation")
+            }
+            UpdateNicknameError::DbUpdate => db_error_with_context("nickname update failed"),
+            UpdateNicknameError::DbSelect => {
+                db_error_with_context("failed to retrieve updated relation")
+            }
+            UpdateNicknameError::NotFound => (
+                StatusCode::NOT_FOUND,
+                "Friendship relation not found".to_string(),
+            ),
+        }
+    }
+}
 
 pub async fn update_nickname(
     State(app_state): State<AppState>,
@@ -33,85 +74,81 @@ pub async fn update_nickname(
         }
     }
 
-    let conn = crate::database::db_conn(&app_state.main_db)
-        .await
-        .map_err(|_| db_error())?;
-    let mut rows = conn
-        .query(
-            "SELECT id, to_user_id as user_id, pending, nickname FROM friendship WHERE from_user_id = ? AND to_user_id = ?",
-            (user_id.as_str(), payload.friend_id.as_str()),
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (user_low_id, user_high_id) = ordered_user_pair(user_id, &payload.friend_id);
 
-    if rows
-        .next()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-        .is_none()
-    {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "Friendship relation not found".to_string(),
-        ));
-    }
+    let relation = with_transaction(&app_state.main_db, |conn| {
+        let owner_user_id = user_id.clone();
+        let friend_id = payload.friend_id.clone();
+        let nickname = payload.nickname.clone();
+        let user_low_id = user_low_id.to_string();
+        let user_high_id = user_high_id.to_string();
+        Box::pin(async move {
+            let mut rows = conn
+                .query(
+                    "SELECT id FROM friendship WHERE user_low_id = ? AND user_high_id = ?",
+                    (user_low_id.as_str(), user_high_id.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateNicknameError::DbCheck)?;
 
-    drop(rows);
-    drop(conn);
+            let friendship_id: String = rows
+                .next()
+                .await
+                .map_err(|_| UpdateNicknameError::DbCheck)?
+                .ok_or(UpdateNicknameError::NotFound)?
+                .get(0)
+                .map_err(|_| UpdateNicknameError::DbCheck)?;
+            drop(rows);
 
-    let conn = crate::database::db_conn(&app_state.main_db)
-        .await
-        .map_err(|_| db_error())?;
+            if let Some(nickname) = nickname {
+                conn.execute(
+                    "INSERT INTO friendship_nicknames (friendship_id, owner_user_id, nickname) VALUES (?, ?, ?)
+                     ON CONFLICT(friendship_id, owner_user_id) DO UPDATE SET nickname = excluded.nickname",
+                    (friendship_id.as_str(), owner_user_id.as_str(), nickname.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateNicknameError::DbUpdate)?;
+            } else {
+                conn.execute(
+                    "DELETE FROM friendship_nicknames WHERE friendship_id = ? AND owner_user_id = ?",
+                    (friendship_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateNicknameError::DbUpdate)?;
+            }
 
-    conn.execute(
-        "UPDATE friendship SET nickname = ? WHERE from_user_id = ? AND to_user_id = ?",
-        (
-            payload.nickname.as_deref(),
-            user_id.as_str(),
-            payload.friend_id.as_str(),
-        ),
-    )
+            let mut rows = conn
+                .query(
+                    "SELECT f.id, f.pending, COALESCE(n.nickname, u.name) AS nickname
+                     FROM friendship f
+                     JOIN users u ON u.id = ?
+                     LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?
+                     WHERE f.id = ?",
+                    (friend_id.as_str(), owner_user_id.as_str(), friendship_id.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateNicknameError::DbSelect)?;
+
+            let row = rows
+                .next()
+                .await
+                .map_err(|_| UpdateNicknameError::DbSelect)?
+                .ok_or(UpdateNicknameError::DbSelect)?;
+
+            let id: String = row.get(0).map_err(|_| UpdateNicknameError::DbSelect)?;
+            let pending: i64 = row.get(1).map_err(|_| UpdateNicknameError::DbSelect)?;
+            let nickname: String = row.get(2).map_err(|_| UpdateNicknameError::DbSelect)?;
+
+            Ok::<FriendshipRelation, UpdateNicknameError>(FriendshipRelation {
+                id,
+                user_id: friend_id,
+                pending: pending != 0,
+                nickname,
+            })
+        })
+    })
     .await
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(Into::<(StatusCode, String)>::into)?;
 
-    let mut rows = conn
-        .query(
-            "SELECT f.id, f.to_user_id as user_id, f.pending, COALESCE(f.nickname, u.name) as nickname FROM friendship f JOIN users u ON u.id = f.to_user_id WHERE f.from_user_id = ? AND f.to_user_id = ?",
-            (user_id.as_str(), payload.friend_id.as_str()),
-        )
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    if let Some(row) = rows
-        .next()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
-    {
-        let id: String = row
-            .get(0)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let user_id_field: String = row
-            .get(1)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let pending_val: i64 = row
-            .get(2)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        let nickname: String = row
-            .get(3)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-        let relation = FriendshipRelation {
-            id,
-            user_id: user_id_field,
-            pending: pending_val != 0,
-            nickname,
-        };
-
-        return Ok((StatusCode::OK, Json(relation)));
-    }
-
-    Err((
-        StatusCode::INTERNAL_SERVER_ERROR,
-        "Failed to retrieve updated relation".to_string(),
-    ))
+    Ok((StatusCode::OK, Json(relation)))
 }

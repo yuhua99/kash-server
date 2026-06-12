@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::auth::get_current_user;
 use crate::errors::{db_error, db_error_with_context};
+use crate::friends::ordered_user_pair;
 use crate::models::{CreateSplitPayload, SplitParticipant};
 use crate::splits::{calculate_split_amounts, validate_split_participants};
 use crate::validation::{
@@ -183,10 +184,11 @@ async fn validate_all_participants_are_friends(
         .map_err(|_| db_error())?;
 
     for participant in participants {
+        let (user_low_id, user_high_id) = ordered_user_pair(current_user_id, &participant.user_id);
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND to_user_id = ? AND pending = ?",
-                (current_user_id, participant.user_id.as_str(), 0i64),
+                "SELECT COUNT(*) FROM friendship WHERE user_low_id = ? AND user_high_id = ? AND pending = ?",
+                (user_low_id, user_high_id, 0i64),
             )
             .await
             .map_err(|_| db_error_with_context("failed to validate friendship relation"))?;

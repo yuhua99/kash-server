@@ -48,22 +48,35 @@ ON categories(owner_user_id, LOWER(name));
 const CREATE_FRIENDSHIP_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS friendship (
     id                TEXT    PRIMARY KEY,
-    from_user_id      TEXT    NOT NULL REFERENCES users(id),
-    to_user_id        TEXT    NOT NULL REFERENCES users(id),
-    pending           BOOLEAN NOT NULL DEFAULT 1 CHECK (pending IN (0, 1)),
-    nickname          TEXT,
+    user_low_id       TEXT    NOT NULL REFERENCES users(id),
+    user_high_id      TEXT    NOT NULL REFERENCES users(id),
     requester_user_id TEXT    NOT NULL REFERENCES users(id),
-    UNIQUE(from_user_id, to_user_id),
-    CHECK (from_user_id != to_user_id)
+    pending           BOOLEAN NOT NULL DEFAULT 1 CHECK (pending IN (0, 1)),
+    CHECK (user_low_id < user_high_id),
+    CHECK (requester_user_id IN (user_low_id, user_high_id)),
+    UNIQUE (user_low_id, user_high_id)
 );
 "#;
 
-const CREATE_FRIENDSHIP_FROM_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_friendship_from ON friendship(from_user_id);
+const CREATE_FRIENDSHIP_NICKNAMES_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS friendship_nicknames (
+    friendship_id TEXT NOT NULL REFERENCES friendship(id) ON DELETE CASCADE,
+    owner_user_id TEXT NOT NULL REFERENCES users(id),
+    nickname      TEXT NOT NULL,
+    PRIMARY KEY (friendship_id, owner_user_id)
+);
 "#;
 
-const CREATE_FRIENDSHIP_TO_INDEX: &str = r#"
-CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship(to_user_id);
+const CREATE_FRIENDSHIP_LOW_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_friendship_from ON friendship(user_low_id);
+"#;
+
+const CREATE_FRIENDSHIP_HIGH_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_friendship_to ON friendship(user_high_id);
+"#;
+
+const CREATE_FRIENDSHIP_NICKNAMES_OWNER_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_friendship_nicknames_owner ON friendship_nicknames(owner_user_id);
 "#;
 
 const CREATE_IDEMPOTENCY_KEYS_TABLE: &str = r#"
@@ -127,8 +140,11 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_CATEGORIES_OWNER_LOWER_NAME_INDEX, ())
         .await?;
     conn.execute(CREATE_FRIENDSHIP_TABLE, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_FROM_INDEX, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_TO_INDEX, ()).await?;
+    conn.execute(CREATE_FRIENDSHIP_NICKNAMES_TABLE, ()).await?;
+    conn.execute(CREATE_FRIENDSHIP_LOW_INDEX, ()).await?;
+    conn.execute(CREATE_FRIENDSHIP_HIGH_INDEX, ()).await?;
+    conn.execute(CREATE_FRIENDSHIP_NICKNAMES_OWNER_INDEX, ())
+        .await?;
     conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;
     conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
     conn.execute(CREATE_EXCHANGE_RATES_DAILY_TABLE, ()).await?;

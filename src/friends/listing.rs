@@ -113,8 +113,8 @@ pub async fn list_friends(
     let total_count: i64 = if show_pending_incoming {
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND pending = 1 AND requester_user_id != ?",
-                (user_id.as_str(), user_id.as_str()),
+                "SELECT COUNT(*) FROM friendship WHERE (user_low_id = ? OR user_high_id = ?) AND pending = 1 AND requester_user_id != ?",
+                (user_id.as_str(), user_id.as_str(), user_id.as_str()),
             )
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -132,8 +132,8 @@ pub async fn list_friends(
     } else {
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship WHERE from_user_id = ? AND pending = 0",
-                [user_id.as_str()],
+                "SELECT COUNT(*) FROM friendship WHERE (user_low_id = ? OR user_high_id = ?) AND pending = 0",
+                (user_id.as_str(), user_id.as_str()),
             )
             .await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -152,14 +152,41 @@ pub async fn list_friends(
 
     let mut rows = if show_pending_incoming {
         conn.query(
-            "SELECT f.id, f.to_user_id as user_id, f.pending, COALESCE(f.nickname, u.name) as nickname FROM friendship f JOIN users u ON u.id = f.to_user_id WHERE f.from_user_id = ? AND f.pending = 1 AND f.requester_user_id != ? ORDER BY nickname LIMIT ? OFFSET ?",
-            (user_id.as_str(), user_id.as_str(), limit, offset),
+            "SELECT f.id, CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END AS user_id, f.pending, COALESCE(n.nickname, u.name) AS nickname
+             FROM friendship f
+             JOIN users u ON u.id = CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END
+             LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?
+             WHERE (f.user_low_id = ? OR f.user_high_id = ?) AND f.pending = 1 AND f.requester_user_id != ?
+             ORDER BY nickname LIMIT ? OFFSET ?",
+            (
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                limit,
+                offset,
+            ),
         )
         .await
     } else {
         conn.query(
-            "SELECT f.id, f.to_user_id as user_id, f.pending, COALESCE(f.nickname, u.name) as nickname FROM friendship f JOIN users u ON u.id = f.to_user_id WHERE f.from_user_id = ? AND f.pending = 0 ORDER BY nickname LIMIT ? OFFSET ?",
-            (user_id.as_str(), limit, offset),
+            "SELECT f.id, CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END AS user_id, f.pending, COALESCE(n.nickname, u.name) AS nickname
+             FROM friendship f
+             JOIN users u ON u.id = CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END
+             LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?
+             WHERE (f.user_low_id = ? OR f.user_high_id = ?) AND f.pending = 0
+             ORDER BY nickname LIMIT ? OFFSET ?",
+            (
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                user_id.as_str(),
+                limit,
+                offset,
+            ),
         )
         .await
     }
