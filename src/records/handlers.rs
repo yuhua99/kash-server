@@ -3,7 +3,7 @@ use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
 };
-use libsql::Row;
+use libsql::{Row, Value};
 use tower_sessions::Session;
 use uuid::Uuid;
 
@@ -101,6 +101,29 @@ impl From<UpdateRecordError> for (StatusCode, String) {
             ),
         }
     }
+}
+
+fn build_records_where_clause(
+    user_id: &str,
+    start_date: &str,
+    end_date: &str,
+    pending: Option<bool>,
+    settle: Option<i64>,
+) -> (String, Vec<Value>) {
+    let mut where_clause = "owner_user_id = ? AND date BETWEEN ? AND ?".to_string();
+    let mut params = vec![user_id.into(), start_date.into(), end_date.into()];
+
+    if let Some(pending) = pending {
+        where_clause.push_str(" AND (split_id IS NOT NULL AND category_id IS NULL) = ?");
+        params.push(pending.into());
+    }
+
+    if let Some(settle) = settle {
+        where_clause.push_str(" AND settle = ?");
+        params.push(settle.into());
+    }
+
+    (where_clause, params)
 }
 
 fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
@@ -234,125 +257,42 @@ pub async fn get_records(
     let end_date = query.end_date.unwrap_or_else(|| "9999-12-31".to_string());
 
     let pending = query.pending;
-    let settle = query.settle.map(|s| if s { 1 } else { 0 });
+    let settle = query.settle.map(|s| if s { 1_i64 } else { 0_i64 });
+    let (where_clause, base_params) = build_records_where_clause(
+        user.id.as_str(),
+        start_date.as_str(),
+        end_date.as_str(),
+        pending,
+        settle,
+    );
 
-    let total_count: u32 = match (pending, settle) {
-        (None, None) => {
-            let mut count_rows = conn
-                .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str()),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to count records"))?;
+    let count_sql = format!("SELECT COUNT(*) FROM records WHERE {where_clause}");
+    let mut count_rows = conn
+        .query(&count_sql, base_params.clone())
+        .await
+        .map_err(|_| db_error_with_context("failed to count records"))?;
 
-            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-                row.get(0).map_err(|_| db_error())?
-            } else {
-                0
-            }
-        }
-        (Some(p), None) => {
-            let mut count_rows = conn
-                .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to count records"))?;
-
-            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-                row.get(0).map_err(|_| db_error())?
-            } else {
-                0
-            }
-        }
-        (None, Some(s)) => {
-            let mut count_rows = conn
-                .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), s),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to count records"))?;
-
-            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-                row.get(0).map_err(|_| db_error())?
-            } else {
-                0
-            }
-        }
-        (Some(p), Some(s)) => {
-            let mut count_rows = conn
-                .query(
-                    "SELECT COUNT(*) FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? AND settle = ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to count records"))?;
-
-            if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-                row.get(0).map_err(|_| db_error())?
-            } else {
-                0
-            }
-        }
+    let total_count: u32 = if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
+        row.get(0).map_err(|_| db_error())?
+    } else {
+        0
     };
 
+    let mut select_params = base_params;
+    select_params.push(limit.into());
+    select_params.push(offset.into());
+
+    let select_sql = format!(
+        "SELECT id, name, amount, currency, category_id, date FROM records WHERE {where_clause} ORDER BY date DESC LIMIT ? OFFSET ?"
+    );
+    let mut rows = conn
+        .query(&select_sql, select_params)
+        .await
+        .map_err(|_| db_error_with_context("failed to query records"))?;
+
     let mut records = Vec::new();
-    match (pending, settle) {
-        (None, None) => {
-            let mut rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? ORDER BY date DESC LIMIT ? OFFSET ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), limit, offset),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to query records"))?;
-
-            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
-                records.push(extract_record_from_row(row)?);
-            }
-        }
-        (Some(p), None) => {
-            let mut rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? ORDER BY date DESC LIMIT ? OFFSET ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, limit, offset),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to query records"))?;
-
-            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
-                records.push(extract_record_from_row(row)?);
-            }
-        }
-        (None, Some(s)) => {
-            let mut rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), s, limit, offset),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to query records"))?;
-
-            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
-                records.push(extract_record_from_row(row)?);
-            }
-        }
-        (Some(p), Some(s)) => {
-            let mut rows = conn
-                .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE owner_user_id = ? AND date BETWEEN ? AND ? AND (split_id IS NOT NULL AND category_id IS NULL) = ? AND settle = ? ORDER BY date DESC LIMIT ? OFFSET ?",
-                    (user.id.as_str(), start_date.as_str(), end_date.as_str(), p, s, limit, offset),
-                )
-                .await
-                .map_err(|_| db_error_with_context("failed to query records"))?;
-
-            while let Some(row) = rows.next().await.map_err(|_| db_error())? {
-                records.push(extract_record_from_row(row)?);
-            }
-        }
+    while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+        records.push(extract_record_from_row(row)?);
     }
 
     Ok((
