@@ -14,7 +14,7 @@ use crate::models::{
     UpdateCategoryPayload,
 };
 use crate::validation::{validate_categories_limit, validate_offset, validate_string_length};
-use crate::{AppState, Db, TransactionError, with_transaction};
+use crate::{AppState, TransactionError, with_transaction};
 
 pub fn validate_category_name(name: &str) -> Result<(), (StatusCode, String)> {
     validate_string_length(name, "Category name", MAX_CATEGORY_NAME_LENGTH)
@@ -36,34 +36,6 @@ pub fn extract_category_from_row(row: libsql::Row) -> Result<Category, (StatusCo
         name,
         is_income,
     })
-}
-
-pub async fn validate_category_not_in_use(
-    db: &Db,
-    user_id: &str,
-    category_id: &str,
-) -> Result<(), (StatusCode, String)> {
-    let conn = crate::database::db_conn(db).await.map_err(|_| db_error())?;
-
-    let mut rows = conn
-        .query(
-            "SELECT COUNT(*) FROM records WHERE category_id = ? AND owner_user_id = ?",
-            (category_id, user_id),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to check category usage"))?;
-
-    if let Some(row) = rows.next().await.map_err(|_| db_error())? {
-        let count: u32 = row.get(0).map_err(|_| db_error())?;
-        if count > 0 {
-            return Err((
-                StatusCode::CONFLICT,
-                "Cannot delete category: it has associated records".to_string(),
-            ));
-        }
-    }
-
-    Ok(())
 }
 
 enum CreateCategoryError {
@@ -244,6 +216,38 @@ pub async fn get_categories(
     ))
 }
 
+enum UpdateCategoryError {
+    Transaction(TransactionError),
+    NotFound(&'static str),
+    Conflict,
+    Db,
+}
+
+impl From<TransactionError> for UpdateCategoryError {
+    fn from(e: TransactionError) -> Self {
+        UpdateCategoryError::Transaction(e)
+    }
+}
+
+impl From<UpdateCategoryError> for (StatusCode, String) {
+    fn from(e: UpdateCategoryError) -> Self {
+        match e {
+            UpdateCategoryError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            UpdateCategoryError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            UpdateCategoryError::NotFound(message) => (StatusCode::NOT_FOUND, message.to_string()),
+            UpdateCategoryError::Conflict => (
+                StatusCode::CONFLICT,
+                "Category name already exists (case-insensitive)".to_string(),
+            ),
+            UpdateCategoryError::Db => db_error(),
+        }
+    }
+}
+
 pub async fn update_category(
     State(app_state): State<AppState>,
     session: Session,
@@ -261,70 +265,113 @@ pub async fn update_category(
         ));
     };
 
-    let conn = crate::database::db_conn(&app_state.main_db)
-        .await
-        .map_err(|_| db_error())?;
+    let updated_category = with_transaction(&app_state.main_db, |conn| {
+        let category_id = category_id.clone();
+        let category_name = category_name.clone();
+        let owner_user_id = user.id.clone();
+        Box::pin(async move {
+            let mut existing_rows = conn
+                .query(
+                    "SELECT id, name, is_income FROM categories WHERE id = ? AND owner_user_id = ?",
+                    (category_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateCategoryError::Db)?;
 
-    let mut existing_rows = conn
-        .query(
-            "SELECT id, name, is_income FROM categories WHERE id = ? AND owner_user_id = ?",
-            (category_id.as_str(), user.id.as_str()),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to query existing category"))?;
+            let existing_category = if let Some(row) = existing_rows
+                .next()
+                .await
+                .map_err(|_| UpdateCategoryError::Db)?
+            {
+                extract_category_from_row(row).map_err(|_| UpdateCategoryError::Db)?
+            } else {
+                return Err(UpdateCategoryError::NotFound("Category not found"));
+            };
 
-    let existing_category = if let Some(row) = existing_rows.next().await.map_err(|_| db_error())? {
-        extract_category_from_row(row)?
-    } else {
-        return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
-    };
+            let mut conflict_rows = conn
+                .query(
+                    "SELECT id FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?) AND id != ?",
+                    (
+                        owner_user_id.as_str(),
+                        category_name.as_str(),
+                        category_id.as_str(),
+                    ),
+                )
+                .await
+                .map_err(|_| UpdateCategoryError::Db)?;
 
-    let mut conflict_rows = conn
-        .query(
-            "SELECT id FROM categories WHERE owner_user_id = ? AND LOWER(name) = LOWER(?) AND id != ?",
-            (user.id.as_str(), category_name.as_str(), category_id.as_str()),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to check name conflict"))?;
+            if conflict_rows
+                .next()
+                .await
+                .map_err(|_| UpdateCategoryError::Db)?
+                .is_some()
+            {
+                return Err(UpdateCategoryError::Conflict);
+            }
 
-    if conflict_rows
-        .next()
-        .await
-        .map_err(|_| db_error())?
-        .is_some()
-    {
-        return Err((
-            StatusCode::CONFLICT,
-            "Category name already exists (case-insensitive)".to_string(),
-        ));
-    }
+            let affected_rows = conn
+                .execute(
+                    "UPDATE categories SET name = ? WHERE id = ? AND owner_user_id = ?",
+                    (
+                        category_name.as_str(),
+                        category_id.as_str(),
+                        owner_user_id.as_str(),
+                    ),
+                )
+                .await
+                .map_err(|_| UpdateCategoryError::Db)?;
 
-    let affected_rows = conn
-        .execute(
-            "UPDATE categories SET name = ? WHERE id = ? AND owner_user_id = ?",
-            (
-                category_name.as_str(),
-                category_id.as_str(),
-                user.id.as_str(),
-            ),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to update category"))?;
+            if affected_rows == 0 {
+                return Err(UpdateCategoryError::NotFound(
+                    "Category not found or no changes made",
+                ));
+            }
 
-    if affected_rows == 0 {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "Category not found or no changes made".to_string(),
-        ));
-    }
-
-    let updated_category = Category {
-        id: category_id,
-        name: category_name,
-        is_income: existing_category.is_income,
-    };
+            Ok(Category {
+                id: category_id,
+                name: category_name,
+                is_income: existing_category.is_income,
+            })
+        })
+    })
+    .await
+    .map_err(|e: UpdateCategoryError| -> (StatusCode, String) { e.into() })?;
 
     Ok((StatusCode::OK, Json(updated_category)))
+}
+
+enum DeleteCategoryError {
+    Transaction(TransactionError),
+    NotFound,
+    Conflict,
+    Db,
+}
+
+impl From<TransactionError> for DeleteCategoryError {
+    fn from(e: TransactionError) -> Self {
+        DeleteCategoryError::Transaction(e)
+    }
+}
+
+impl From<DeleteCategoryError> for (StatusCode, String) {
+    fn from(e: DeleteCategoryError) -> Self {
+        match e {
+            DeleteCategoryError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            DeleteCategoryError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            DeleteCategoryError::NotFound => {
+                (StatusCode::NOT_FOUND, "Category not found".to_string())
+            }
+            DeleteCategoryError::Conflict => (
+                StatusCode::CONFLICT,
+                "Cannot delete category: it has associated records".to_string(),
+            ),
+            DeleteCategoryError::Db => db_error(),
+        }
+    }
 }
 
 pub async fn delete_category(
@@ -334,44 +381,65 @@ pub async fn delete_category(
 ) -> Result<StatusCode, (StatusCode, String)> {
     let user = get_current_user(&session).await?;
 
-    {
-        let conn = crate::database::db_conn(&app_state.main_db)
-            .await
-            .map_err(|_| db_error())?;
-        let mut existing_rows = conn
-            .query(
-                "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
-                (category_id.as_str(), user.id.as_str()),
-            )
-            .await
-            .map_err(|_| db_error_with_context("failed to query existing category"))?;
+    with_transaction(&app_state.main_db, |conn| {
+        let category_id = category_id.clone();
+        let owner_user_id = user.id.clone();
+        Box::pin(async move {
+            let mut existing_rows = conn
+                .query(
+                    "SELECT id FROM categories WHERE id = ? AND owner_user_id = ?",
+                    (category_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| DeleteCategoryError::Db)?;
 
-        if existing_rows
-            .next()
-            .await
-            .map_err(|_| db_error())?
-            .is_none()
-        {
-            return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
-        }
-    }
+            if existing_rows
+                .next()
+                .await
+                .map_err(|_| DeleteCategoryError::Db)?
+                .is_none()
+            {
+                return Err(DeleteCategoryError::NotFound);
+            }
+            drop(existing_rows);
 
-    validate_category_not_in_use(&app_state.main_db, &user.id, &category_id).await?;
+            let mut usage_rows = conn
+                .query(
+                    "SELECT COUNT(*) FROM records WHERE category_id = ? AND owner_user_id = ?",
+                    (category_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| DeleteCategoryError::Db)?;
 
-    let conn = crate::database::db_conn(&app_state.main_db)
-        .await
-        .map_err(|_| db_error())?;
-    let affected_rows = conn
-        .execute(
-            "DELETE FROM categories WHERE id = ? AND owner_user_id = ?",
-            (category_id.as_str(), user.id.as_str()),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to delete category"))?;
+            if let Some(row) = usage_rows
+                .next()
+                .await
+                .map_err(|_| DeleteCategoryError::Db)?
+            {
+                let count: u32 = row.get(0).map_err(|_| DeleteCategoryError::Db)?;
+                if count > 0 {
+                    return Err(DeleteCategoryError::Conflict);
+                }
+            }
+            drop(usage_rows);
 
-    if affected_rows == 0 {
-        return Err((StatusCode::NOT_FOUND, "Category not found".to_string()));
-    }
+            let affected_rows = conn
+                .execute(
+                    "DELETE FROM categories WHERE id = ? AND owner_user_id = ?",
+                    (category_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| DeleteCategoryError::Db)?;
+
+            if affected_rows == 0 {
+                return Err(DeleteCategoryError::NotFound);
+            }
+
+            Ok(())
+        })
+    })
+    .await
+    .map_err(|e: DeleteCategoryError| -> (StatusCode, String) { e.into() })?;
 
     Ok(StatusCode::NO_CONTENT)
 }

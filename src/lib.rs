@@ -41,7 +41,7 @@ where
     let conn = crate::database::db_conn(db_conn)
         .await
         .map_err(|_| TransactionError::Begin)?;
-    conn.execute("BEGIN TRANSACTION", ())
+    conn.execute("BEGIN IMMEDIATE", ())
         .await
         .map_err(|_| TransactionError::Begin)?;
     match f(&conn).await {
