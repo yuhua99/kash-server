@@ -7,6 +7,7 @@ use crate::models::CreateSplitPayload;
 
 pub(super) const SPLIT_CREATE_ENDPOINT: &str = "/splits/create";
 pub(super) const IDEMPOTENCY_TTL_HOURS: i64 = 24;
+pub(super) const RESERVATION_STALE_SECONDS: i64 = 300;
 pub(super) const MAX_IDEMPOTENCY_KEY_LENGTH: usize = 255;
 
 pub(super) struct CachedIdempotency {
@@ -24,7 +25,7 @@ pub(super) async fn get_existing_idempotency_response(
         let conn = app_state.main_db.connect().map_err(|_| db_error())?;
         let mut rows = conn
             .query(
-                "SELECT response_status, response_body, payload_hash, expires_at FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
+                "SELECT id, response_status, response_body, payload_hash, expires_at, created_at FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
                 (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),
             )
             .await
@@ -35,37 +36,73 @@ pub(super) async fn get_existing_idempotency_response(
             .await
             .map_err(|_| db_error_with_context("failed to read idempotency key row"))?
         {
-            let response_status: i64 = row
+            let reservation_id: String = row
                 .get(0)
+                .map_err(|_| db_error_with_context("invalid idempotency id"))?;
+            let response_status: i64 = row
+                .get(1)
                 .map_err(|_| db_error_with_context("invalid idempotency status"))?;
             let response_body: Option<String> = row
-                .get(1)
+                .get(2)
                 .map_err(|_| db_error_with_context("invalid idempotency response body"))?;
             let payload_hash: String = row
-                .get(2)
+                .get(3)
                 .map_err(|_| db_error_with_context("invalid idempotency payload hash"))?;
             let expires_at: String = row
-                .get(3)
+                .get(4)
                 .map_err(|_| db_error_with_context("invalid idempotency expiration"))?;
-            Some((response_status, response_body, payload_hash, expires_at))
+            let created_at: String = row
+                .get(5)
+                .map_err(|_| db_error_with_context("invalid idempotency creation time"))?;
+            Some((
+                reservation_id,
+                response_status,
+                response_body,
+                payload_hash,
+                expires_at,
+                created_at,
+            ))
         } else {
             None
         }
         // read lock dropped here
     };
 
-    if let Some((response_status, response_body, payload_hash, expires_at)) = maybe_cached {
+    if let Some((
+        reservation_id,
+        response_status,
+        response_body,
+        payload_hash,
+        expires_at,
+        created_at,
+    )) = maybe_cached
+    {
         if expires_at <= now_rfc3339()? {
             delete_idempotency_entry(app_state, idempotency_key, user_id).await?;
             return Ok(None);
         }
 
-        // A NULL response_body means a reservation was written but the fanout
-        // never completed (e.g. the server crashed mid-write). Clear the stale
-        // reservation so the caller can retry cleanly.
+        // A NULL response_body means a request is in flight. Only clear it if
+        // the reservation is old enough to be treated as a crashed-server
+        // cleanup case.
         let Some(response_body) = response_body else {
-            let _ = delete_idempotency_reservation(app_state, idempotency_key, user_id).await;
-            return Ok(None);
+            let created_at = time::OffsetDateTime::parse(
+                &created_at,
+                &time::format_description::well_known::Rfc3339,
+            )
+            .map_err(|_| db_error_with_context("invalid idempotency creation time"))?;
+
+            if time::OffsetDateTime::now_utc() - created_at
+                > time::Duration::seconds(RESERVATION_STALE_SECONDS)
+            {
+                let _ = delete_idempotency_reservation(app_state, &reservation_id).await;
+                return Ok(None);
+            }
+
+            return Err((
+                StatusCode::CONFLICT,
+                "A request with this idempotency key is already in progress".to_string(),
+            ));
         };
 
         return Ok(Some(CachedIdempotency {
@@ -85,12 +122,13 @@ pub(super) async fn reserve_idempotency_entry(
     payload_hash: &str,
     created_at: &str,
     expires_at: &str,
-) -> Result<(), (StatusCode, String)> {
+) -> Result<String, (StatusCode, String)> {
+    let reservation_id = Uuid::new_v4().to_string();
     let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
         "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
         (
-            Uuid::new_v4().to_string(),
+            reservation_id.as_str(),
             idempotency_key,
             user_id,
             SPLIT_CREATE_ENDPOINT,
@@ -103,18 +141,17 @@ pub(super) async fn reserve_idempotency_entry(
     .await
     .map_err(|_| db_error_with_context("failed to reserve idempotency key"))?;
 
-    Ok(())
+    Ok(reservation_id)
 }
 
 pub(super) async fn delete_idempotency_reservation(
     app_state: &AppState,
-    idempotency_key: &str,
-    user_id: &str,
+    reservation_id: &str,
 ) -> Result<(), (StatusCode, String)> {
     let conn = app_state.main_db.connect().map_err(|_| db_error())?;
     conn.execute(
-        "DELETE FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ? AND response_body IS NULL",
-        (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),
+        "DELETE FROM idempotency_keys WHERE id = ? AND response_body IS NULL",
+        [reservation_id],
     )
     .await
     .map_err(|_| db_error_with_context("failed to delete idempotency reservation"))?;

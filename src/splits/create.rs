@@ -13,7 +13,7 @@ use crate::validation::{
 use crate::{AppState, TransactionError, with_transaction};
 
 use super::idempotency::{
-    IDEMPOTENCY_TTL_HOURS, MAX_IDEMPOTENCY_KEY_LENGTH, SPLIT_CREATE_ENDPOINT, compute_payload_hash,
+    IDEMPOTENCY_TTL_HOURS, MAX_IDEMPOTENCY_KEY_LENGTH, compute_payload_hash,
     delete_idempotency_reservation, get_existing_idempotency_response, now_rfc3339,
     reserve_idempotency_entry,
 };
@@ -21,6 +21,7 @@ use super::idempotency::{
 enum SplitRecordError {
     Transaction,
     Db,
+    ReservationLost,
 }
 
 impl From<TransactionError> for SplitRecordError {
@@ -50,29 +51,7 @@ pub async fn create_split(
         get_existing_idempotency_response(&app_state, &current_user.id, &payload.idempotency_key)
             .await?
     {
-        if cached.payload_hash != payload_hash {
-            return Err((
-                StatusCode::CONFLICT,
-                "Idempotency key already used with different payload".to_string(),
-            ));
-        }
-
-        let response =
-            serde_json::from_str::<CreateSplitResponse>(&cached.response_body).map_err(|_| {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Failed to deserialize idempotency response".to_string(),
-                )
-            })?;
-
-        let status = StatusCode::from_u16(cached.response_status as u16).map_err(|_| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Invalid cached response status".to_string(),
-            )
-        })?;
-
-        return Ok((status, Json(response)));
+        return cached_split_response(cached, &payload_hash);
     }
 
     let split_id = Uuid::new_v4().to_string();
@@ -86,7 +65,7 @@ pub async fn create_split(
     // if the fanout partially succeeds and then fails, a client retry with the
     // same key will see the reservation (response_body = NULL) and get a 500
     // rather than re-running the fanout and creating duplicate records.
-    reserve_idempotency_entry(
+    let reservation_id = match reserve_idempotency_entry(
         &app_state,
         &payload.idempotency_key,
         &current_user.id,
@@ -94,33 +73,78 @@ pub async fn create_split(
         &now,
         &expires_at,
     )
-    .await?;
+    .await
+    {
+        Ok(reservation_id) => reservation_id,
+        Err(_) => {
+            if let Some(cached) = get_existing_idempotency_response(
+                &app_state,
+                &current_user.id,
+                &payload.idempotency_key,
+            )
+            .await?
+            {
+                return cached_split_response(cached, &payload_hash);
+            }
+
+            return Err(db_error_with_context("failed to reserve idempotency key"));
+        }
+    };
 
     let fanout_result = create_split_records(
         &app_state,
         &current_user.id,
         &split_id,
         &payload,
-        &payload.idempotency_key,
+        &reservation_id,
     )
     .await;
 
     let response = match fanout_result {
         Ok(response) => response,
         Err(e) => {
-            // Fanout failed — delete the reservation so the client can retry
-            // cleanly with the same idempotency key.
-            let _ = delete_idempotency_reservation(
-                &app_state,
-                &payload.idempotency_key,
-                &current_user.id,
-            )
-            .await;
+            if e != (
+                StatusCode::CONFLICT,
+                "A request with this idempotency key is already in progress".to_string(),
+            ) {
+                // Fanout failed — delete the reservation so the client can retry
+                // cleanly with the same idempotency key.
+                let _ = delete_idempotency_reservation(&app_state, &reservation_id).await;
+            }
             return Err(e);
         }
     };
 
     Ok((StatusCode::CREATED, Json(response)))
+}
+
+fn cached_split_response(
+    cached: super::idempotency::CachedIdempotency,
+    payload_hash: &str,
+) -> Result<(StatusCode, Json<CreateSplitResponse>), (StatusCode, String)> {
+    if cached.payload_hash != payload_hash {
+        return Err((
+            StatusCode::CONFLICT,
+            "Idempotency key already used with different payload".to_string(),
+        ));
+    }
+
+    let response =
+        serde_json::from_str::<CreateSplitResponse>(&cached.response_body).map_err(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Failed to deserialize idempotency response".to_string(),
+            )
+        })?;
+
+    let status = StatusCode::from_u16(cached.response_status as u16).map_err(|_| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Invalid cached response status".to_string(),
+        )
+    })?;
+
+    Ok((status, Json(response)))
 }
 
 fn validate_split_create_payload(
@@ -194,7 +218,7 @@ async fn create_split_records(
     initiator_user_id: &str,
     split_id: &str,
     payload: &CreateSplitPayload,
-    idempotency_key: &str,
+    reservation_id: &str,
 ) -> Result<CreateSplitResponse, (StatusCode, String)> {
     let calculated = calculate_split_amounts(
         payload.total_amount,
@@ -250,7 +274,7 @@ async fn create_split_records(
             .filter(|(uid, _)| uid != initiator_user_id)
             .map(|(uid, amt)| (uid.clone(), *amt))
             .collect();
-        let idempotency_key = idempotency_key.to_string();
+        let reservation_id = reservation_id.to_string();
 
         with_transaction(&app_state.main_db, |conn| {
             let payer_id = payer_id.clone();
@@ -262,7 +286,7 @@ async fn create_split_records(
             let initiator_id = initiator_id.clone();
             let participants = participants.clone();
             let pending_ids = pending_ids.clone();
-            let idempotency_key = idempotency_key.clone();
+            let reservation_id = reservation_id.clone();
             let response_body = response_body.clone();
 
             Box::pin(async move {
@@ -309,24 +333,35 @@ async fn create_split_records(
                     .map_err(|_| SplitRecordError::Db)?;
                 }
 
-                conn.execute(
-                    "UPDATE idempotency_keys SET response_status = ?, response_body = ? WHERE key = ? AND user_id = ? AND endpoint = ?",
-                    (
-                        i64::from(StatusCode::CREATED.as_u16()),
-                        response_body.as_str(),
-                        idempotency_key.as_str(),
-                        initiator_id.as_str(),
-                        SPLIT_CREATE_ENDPOINT,
-                    ),
-                )
-                .await
-                .map_err(|_| SplitRecordError::Db)?;
+                let updated = conn
+                    .execute(
+                        "UPDATE idempotency_keys SET response_status = ?, response_body = ? WHERE id = ? AND response_body IS NULL",
+                        (
+                            i64::from(StatusCode::CREATED.as_u16()),
+                            response_body.as_str(),
+                            reservation_id.as_str(),
+                        ),
+                    )
+                    .await
+                    .map_err(|_| SplitRecordError::Db)?;
+
+                if updated != 1 {
+                    return Err(SplitRecordError::ReservationLost);
+                }
 
                 Ok::<(), SplitRecordError>(())
             })
         })
         .await
-        .map_err(|_| db_error_with_context("failed to create split records"))?;
+        .map_err(|e| match e {
+            SplitRecordError::ReservationLost => (
+                StatusCode::CONFLICT,
+                "A request with this idempotency key is already in progress".to_string(),
+            ),
+            SplitRecordError::Transaction | SplitRecordError::Db => {
+                db_error_with_context("failed to create split records")
+            }
+        })?;
     }
 
     Ok(response)

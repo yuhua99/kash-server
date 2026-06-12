@@ -548,9 +548,10 @@ async fn e21_stale_null_body_idempotency_key_does_not_replay() {
         let conn = app.state.main_db.connect().expect("connect db");
         conn.execute(
             "INSERT INTO idempotency_keys \
-             (key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) \
-             VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+             (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) \
+             VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
             (
+                uuid::Uuid::new_v4().to_string(),
                 key,
                 alice_id.as_str(),
                 "/splits/create",
