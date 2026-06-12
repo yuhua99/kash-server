@@ -310,13 +310,22 @@ pub async fn update_record(
 
     let mut existing_rows = conn
         .query(
-            "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+            "SELECT id, name, amount, currency, category_id, date, split_id FROM records WHERE id = ? AND owner_user_id = ?",
             (record_id.as_str(), user.id.as_str()),
         )
         .await
         .map_err(|_| db_error_with_context("failed to query existing record"))?;
 
     let existing_record = if let Some(row) = existing_rows.next().await.map_err(|_| db_error())? {
+        let split_id: Option<String> = row
+            .get(6)
+            .map_err(|_| db_error_with_context("invalid record data"))?;
+        if split_id.is_some() {
+            return Err((
+                StatusCode::CONFLICT,
+                "Split records cannot be modified directly".to_string(),
+            ));
+        }
         extract_record_from_row(row)?
     } else {
         return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
@@ -347,7 +356,7 @@ pub async fn update_record(
 
     let affected_rows = conn
         .execute(
-            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
+            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
             (
                 updated_name,
                 updated_amount,
@@ -387,9 +396,33 @@ pub async fn delete_record(
     let user = get_current_user(&session).await?;
     let conn = app_state.main_db.connect().map_err(|_| db_error())?;
 
+    let mut rows = conn
+        .query(
+            "SELECT split_id FROM records WHERE id = ? AND owner_user_id = ?",
+            (record_id.as_str(), user.id.as_str()),
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to query record"))?;
+
+    let split_id: Option<String> = if let Some(row) = rows.next().await.map_err(|_| db_error())? {
+        row.get(0)
+            .map_err(|_| db_error_with_context("invalid record data"))?
+    } else {
+        return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
+    };
+
+    if split_id.is_some() {
+        return Err((
+            StatusCode::CONFLICT,
+            "Split records cannot be deleted directly".to_string(),
+        ));
+    }
+
+    drop(rows);
+
     let affected_rows = conn
         .execute(
-            "DELETE FROM records WHERE id = ? AND owner_user_id = ?",
+            "DELETE FROM records WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
             (record_id.as_str(), user.id.as_str()),
         )
         .await
