@@ -114,6 +114,41 @@ ON exchange_rates_daily(currency, date DESC);
 
 pub type Db = Arc<Database>;
 
+/// Errors that can occur during transaction management
+#[derive(Debug)]
+pub enum TransactionError {
+    Begin,
+    Commit,
+}
+
+/// Execute a function within a database transaction, returning handler-compatible errors.
+pub async fn with_transaction<F, T, E>(db: &Db, f: F) -> Result<T, E>
+where
+    F: for<'a> FnOnce(
+        &'a Connection,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'a>,
+    >,
+    E: From<TransactionError>,
+{
+    let conn = db_conn(db).await.map_err(|_| TransactionError::Begin)?;
+    conn.execute("BEGIN IMMEDIATE", ())
+        .await
+        .map_err(|_| TransactionError::Begin)?;
+    match f(&conn).await {
+        Ok(result) => {
+            conn.execute("COMMIT", ())
+                .await
+                .map_err(|_| TransactionError::Commit)?;
+            Ok(result)
+        }
+        Err(e) => {
+            let _ = conn.execute("ROLLBACK", ()).await;
+            Err(e)
+        }
+    }
+}
+
 pub async fn db_conn(db: &Db) -> Result<Connection, libsql::Error> {
     let conn = db.connect()?;
     let mut foreign_key_rows = conn.query("PRAGMA foreign_keys = ON", ()).await?;

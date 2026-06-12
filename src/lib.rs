@@ -13,47 +13,10 @@ pub mod settings;
 pub mod splits;
 pub mod validation;
 
-pub use crate::database::{Db, init_main_db};
-
-use libsql::Connection;
-use std::future::Future;
-use std::pin::Pin;
+pub use crate::database::{Db, TransactionError, init_main_db, with_transaction};
 
 /// Application state shared across all request handlers
 #[derive(Clone)]
 pub struct AppState {
     pub main_db: Db,
-}
-
-/// Errors that can occur during transaction management
-#[derive(Debug)]
-pub enum TransactionError {
-    Begin,
-    Commit,
-}
-
-/// Execute a function within a database transaction, returning handler-compatible errors.
-pub async fn with_transaction<F, T, E>(db_conn: &Db, f: F) -> Result<T, E>
-where
-    F: for<'a> FnOnce(&'a Connection) -> Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'a>>,
-    E: From<TransactionError>,
-{
-    let conn = crate::database::db_conn(db_conn)
-        .await
-        .map_err(|_| TransactionError::Begin)?;
-    conn.execute("BEGIN IMMEDIATE", ())
-        .await
-        .map_err(|_| TransactionError::Begin)?;
-    match f(&conn).await {
-        Ok(result) => {
-            conn.execute("COMMIT", ())
-                .await
-                .map_err(|_| TransactionError::Commit)?;
-            Ok(result)
-        }
-        Err(e) => {
-            let _ = conn.execute("ROLLBACK", ()).await;
-            Err(e)
-        }
-    }
 }
