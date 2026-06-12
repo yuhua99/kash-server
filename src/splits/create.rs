@@ -171,6 +171,13 @@ fn validate_split_create_payload(
         ));
     }
 
+    if payload.total_amount > crate::constants::MAX_RECORD_AMOUNT {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Total amount exceeds maximum allowed value".to_string(),
+        ));
+    }
+
     Ok(())
 }
 

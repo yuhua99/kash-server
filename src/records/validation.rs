@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 use libsql::Connection;
 
-use crate::constants::{MAX_CATEGORY_NAME_LENGTH, MAX_RECORD_NAME_LENGTH};
+use crate::constants::{MAX_CATEGORY_NAME_LENGTH, MAX_RECORD_AMOUNT, MAX_RECORD_NAME_LENGTH};
 use crate::errors::{db_error, db_error_with_context};
 use crate::money::to_cents;
 use crate::validation::validate_string_length;
@@ -15,6 +15,13 @@ pub fn validate_record_amount(amount: f64) -> Result<(), (StatusCode, String)> {
         return Err((
             StatusCode::BAD_REQUEST,
             "Record amount must be a valid finite number".to_string(),
+        ));
+    }
+
+    if amount.abs() > MAX_RECORD_AMOUNT {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "Record amount exceeds maximum allowed value".to_string(),
         ));
     }
 

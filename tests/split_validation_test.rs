@@ -1,5 +1,13 @@
+mod common;
+
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
 use kash_server::models::SplitParticipant;
 use kash_server::splits::{calculate_split_amounts, validate_split_participants};
+use serde_json::json;
+use tower::util::ServiceExt;
 
 #[test]
 fn test_validate_split_participants_exact_match() {
@@ -139,6 +147,61 @@ fn test_validate_split_participants_infinity_amount() {
     let result = validate_split_participants(&splits, initiator);
     assert!(result.is_err(), "Infinity amounts should fail validation");
     assert_eq!(result.unwrap_err(), "Amount must be a valid finite number");
+}
+
+#[test]
+fn test_validate_split_participants_amount_exceeds_maximum() {
+    let splits = vec![SplitParticipant {
+        user_id: "B".to_string(),
+        amount: 2_000_000_000.0,
+    }];
+    let initiator = "A";
+
+    let result = validate_split_participants(&splits, initiator);
+    assert!(result.is_err(), "Oversized amounts should fail validation");
+    assert_eq!(result.unwrap_err(), "Amount exceeds maximum allowed value");
+}
+
+#[tokio::test]
+async fn split_create_participant_amount_exceeds_maximum_returns_bad_request() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let _alice_id = common::create_test_user(&app.state, "alice_split_max", "pw")
+        .await
+        .expect("create alice");
+    let bob_id = common::create_test_user(&app.state, "bob_split_max", "pw")
+        .await
+        .expect("create bob");
+    let cookie = common::login_user(&app.router, "alice_split_max", "pw")
+        .await
+        .expect("login alice");
+
+    let request = Request::builder()
+        .method("POST")
+        .uri("/splits/create")
+        .header("cookie", cookie)
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "idempotency_key": "split-max-participant",
+                "total_amount": 100.0,
+                "currency": "TWD",
+                "description": "oversized split",
+                "date": "2026-02-20",
+                "category_id": "cat-placeholder",
+                "splits": [{ "user_id": bob_id, "amount": 2_000_000_000.0 }]
+            })
+            .to_string(),
+        ))
+        .expect("build split request");
+
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute split request");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
 #[test]

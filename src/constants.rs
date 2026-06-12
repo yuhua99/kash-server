@@ -17,6 +17,7 @@ pub const MAX_OFFSET: u32 = 1_000_000;
 // Validation limits
 pub const MAX_CATEGORY_NAME_LENGTH: usize = 100;
 pub const MAX_RECORD_NAME_LENGTH: usize = 255;
+pub const MAX_RECORD_AMOUNT: f64 = 1_000_000_000.0;
 pub const MAX_SEARCH_TERM_LENGTH: usize = 100;
 pub const MAX_USERNAME_LENGTH: usize = 50;
 pub const MIN_USERNAME_LENGTH: usize = 4;

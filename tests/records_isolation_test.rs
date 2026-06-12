@@ -212,6 +212,37 @@ async fn setup_two_users(
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+async fn create_record_amount_exceeds_maximum_returns_bad_request() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let _user_id = common::create_test_user(&app.state, "alice_record_max", "pw")
+        .await
+        .expect("create alice");
+    let cookie = common::login_user(&app.router, "alice_record_max", "pw")
+        .await
+        .expect("login alice");
+
+    let (status, body) = json_post(
+        &app,
+        "/records",
+        &cookie,
+        json!({
+            "name": "OversizedRecord",
+            "amount": 2_000_000_000.0,
+            "currency": "TWD",
+            "date": "2026-02-20",
+            "category_id": "cat-placeholder"
+        }),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body,
+        Value::String("Record amount exceeds maximum allowed value".to_string())
+    );
+}
+
+#[tokio::test]
 async fn b5_user_a_record_not_visible_to_user_b() {
     let app = common::setup_test_app().await.expect("setup failed");
     let (_alice_id, _bob_id, _alice_cookie, bob_cookie, _ac, _bc, alice_rec_id, _bob_rec) =
