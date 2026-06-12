@@ -95,6 +95,43 @@ async fn create_split_scenario(
     ))
 }
 
+async fn finalize_debtor_record(
+    app: &common::TestApp,
+    debtor_id: &str,
+    debtor_cookie: &str,
+    debtor_record_id: &str,
+) -> anyhow::Result<String> {
+    let category_id = Uuid::new_v4().to_string();
+    let conn = app.state.main_db.connect().expect("connect db");
+    conn.execute(
+        "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
+        (
+            category_id.as_str(),
+            debtor_id,
+            "Debtor Private Category",
+            false,
+        ),
+    )
+    .await?;
+
+    let finalize_payload = json!({
+        "record_id": debtor_record_id,
+        "category_id": category_id
+    });
+
+    let finalize_request = Request::builder()
+        .method("POST")
+        .uri("/records/finalize-pending")
+        .header("content-type", "application/json")
+        .header("cookie", debtor_cookie)
+        .body(Body::from(finalize_payload.to_string()))?;
+
+    let finalize_response = app.router.clone().oneshot(finalize_request).await?;
+    assert_eq!(finalize_response.status(), StatusCode::OK);
+
+    Ok(category_id)
+}
+
 #[tokio::test]
 async fn test_settle_happy_path_owner() -> anyhow::Result<()> {
     let app = setup_test_app().await?;
@@ -226,6 +263,67 @@ async fn test_settle_happy_path_creditor_can_settle_debtor_record() -> anyhow::R
     let row = rows.next().await?.expect("Record should exist");
     let settle: bool = row.get(0)?;
     assert!(settle, "Record should be marked as settled");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_settle_creditor_response_hides_debtor_category() -> anyhow::Result<()> {
+    let app = setup_test_app().await?;
+
+    let payer_id = create_test_user(&app.state, "payer", "password").await?;
+    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
+
+    let payer_cookie = login_user(&app.router, "payer", "password").await?;
+    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
+
+    let (_split_id, _payer_record_id, debtor_record_id) =
+        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
+    finalize_debtor_record(&app, &debtor_id, &debtor_cookie, &debtor_record_id).await?;
+
+    let request = Request::builder()
+        .method("PUT")
+        .uri(format!("/records/{}/settle", debtor_record_id))
+        .header("content-type", "application/json")
+        .header("cookie", &payer_cookie)
+        .body(Body::from(json!({}).to_string()))?;
+
+    let response = app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes)?;
+    assert!(body["category_id"].is_null());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_settle_owner_response_includes_category() -> anyhow::Result<()> {
+    let app = setup_test_app().await?;
+
+    let payer_id = create_test_user(&app.state, "payer", "password").await?;
+    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
+
+    let payer_cookie = login_user(&app.router, "payer", "password").await?;
+    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
+
+    let (_split_id, _payer_record_id, debtor_record_id) =
+        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
+    let category_id =
+        finalize_debtor_record(&app, &debtor_id, &debtor_cookie, &debtor_record_id).await?;
+
+    let request = Request::builder()
+        .method("PUT")
+        .uri(format!("/records/{}/settle", debtor_record_id))
+        .header("content-type", "application/json")
+        .header("cookie", &debtor_cookie)
+        .body(Body::from(json!({}).to_string()))?;
+
+    let response = app.router.clone().oneshot(request).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+    let body: serde_json::Value = serde_json::from_slice(&body_bytes)?;
+    assert_eq!(body["category_id"].as_str(), Some(category_id.as_str()));
 
     Ok(())
 }
