@@ -147,7 +147,7 @@ pub async fn send_friend_request(
 
     let friend_user = get_user_by_username_public(&app_state.main_db, &payload.friend_username)
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|_| db_error_with_context("failed to find user"))?
         .ok_or_else(|| (StatusCode::NOT_FOUND, "User not found".to_string()))?;
 
     let relation_id = Uuid::new_v4().to_string();

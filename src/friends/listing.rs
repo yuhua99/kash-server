@@ -8,8 +8,9 @@ use tower_sessions::Session;
 use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
-use crate::errors::db_error;
+use crate::errors::{db_error, db_error_with_context};
 use crate::models::{FriendshipRelation, PublicUser};
+use crate::validation::{validate_limit, validate_offset};
 
 #[derive(Deserialize)]
 pub struct SearchUsersQuery {
@@ -43,16 +44,8 @@ pub async fn search_users(
         ));
     }
 
-    let limit = params.limit.unwrap_or(20).min(MAX_LIMIT);
-    let offset = params.offset.unwrap_or(0).min(MAX_OFFSET);
-
-    if limit == 0 {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            "Limit must be at least 1".to_string(),
-        ));
-    }
-
+    let limit = validate_limit(params.limit, 20)?;
+    let offset = validate_offset(params.offset)?;
     let search_pattern = format!("{}%", params.query);
 
     let conn = crate::database::db_conn(&app_state.main_db)
@@ -64,20 +57,20 @@ pub async fn search_users(
             (search_pattern.as_str(), limit, offset),
         )
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|_| db_error_with_context("failed to query users"))?;
 
     let mut users = Vec::new();
     while let Some(row) = rows
         .next()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|_| db_error_with_context("failed to read user search results"))?
     {
         let id: String = row
             .get(0)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read user search result"))?;
         let username: String = row
             .get(1)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read user search result"))?;
         users.push(PublicUser { id, username });
     }
 
@@ -99,8 +92,8 @@ pub async fn list_friends(
     let current_user = get_current_user(&session).await?;
     let user_id = &current_user.id;
 
-    let limit = query.limit.unwrap_or(20).clamp(1, MAX_LIMIT);
-    let offset = query.offset.unwrap_or(0).min(MAX_OFFSET);
+    let limit = validate_limit(query.limit, 20)?;
+    let offset = validate_offset(query.offset)?;
 
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
@@ -117,15 +110,15 @@ pub async fn list_friends(
                 (user_id.as_str(), user_id.as_str(), user_id.as_str()),
             )
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to count friends"))?;
 
         if let Some(row) = rows
             .next()
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|_| db_error_with_context("failed to count friends"))?
         {
             row.get(0)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .map_err(|_| db_error_with_context("failed to count friends"))?
         } else {
             0
         }
@@ -136,15 +129,15 @@ pub async fn list_friends(
                 (user_id.as_str(), user_id.as_str()),
             )
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to count friends"))?;
 
         if let Some(row) = rows
             .next()
             .await
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|_| db_error_with_context("failed to count friends"))?
         {
             row.get(0)
-                .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+                .map_err(|_| db_error_with_context("failed to count friends"))?
         } else {
             0
         }
@@ -190,26 +183,26 @@ pub async fn list_friends(
         )
         .await
     }
-    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    .map_err(|_| db_error_with_context("failed to query friends"))?;
 
     let mut friends = Vec::new();
     while let Some(row) = rows
         .next()
         .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|_| db_error_with_context("failed to read friends"))?
     {
         let id: String = row
             .get(0)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read friend relation"))?;
         let user_id_field: String = row
             .get(1)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read friend relation"))?;
         let pending_val: i64 = row
             .get(2)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read friend relation"))?;
         let nickname: String = row
             .get(3)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+            .map_err(|_| db_error_with_context("failed to read friend relation"))?;
 
         friends.push(FriendshipRelation {
             id,
