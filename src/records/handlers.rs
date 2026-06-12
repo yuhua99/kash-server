@@ -15,14 +15,93 @@ use crate::models::{
 };
 use crate::money::{to_cents, to_decimal};
 use crate::validation::{
-    validate_category_exists, validate_currency, validate_date, validate_offset,
-    validate_records_limit,
+    validate_currency, validate_date, validate_offset, validate_records_limit,
 };
+use crate::{TransactionError, with_transaction};
 
 use super::validation::{
     get_category_is_income, normalize_amount_by_category, validate_category_id,
     validate_record_amount, validate_record_name,
 };
+
+enum CreateRecordError {
+    Transaction(TransactionError),
+    CategoryMissing,
+    Db(&'static str),
+}
+
+impl From<TransactionError> for CreateRecordError {
+    fn from(value: TransactionError) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+impl From<CreateRecordError> for (StatusCode, String) {
+    fn from(value: CreateRecordError) -> Self {
+        match value {
+            CreateRecordError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            CreateRecordError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            CreateRecordError::CategoryMissing => (
+                StatusCode::BAD_REQUEST,
+                "Category does not exist".to_string(),
+            ),
+            CreateRecordError::Db(ctx) => db_error_with_context(ctx),
+        }
+    }
+}
+
+enum UpdateRecordError {
+    Transaction(TransactionError),
+    Db(&'static str),
+    RecordNotFound,
+    SplitRecord,
+    CategoryMissing,
+    AmountWithoutCategory,
+    NoChanges,
+}
+
+impl From<TransactionError> for UpdateRecordError {
+    fn from(value: TransactionError) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+impl From<UpdateRecordError> for (StatusCode, String) {
+    fn from(value: UpdateRecordError) -> Self {
+        match value {
+            UpdateRecordError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            UpdateRecordError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            UpdateRecordError::Db(ctx) => db_error_with_context(ctx),
+            UpdateRecordError::RecordNotFound => {
+                (StatusCode::NOT_FOUND, "Record not found".to_string())
+            }
+            UpdateRecordError::SplitRecord => (
+                StatusCode::CONFLICT,
+                "Split records cannot be modified directly".to_string(),
+            ),
+            UpdateRecordError::CategoryMissing => (
+                StatusCode::BAD_REQUEST,
+                "Category does not exist".to_string(),
+            ),
+            UpdateRecordError::AmountWithoutCategory => (
+                StatusCode::BAD_REQUEST,
+                "Cannot update amount without a category".to_string(),
+            ),
+            UpdateRecordError::NoChanges => (
+                StatusCode::NOT_FOUND,
+                "Record not found or no changes made".to_string(),
+            ),
+        }
+    }
+}
 
 fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     let id: String = row
@@ -67,40 +146,58 @@ async fn create_record_for_user(
 
     let category_id = payload.category_id.trim().to_string();
 
-    validate_category_exists(db, user_id, &category_id).await?;
-
-    let is_income = {
-        let conn = crate::database::db_conn(db).await.map_err(|_| db_error())?;
-        get_category_is_income(&conn, user_id, &category_id).await?
-    };
-    let normalized_amount = normalize_amount_by_category(to_cents(payload.amount), is_income);
-
     let record_id = Uuid::new_v4().to_string();
+    let name = payload.name.trim().to_string();
+    let date = payload.date.trim().to_string();
+    let amount = payload.amount;
+    let owner_user_id = user_id.to_string();
 
-    let conn = crate::database::db_conn(db).await.map_err(|_| db_error())?;
-    conn.execute(
-        "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (
-            record_id.as_str(),
-            user_id,
-            payload.name.trim(),
-            normalized_amount,
-            currency.as_str(),
-            category_id.as_str(),
-            payload.date.trim(),
-        ),
-    )
-    .await
-    .map_err(|_| db_error_with_context("record creation failed"))?;
+    with_transaction(db, |conn| {
+        let record_id = record_id.clone();
+        let owner_user_id = owner_user_id.clone();
+        let category_id = category_id.clone();
+        let name = name.clone();
+        let currency = currency.clone();
+        let date = date.clone();
+        Box::pin(async move {
+            let is_income = get_category_is_income(conn, &owner_user_id, &category_id)
+                .await
+                .map_err(|e| {
+                    if e.0 == StatusCode::BAD_REQUEST {
+                        CreateRecordError::CategoryMissing
+                    } else {
+                        CreateRecordError::Db("failed to query category type")
+                    }
+                })?;
+            let normalized_amount = normalize_amount_by_category(to_cents(amount), is_income);
 
-    Ok(Record {
-        id: record_id,
-        name: payload.name.trim().to_string(),
-        amount: to_decimal(normalized_amount),
-        currency,
-        category_id: Some(category_id),
-        date: payload.date.trim().to_string(),
+            conn.execute(
+                "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    record_id.as_str(),
+                    owner_user_id.as_str(),
+                    name.as_str(),
+                    normalized_amount,
+                    currency.as_str(),
+                    category_id.as_str(),
+                    date.as_str(),
+                ),
+            )
+            .await
+            .map_err(|_| CreateRecordError::Db("record creation failed"))?;
+
+            Ok::<Record, CreateRecordError>(Record {
+                id: record_id,
+                name,
+                amount: to_decimal(normalized_amount),
+                currency,
+                category_id: Some(category_id),
+                date,
+            })
+        })
     })
+    .await
+    .map_err(<(StatusCode, String)>::from)
 }
 
 pub async fn create_record(
@@ -303,89 +400,119 @@ pub async fn update_record(
     }
 
     let db = &app_state.main_db;
+    let owner_user_id = user.id.clone();
+    let name = payload.name.clone();
+    let amount = payload.amount;
+    let category_id = payload.category_id.clone();
+    let date = payload.date.clone();
 
-    if let Some(ref category_id) = payload.category_id {
-        validate_category_exists(db, &user.id, category_id).await?;
-    }
+    let updated_record = with_transaction(db, |conn| {
+        let record_id = record_id.clone();
+        let owner_user_id = owner_user_id.clone();
+        let name = name.clone();
+        let category_id = category_id.clone();
+        let date = date.clone();
+        Box::pin(async move {
+            let mut existing_rows = conn
+                .query(
+                    "SELECT id, name, amount, currency, category_id, date, split_id FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), owner_user_id.as_str()),
+                )
+                .await
+                .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?;
 
-    let conn = crate::database::db_conn(db).await.map_err(|_| db_error())?;
+            let existing_record = if let Some(row) = existing_rows
+                .next()
+                .await
+                .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?
+            {
+                let split_id: Option<String> = row
+                    .get(6)
+                    .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
+                if split_id.is_some() {
+                    return Err(UpdateRecordError::SplitRecord);
+                }
+                let amount_cents: i64 = row
+                    .get(2)
+                    .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
+                Record {
+                    id: row
+                        .get(0)
+                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
+                    name: row
+                        .get(1)
+                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
+                    amount: to_decimal(amount_cents),
+                    currency: row
+                        .get(3)
+                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
+                    category_id: row
+                        .get(4)
+                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
+                    date: row
+                        .get(5)
+                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
+                }
+            } else {
+                return Err(UpdateRecordError::RecordNotFound);
+            };
+            drop(existing_rows);
 
-    let mut existing_rows = conn
-        .query(
-            "SELECT id, name, amount, currency, category_id, date, split_id FROM records WHERE id = ? AND owner_user_id = ?",
-            (record_id.as_str(), user.id.as_str()),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to query existing record"))?;
+            let category_changed = category_id.is_some();
+            let updated_name = name.unwrap_or(existing_record.name.clone());
+            let updated_category_id = category_id.or(existing_record.category_id.clone());
+            let updated_amount = if amount.is_some() || category_changed {
+                if let Some(ref category_id) = updated_category_id {
+                    let amount = amount.unwrap_or(existing_record.amount);
+                    let is_income = get_category_is_income(conn, &owner_user_id, category_id)
+                        .await
+                        .map_err(|e| {
+                            if e.0 == StatusCode::BAD_REQUEST {
+                                UpdateRecordError::CategoryMissing
+                            } else {
+                                UpdateRecordError::Db("failed to query category type")
+                            }
+                        })?;
+                    normalize_amount_by_category(to_cents(amount), is_income)
+                } else {
+                    return Err(UpdateRecordError::AmountWithoutCategory);
+                }
+            } else {
+                to_cents(existing_record.amount)
+            };
+            let updated_date = date.unwrap_or(existing_record.date);
 
-    let existing_record = if let Some(row) = existing_rows.next().await.map_err(|_| db_error())? {
-        let split_id: Option<String> = row
-            .get(6)
-            .map_err(|_| db_error_with_context("invalid record data"))?;
-        if split_id.is_some() {
-            return Err((
-                StatusCode::CONFLICT,
-                "Split records cannot be modified directly".to_string(),
-            ));
-        }
-        extract_record_from_row(row)?
-    } else {
-        return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
-    };
+            let affected_rows = conn
+                .execute(
+                    "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
+                    (
+                        updated_name.as_str(),
+                        updated_amount,
+                        updated_category_id.as_deref(),
+                        updated_date.as_str(),
+                        record_id.as_str(),
+                        owner_user_id.as_str(),
+                    ),
+                )
+                .await
+                .map_err(|_| UpdateRecordError::Db("failed to update record"))?;
 
-    let updated_name = payload.name.as_deref().unwrap_or(&existing_record.name);
-    drop(existing_rows);
+            if affected_rows == 0 {
+                return Err(UpdateRecordError::NoChanges);
+            }
 
-    let updated_category_id = payload
-        .category_id
-        .clone()
-        .or(existing_record.category_id.clone());
-    let updated_amount = if payload.amount.is_some() || payload.category_id.is_some() {
-        if let Some(ref category_id) = updated_category_id {
-            let amount = payload.amount.unwrap_or(existing_record.amount);
-            let is_income = get_category_is_income(&conn, &user.id, category_id).await?;
-            normalize_amount_by_category(to_cents(amount), is_income)
-        } else {
-            return Err((
-                StatusCode::BAD_REQUEST,
-                "Cannot update amount without a category".to_string(),
-            ));
-        }
-    } else {
-        to_cents(existing_record.amount)
-    };
-    let updated_date = payload.date.unwrap_or(existing_record.date);
-
-    let affected_rows = conn
-        .execute(
-            "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
-            (
-                updated_name,
-                updated_amount,
-                updated_category_id.as_deref(),
-                updated_date.as_str(),
-                record_id.as_str(),
-                user.id.as_str(),
-            ),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to update record"))?;
-
-    if affected_rows == 0 {
-        return Err((
-            StatusCode::NOT_FOUND,
-            "Record not found or no changes made".to_string(),
-        ));
-    }
-
-    let updated_record = Record {
-        id: record_id,
-        name: updated_name.to_string(),
-        amount: to_decimal(updated_amount),
-        currency: existing_record.currency,
-        category_id: updated_category_id,
-        date: updated_date,
-    };
+            Ok::<Record, UpdateRecordError>(Record {
+                id: record_id,
+                name: updated_name,
+                amount: to_decimal(updated_amount),
+                currency: existing_record.currency,
+                category_id: updated_category_id,
+                date: updated_date,
+            })
+        })
+    })
+    .await
+    .map_err(<(StatusCode, String)>::from)?;
 
     Ok((StatusCode::OK, Json(updated_record)))
 }
