@@ -58,7 +58,6 @@ enum UpdateRecordError {
     Transaction(TransactionError),
     Db(&'static str),
     RecordNotFound,
-    SplitRecord,
     CategoryMissing,
     AmountWithoutCategory,
     NoChanges,
@@ -83,10 +82,6 @@ impl From<UpdateRecordError> for (StatusCode, String) {
             UpdateRecordError::RecordNotFound => {
                 (StatusCode::NOT_FOUND, "Record not found".to_string())
             }
-            UpdateRecordError::SplitRecord => (
-                StatusCode::CONFLICT,
-                "Split records cannot be modified directly".to_string(),
-            ),
             UpdateRecordError::CategoryMissing => (
                 StatusCode::BAD_REQUEST,
                 "Category does not exist".to_string(),
@@ -107,21 +102,9 @@ fn build_records_where_clause(
     user_id: &str,
     start_date: &str,
     end_date: &str,
-    pending: Option<bool>,
-    settle: Option<i64>,
 ) -> (String, Vec<Value>) {
-    let mut where_clause = "owner_user_id = ? AND date BETWEEN ? AND ?".to_string();
-    let mut params = vec![user_id.into(), start_date.into(), end_date.into()];
-
-    if let Some(pending) = pending {
-        where_clause.push_str(" AND (split_id IS NOT NULL AND category_id IS NULL) = ?");
-        params.push(pending.into());
-    }
-
-    if let Some(settle) = settle {
-        where_clause.push_str(" AND settle = ?");
-        params.push(settle.into());
-    }
+    let where_clause = "owner_user_id = ? AND date BETWEEN ? AND ?".to_string();
+    let params = vec![user_id.into(), start_date.into(), end_date.into()];
 
     (where_clause, params)
 }
@@ -256,15 +239,8 @@ pub async fn get_records(
     let start_date = query.start_date.unwrap_or_else(|| "0000-01-01".to_string());
     let end_date = query.end_date.unwrap_or_else(|| "9999-12-31".to_string());
 
-    let pending = query.pending;
-    let settle = query.settle.map(|s| if s { 1_i64 } else { 0_i64 });
-    let (where_clause, base_params) = build_records_where_clause(
-        user.id.as_str(),
-        start_date.as_str(),
-        end_date.as_str(),
-        pending,
-        settle,
-    );
+    let (where_clause, base_params) =
+        build_records_where_clause(user.id.as_str(), start_date.as_str(), end_date.as_str());
 
     let count_sql = format!("SELECT COUNT(*) FROM records WHERE {where_clause}");
     let mut count_rows = conn
@@ -355,7 +331,7 @@ pub async fn update_record(
         Box::pin(async move {
             let mut existing_rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date, split_id FROM records WHERE id = ? AND owner_user_id = ?",
+                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -366,12 +342,6 @@ pub async fn update_record(
                 .await
                 .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?
             {
-                let split_id: Option<String> = row
-                    .get(6)
-                    .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
-                if split_id.is_some() {
-                    return Err(UpdateRecordError::SplitRecord);
-                }
                 let amount_cents: i64 = row
                     .get(2)
                     .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
@@ -424,7 +394,7 @@ pub async fn update_record(
 
             let affected_rows = conn
                 .execute(
-                    "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
+                    "UPDATE records SET name = ?, amount = ?, category_id = ?, date = ? WHERE id = ? AND owner_user_id = ?",
                     (
                         updated_name.as_str(),
                         updated_amount,
@@ -467,33 +437,9 @@ pub async fn delete_record(
         .await
         .map_err(|_| db_error())?;
 
-    let mut rows = conn
-        .query(
-            "SELECT split_id FROM records WHERE id = ? AND owner_user_id = ?",
-            (record_id.as_str(), user.id.as_str()),
-        )
-        .await
-        .map_err(|_| db_error_with_context("failed to query record"))?;
-
-    let split_id: Option<String> = if let Some(row) = rows.next().await.map_err(|_| db_error())? {
-        row.get(0)
-            .map_err(|_| db_error_with_context("invalid record data"))?
-    } else {
-        return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
-    };
-
-    if split_id.is_some() {
-        return Err((
-            StatusCode::CONFLICT,
-            "Split records cannot be deleted directly".to_string(),
-        ));
-    }
-
-    drop(rows);
-
     let affected_rows = conn
         .execute(
-            "DELETE FROM records WHERE id = ? AND owner_user_id = ? AND split_id IS NULL",
+            "DELETE FROM records WHERE id = ? AND owner_user_id = ?",
             (record_id.as_str(), user.id.as_str()),
         )
         .await

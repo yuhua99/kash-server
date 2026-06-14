@@ -13,16 +13,13 @@ CREATE TABLE IF NOT EXISTS users (
 
 const CREATE_RECORDS_TABLE: &str = r#"
 CREATE TABLE IF NOT EXISTS records (
-    id               TEXT    PRIMARY KEY,
-    owner_user_id    TEXT    NOT NULL REFERENCES users(id),
-    name             TEXT    NOT NULL,
-    amount           INTEGER NOT NULL,
-    currency         TEXT    NOT NULL DEFAULT 'TWD',
-    category_id      TEXT    REFERENCES categories(id),
-    date             TEXT    NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    split_id         TEXT,
-    settle           BOOLEAN NOT NULL DEFAULT 0 CHECK (settle IN (0, 1)),
-    creditor_user_id TEXT    REFERENCES users(id)
+    id            TEXT    PRIMARY KEY,
+    owner_user_id TEXT    NOT NULL REFERENCES users(id),
+    name          TEXT    NOT NULL,
+    amount        INTEGER NOT NULL,
+    currency      TEXT    NOT NULL DEFAULT 'TWD',
+    category_id   TEXT    REFERENCES categories(id),
+    date          TEXT    NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')
 );
 "#;
 

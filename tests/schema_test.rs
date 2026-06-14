@@ -59,7 +59,6 @@ async fn a2_records_owner_user_id_column_not_null_fk_and_index_exists() {
     let mut found_owner = false;
     let mut owner_notnull = false;
     let mut date_notnull = false;
-    let mut settle_notnull = false;
     while let Some(row) = rows.next().await.expect("next table_info row") {
         let col_name: String = row.get(1).expect("col name");
         if col_name == "owner_user_id" {
@@ -71,15 +70,10 @@ async fn a2_records_owner_user_id_column_not_null_fk_and_index_exists() {
             let notnull: i64 = row.get(3).expect("notnull flag");
             date_notnull = notnull != 0;
         }
-        if col_name == "settle" {
-            let notnull: i64 = row.get(3).expect("notnull flag");
-            settle_notnull = notnull != 0;
-        }
     }
     assert!(found_owner, "records.owner_user_id column must exist");
     assert!(owner_notnull, "records.owner_user_id must be NOT NULL");
     assert!(date_notnull, "records.date must be NOT NULL");
-    assert!(settle_notnull, "records.settle must be NOT NULL");
 
     let mut fk_rows = conn
         .query(
