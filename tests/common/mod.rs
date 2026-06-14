@@ -82,14 +82,6 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
                 .delete(kash_server::records::delete_record),
         )
         .route(
-            "/records/{id}/settle",
-            axum::routing::put(kash_server::records::update_settle),
-        )
-        .route(
-            "/records/finalize-pending",
-            axum::routing::post(kash_server::records::finalize_pending_record),
-        )
-        .route(
             "/categories",
             axum::routing::post(kash_server::categories::create_category)
                 .get(kash_server::categories::get_categories),
@@ -124,20 +116,28 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             axum::routing::post(kash_server::friends::remove_friend),
         )
         .route(
-            "/splits/create",
+            "/splits",
             axum::routing::post(kash_server::splits::create_split),
         )
         .route(
             "/splits/pending",
-            axum::routing::get(kash_server::splits::list_pending_splits),
+            axum::routing::get(kash_server::splits::list_pending_shares),
         )
         .route(
             "/splits/unsettled",
-            axum::routing::get(kash_server::splits::list_unsettled_splits_with_friend),
+            axum::routing::get(kash_server::splits::list_unsettled_shares),
         )
         .route(
-            "/splits/unsettled/{friend_id}/settle_all",
-            axum::routing::put(kash_server::splits::settle_all_unsettled_splits_with_friend),
+            "/splits/participants/{id}/finalize",
+            axum::routing::post(kash_server::splits::finalize_share),
+        )
+        .route(
+            "/splits/participants/{id}/settle",
+            axum::routing::put(kash_server::splits::settle_share),
+        )
+        .route(
+            "/splits/with/{friend_id}/settle-all",
+            axum::routing::put(kash_server::splits::settle_all_with_friend),
         )
         .layer(session_layer)
         .with_state(app_state.clone());
@@ -152,6 +152,7 @@ async fn root_handler(_session: tower_sessions::Session) -> axum::response::Html
     axum::response::Html("<h1>Test Server</h1>".to_string())
 }
 
+#[allow(dead_code)]
 pub async fn create_test_user(
     app_state: &AppState,
     username: &str,

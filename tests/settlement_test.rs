@@ -4,577 +4,338 @@ use axum::{
     body::Body,
     http::{Request, StatusCode},
 };
-use common::{create_test_user, login_user, setup_test_app};
-use serde_json::json;
+use kash_server::models::Category;
+use serde_json::{Value, json};
 use tower::util::ServiceExt;
-use uuid::Uuid;
 
-async fn create_split_scenario(
+struct SplitFixture {
+    app: common::TestApp,
+    creditor_cookie: String,
+    debtor_cookie: String,
+    third_cookie: String,
+    debtor_category: Category,
+    participant_id: String,
+}
+
+async fn create_category(
     app: &common::TestApp,
-    payer_id: &str,
-    debtor_id: &str,
-    payer_cookie: &str,
-) -> anyhow::Result<(String, String, String)> {
-    // Ensure payer and debtor are friends
-    let friend_request_payload = json!({ "friend_username": "debtor" });
-    let friend_request = Request::builder()
-        .method("POST")
-        .uri("/friends/request")
-        .header("content-type", "application/json")
-        .header("cookie", payer_cookie)
-        .body(Body::from(friend_request_payload.to_string()))?;
-    app.router.clone().oneshot(friend_request).await?;
-
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
-    let accept_payload = json!({ "friend_id": payer_id });
-    let accept_request = Request::builder()
-        .method("POST")
-        .uri("/friends/accept")
-        .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(accept_payload.to_string()))?;
-    app.router.clone().oneshot(accept_request).await?;
-
-    // Create category via API
-    let category_payload = json!({ "name": "Test Category", "is_income": false });
-    let category_request = Request::builder()
-        .method("POST")
+    cookie: &str,
+    name: &str,
+    is_income: bool,
+) -> Category {
+    let request = Request::builder()
         .uri("/categories")
-        .header("content-type", "application/json")
-        .header("cookie", payer_cookie)
-        .body(Body::from(category_payload.to_string()))?;
-    let category_response = app.router.clone().oneshot(category_request).await?;
-    let category_body_bytes =
-        axum::body::to_bytes(category_response.into_body(), usize::MAX).await?;
-    let category_body: serde_json::Value = serde_json::from_slice(&category_body_bytes)?;
-    let category_id = category_body["id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Expected category creation response to include id"))?;
-
-    // Create split via API
-    let split_payload = json!({
-        "idempotency_key": "settlement-test-idem-key",
-        "total_amount": 100.0,
-        "currency": "TWD",
-        "description": "Split Payment",
-        "date": "2026-02-16",
-        "category_id": category_id,
-        "splits": [
-            { "user_id": debtor_id, "amount": 50.0 }
-        ]
-    });
-
-    let split_request = Request::builder()
         .method("POST")
-        .uri("/splits/create")
+        .header("cookie", cookie)
         .header("content-type", "application/json")
-        .header("cookie", payer_cookie)
-        .body(Body::from(split_payload.to_string()))?;
-    let split_response = app.router.clone().oneshot(split_request).await?;
-    let split_body_bytes = axum::body::to_bytes(split_response.into_body(), usize::MAX).await?;
-    let split_body: serde_json::Value = serde_json::from_slice(&split_body_bytes)?;
-
-    let split_id = split_body["split_id"]
-        .as_str()
-        .ok_or_else(|| anyhow::anyhow!("Expected split creation response to include split_id"))?;
-    let payer_record_id = split_body["payer_record_id"].as_str().ok_or_else(|| {
-        anyhow::anyhow!("Expected split creation response to include payer_record_id")
-    })?;
-    let pending_record_ids = split_body["pending_record_ids"].as_array().ok_or_else(|| {
-        anyhow::anyhow!("Expected split creation response to include pending_record_ids")
-    })?;
-    let debtor_record_id = pending_record_ids
-        .first()
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| anyhow::anyhow!("Expected at least one pending_record_ids entry"))?;
-
-    Ok((
-        split_id.to_string(),
-        payer_record_id.to_string(),
-        debtor_record_id.to_string(),
-    ))
+        .body(Body::from(
+            json!({ "name": name, "is_income": is_income }).to_string(),
+        ))
+        .expect("build category request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute category request");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read category body");
+    serde_json::from_slice(&body).expect("parse category response")
 }
 
-async fn finalize_debtor_record(
-    app: &common::TestApp,
-    debtor_id: &str,
-    debtor_cookie: &str,
-    debtor_record_id: &str,
-) -> anyhow::Result<String> {
-    let category_id = Uuid::new_v4().to_string();
-    let conn = app.state.main_db.connect().expect("connect db");
-    conn.execute(
-        "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-        (
-            category_id.as_str(),
-            debtor_id,
-            "Debtor Private Category",
-            false,
-        ),
-    )
-    .await?;
-
-    let finalize_payload = json!({
-        "record_id": debtor_record_id,
-        "category_id": category_id
-    });
-
-    let finalize_request = Request::builder()
+async fn send_friend_request(app: &common::TestApp, cookie: &str, friend_username: &str) {
+    let request = Request::builder()
+        .uri("/friends/request")
         .method("POST")
-        .uri("/records/finalize-pending")
+        .header("cookie", cookie)
         .header("content-type", "application/json")
-        .header("cookie", debtor_cookie)
-        .body(Body::from(finalize_payload.to_string()))?;
-
-    let finalize_response = app.router.clone().oneshot(finalize_request).await?;
-    assert_eq!(finalize_response.status(), StatusCode::OK);
-
-    Ok(category_id)
+        .body(Body::from(
+            json!({ "friend_username": friend_username }).to_string(),
+        ))
+        .expect("build friend request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute friend request");
+    assert_eq!(response.status(), StatusCode::CREATED);
 }
 
-#[tokio::test]
-async fn test_settle_happy_path_owner() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-
-    let (_split_id, payer_record_id, _debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    // Payer (owner) settles their own record
-    let payload = json!({
-        "split_id": _split_id
-    });
-
+async fn accept_friend_request(app: &common::TestApp, cookie: &str, friend_id: &str) {
     let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", payer_record_id))
+        .uri("/friends/accept")
+        .method("POST")
+        .header("cookie", cookie)
         .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Owner should be able to settle their own record"
-    );
-
-    // Verify record is settled
-    let conn = app.state.main_db.connect().expect("connect db");
-    let mut rows = conn
-        .query(
-            "SELECT settle FROM records WHERE id = ?",
-            [payer_record_id.as_str()],
-        )
-        .await?;
-    let row = rows.next().await?.expect("Record should exist");
-    let settle: bool = row.get(0)?;
-    assert!(settle, "Record should be marked as settled");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_happy_path_debtor() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    // Debtor settles the record where they are debtor
-    let payload = json!({
-        "split_id": _split_id
-    });
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Debtor should be able to settle record"
-    );
-
-    // Verify record is settled
-    let conn = app.state.main_db.connect().expect("connect db");
-    let mut rows = conn
-        .query(
-            "SELECT settle FROM records WHERE id = ?",
-            [debtor_record_id.as_str()],
-        )
-        .await?;
-    let row = rows.next().await?.expect("Record should exist");
-    let settle: bool = row.get(0)?;
-    assert!(settle, "Record should be marked as settled");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_happy_path_creditor_can_settle_debtor_record() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    let payload = json!({});
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Creditor should be able to settle debtor record"
-    );
-
-    let conn = app.state.main_db.connect().expect("connect db");
-    let mut rows = conn
-        .query(
-            "SELECT settle FROM records WHERE id = ?",
-            [debtor_record_id.as_str()],
-        )
-        .await?;
-    let row = rows.next().await?.expect("Record should exist");
-    let settle: bool = row.get(0)?;
-    assert!(settle, "Record should be marked as settled");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_creditor_response_hides_debtor_category() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-    finalize_debtor_record(&app, &debtor_id, &debtor_cookie, &debtor_record_id).await?;
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(json!({}).to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
+        .body(Body::from(json!({ "friend_id": friend_id }).to_string()))
+        .expect("build accept request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute accept request");
     assert_eq!(response.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes)?;
-    assert!(body["category_id"].is_null());
-
-    Ok(())
 }
 
-#[tokio::test]
-async fn test_settle_owner_response_includes_category() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
+async fn create_split_fixture(suffix: &str) -> SplitFixture {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let creditor_name = format!("creditor_settle_{suffix}");
+    let debtor_name = format!("debtor_settle_{suffix}");
+    let third_name = format!("third_settle_{suffix}");
 
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
+    let creditor_id = common::create_test_user(&app.state, &creditor_name, "password123")
+        .await
+        .expect("create creditor");
+    let debtor_id = common::create_test_user(&app.state, &debtor_name, "password123")
+        .await
+        .expect("create debtor");
+    common::create_test_user(&app.state, &third_name, "password123")
+        .await
+        .expect("create third");
 
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
+    let creditor_cookie = common::login_user(&app.router, &creditor_name, "password123")
+        .await
+        .expect("creditor login");
+    let debtor_cookie = common::login_user(&app.router, &debtor_name, "password123")
+        .await
+        .expect("debtor login");
+    let third_cookie = common::login_user(&app.router, &third_name, "password123")
+        .await
+        .expect("third login");
 
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-    let category_id =
-        finalize_debtor_record(&app, &debtor_id, &debtor_cookie, &debtor_record_id).await?;
+    send_friend_request(&app, &creditor_cookie, &debtor_name).await;
+    accept_friend_request(&app, &debtor_cookie, &creditor_id).await;
+
+    let creditor_category = create_category(&app, &creditor_cookie, "Dining", false).await;
+    let debtor_category = create_category(&app, &debtor_cookie, "Shared", false).await;
 
     let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
+        .uri("/splits")
+        .method("POST")
+        .header("cookie", &creditor_cookie)
         .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(json!({}).to_string()))?;
+        .body(Body::from(
+            json!({
+                "idempotency_key": format!("settlement-{suffix}"),
+                "total_amount": 100.0,
+                "currency": "TWD",
+                "description": "Dinner",
+                "date": "2026-02-16",
+                "category_id": creditor_category.id,
+                "splits": [{ "user_id": debtor_id, "amount": 50.0 }]
+            })
+            .to_string(),
+        ))
+        .expect("build split request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute split request");
+    assert_eq!(response.status(), StatusCode::CREATED);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read split body");
+    let split: Value = serde_json::from_slice(&body).expect("parse split response");
+    let participant_id = split["participants"][0]["id"]
+        .as_str()
+        .expect("participant id")
+        .to_string();
 
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(response.status(), StatusCode::OK);
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes)?;
-    assert_eq!(body["category_id"].as_str(), Some(category_id.as_str()));
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_happy_path_creditor_sees_debtor_settled() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    let payload = json!({
-        "split_id": _split_id
-    });
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::OK,
-        "Debtor should be able to settle their own record"
-    );
-
-    let conn = app.state.main_db.connect().expect("connect db");
-    let mut rows = conn
-        .query(
-            "SELECT settle FROM records WHERE id = ?",
-            [debtor_record_id.as_str()],
-        )
-        .await?;
-    let row = rows.next().await?.expect("Record should exist");
-    let settle: bool = row.get(0)?;
-    assert!(settle, "Debtor's record should be marked as settled");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_unauthorized_third_party() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-    let _third_party_id = create_test_user(&app.state, "thirdparty", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let third_party_cookie = login_user(&app.router, "thirdparty", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    let payload = json!({
-        "split_id": _split_id
-    });
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &third_party_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::NOT_FOUND,
-        "Third party should not be able to see or settle record (404 not 403 to avoid leaking existence)"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_idempotent() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-
-    let (_split_id, payer_record_id, _debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    let payload = json!({
-        "split_id": _split_id
-    });
-
-    // First settle
-    let request1 = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", payer_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response1 = app.router.clone().oneshot(request1).await?;
-    assert_eq!(response1.status(), StatusCode::OK);
-
-    // Second settle (idempotent)
-    let request2 = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", payer_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response2 = app.router.clone().oneshot(request2).await?;
-    assert_eq!(
-        response2.status(),
-        StatusCode::OK,
-        "Settling already-settled record should succeed (idempotent)"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_record_not_found() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let _payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-
-    let non_existent_record_id = Uuid::new_v4().to_string();
-    let payload = json!({
-        "split_id": Uuid::new_v4().to_string()
-    });
-
-    let request = Request::builder()
-        .method("PUT")
-        .uri(format!("/records/{}/settle", non_existent_record_id))
-        .header("content-type", "application/json")
-        .header("cookie", &payer_cookie)
-        .body(Body::from(payload.to_string()))?;
-
-    let response = app.router.clone().oneshot(request).await?;
-    assert_eq!(
-        response.status(),
-        StatusCode::NOT_FOUND,
-        "Should return 404 for non-existent record"
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_settle_filters_out_settled_records() -> anyhow::Result<()> {
-    let app = setup_test_app().await?;
-
-    let payer_id = create_test_user(&app.state, "payer", "password").await?;
-    let debtor_id = create_test_user(&app.state, "debtor", "password").await?;
-
-    let payer_cookie = login_user(&app.router, "payer", "password").await?;
-    let debtor_cookie = login_user(&app.router, "debtor", "password").await?;
-
-    let (_split_id, _payer_record_id, debtor_record_id) =
-        create_split_scenario(&app, &payer_id, &debtor_id, &payer_cookie).await?;
-
-    let category_id = Uuid::new_v4().to_string();
-    {
-        let conn = app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            (
-                category_id.as_str(),
-                debtor_id.as_str(),
-                "Debtor Category",
-                false,
-            ),
-        )
-        .await?;
+    SplitFixture {
+        app,
+        creditor_cookie,
+        debtor_cookie,
+        third_cookie,
+        debtor_category,
+        participant_id,
     }
+}
 
-    let finalize_payload = json!({
-        "record_id": debtor_record_id,
-        "category_id": category_id
-    });
-
-    let finalize_request = Request::builder()
-        .method("POST")
-        .uri("/records/finalize-pending")
-        .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(finalize_payload.to_string()))?;
-
-    app.router.clone().oneshot(finalize_request).await?;
-
-    // Query unsettled records (settle=false)
-    let query_request = Request::builder()
-        .method("GET")
-        .uri("/records?settle=false")
-        .header("cookie", &debtor_cookie)
-        .body(Body::empty())?;
-
-    let response = app.router.clone().oneshot(query_request).await?;
-    let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
-    let body: serde_json::Value = serde_json::from_slice(&body_bytes)?;
-    let records = body["records"]
-        .as_array()
-        .expect("Should have records array");
-
-    // Should see 1 unsettled record
-    assert_eq!(records.len(), 1, "Should see 1 unsettled record");
-
-    // Now settle the record
-    let settle_payload = json!({
-        "split_id": _split_id
-    });
-
-    let settle_request = Request::builder()
+async fn settle(
+    app: &common::TestApp,
+    cookie: &str,
+    participant_id: &str,
+) -> (StatusCode, Value, String) {
+    let request = Request::builder()
+        .uri(format!("/splits/participants/{participant_id}/settle"))
         .method("PUT")
-        .uri(format!("/records/{}/settle", debtor_record_id))
+        .header("cookie", cookie)
+        .body(Body::empty())
+        .expect("build settle request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute settle request");
+    let status = response.status();
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read settle body");
+    let body_text = String::from_utf8(body.to_vec()).expect("utf8 body");
+    let body_json = serde_json::from_str(&body_text).unwrap_or(Value::Null);
+    (status, body_json, body_text)
+}
+
+async fn finalize(
+    app: &common::TestApp,
+    cookie: &str,
+    participant_id: &str,
+    category_id: &str,
+) -> Value {
+    let request = Request::builder()
+        .uri(format!("/splits/participants/{participant_id}/finalize"))
+        .method("POST")
+        .header("cookie", cookie)
         .header("content-type", "application/json")
-        .header("cookie", &debtor_cookie)
-        .body(Body::from(settle_payload.to_string()))?;
+        .body(Body::from(
+            json!({ "category_id": category_id }).to_string(),
+        ))
+        .expect("build finalize request");
+    let response = app
+        .router
+        .clone()
+        .oneshot(request)
+        .await
+        .expect("execute finalize request");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read finalize body");
+    serde_json::from_slice(&body).expect("parse finalize body")
+}
 
-    app.router.clone().oneshot(settle_request).await?;
+async fn record_count(app: &common::TestApp) -> i64 {
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query("SELECT COUNT(*) FROM records", ())
+        .await
+        .expect("count records");
+    let row = rows.next().await.expect("next row").expect("count row");
+    row.get(0).expect("count")
+}
 
-    // Query unsettled records again
-    let query_request2 = Request::builder()
-        .method("GET")
-        .uri("/records?settle=false")
-        .header("cookie", &debtor_cookie)
-        .body(Body::empty())?;
+async fn assert_participant_settled(app: &common::TestApp, participant_id: &str) {
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT settled FROM split_participants WHERE id = ?",
+            [participant_id],
+        )
+        .await
+        .expect("query participant");
+    let row = rows
+        .next()
+        .await
+        .expect("next row")
+        .expect("participant row");
+    let settled: bool = row.get(0).expect("settled");
+    assert!(settled);
+}
 
-    let response2 = app.router.clone().oneshot(query_request2).await?;
-    let body_bytes2 = axum::body::to_bytes(response2.into_body(), usize::MAX).await?;
-    let body2: serde_json::Value = serde_json::from_slice(&body_bytes2)?;
-    let records2 = body2["records"]
-        .as_array()
-        .expect("Should have records array");
+fn assert_settled_response(body: &Value, participant_id: &str, finalized: bool) {
+    assert_eq!(body["participant_id"], participant_id);
+    assert_eq!(body["settled"], true);
+    assert_eq!(body["finalized"], finalized);
+    assert!(body.get("category_id").is_none());
+}
 
-    // Should see 0 unsettled records now
-    assert_eq!(
-        records2.len(),
-        0,
-        "Settled record should be filtered out by settle=false"
-    );
+#[tokio::test]
+async fn debtor_settles_own_share() {
+    let fx = create_split_fixture("debtor").await;
 
-    Ok(())
+    let (status, body, _) = settle(&fx.app, &fx.debtor_cookie, &fx.participant_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+    assert_participant_settled(&fx.app, &fx.participant_id).await;
+}
+
+#[tokio::test]
+async fn creditor_settles_debtors_share() {
+    let fx = create_split_fixture("creditor").await;
+
+    let (status, body, _) = settle(&fx.app, &fx.creditor_cookie, &fx.participant_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+    assert_participant_settled(&fx.app, &fx.participant_id).await;
+}
+
+#[tokio::test]
+async fn settle_before_finalize_is_allowed() {
+    let fx = create_split_fixture("before_finalize").await;
+
+    let (status, body, _) = settle(&fx.app, &fx.debtor_cookie, &fx.participant_id).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+
+    let record = finalize(
+        &fx.app,
+        &fx.debtor_cookie,
+        &fx.participant_id,
+        &fx.debtor_category.id,
+    )
+    .await;
+    assert_eq!(record["amount"], -50.0);
+    assert_participant_settled(&fx.app, &fx.participant_id).await;
+}
+
+#[tokio::test]
+async fn settle_after_finalize_is_allowed() {
+    let fx = create_split_fixture("after_finalize").await;
+    finalize(
+        &fx.app,
+        &fx.debtor_cookie,
+        &fx.participant_id,
+        &fx.debtor_category.id,
+    )
+    .await;
+
+    let (status, body, _) = settle(&fx.app, &fx.debtor_cookie, &fx.participant_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, true);
+    assert_participant_settled(&fx.app, &fx.participant_id).await;
+}
+
+#[tokio::test]
+async fn double_settle_is_idempotent() {
+    let fx = create_split_fixture("idempotent").await;
+
+    let (status, body, _) = settle(&fx.app, &fx.debtor_cookie, &fx.participant_id).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+
+    let (status, body, _) = settle(&fx.app, &fx.debtor_cookie, &fx.participant_id).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+}
+
+#[tokio::test]
+async fn unauthorized_third_user_gets_404() {
+    let fx = create_split_fixture("unauthorized").await;
+
+    let (status, _, body) = settle(&fx.app, &fx.third_cookie, &fx.participant_id).await;
+
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body, "Share not found");
+}
+
+#[tokio::test]
+async fn settling_does_not_change_records() {
+    let fx = create_split_fixture("records_unchanged").await;
+    let before = record_count(&fx.app).await;
+
+    let (status, body, _) = settle(&fx.app, &fx.creditor_cookie, &fx.participant_id).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_settled_response(&body, &fx.participant_id, false);
+    assert_eq!(record_count(&fx.app).await, before);
 }

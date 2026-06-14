@@ -1,7 +1,5 @@
 mod common;
 
-use std::sync::Arc;
-
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -10,331 +8,416 @@ use axum::{
 use serde_json::{Value, json};
 use tower::util::ServiceExt;
 
-fn parse_body_as_json_or_string(bytes: &[u8]) -> Value {
-    match serde_json::from_slice::<Value>(bytes) {
-        Ok(value) => value,
-        Err(_) => Value::String(String::from_utf8(bytes.to_vec()).expect("utf8 body")),
-    }
+fn parse_body(bytes: &[u8]) -> Value {
+    serde_json::from_slice(bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8 body")))
 }
 
-async fn json_request(
+async fn request(
     router: Router,
     method: &str,
-    uri: &str,
-    cookie: &str,
-    payload: Value,
+    uri: String,
+    cookie: Option<&str>,
+    payload: Option<Value>,
 ) -> (StatusCode, Value) {
-    let request = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("cookie", cookie)
-        .header("content-type", "application/json")
-        .body(Body::from(payload.to_string()))
-        .expect("build json request");
+    let mut builder = Request::builder().method(method).uri(uri);
+    if let Some(cookie) = cookie {
+        builder = builder.header("cookie", cookie);
+    }
+    let body = if let Some(payload) = payload {
+        builder = builder.header("content-type", "application/json");
+        Body::from(payload.to_string())
+    } else {
+        Body::empty()
+    };
 
-    let response = router.oneshot(request).await.expect("execute request");
-    let status = response.status();
-    let body = to_bytes(response.into_body(), usize::MAX)
+    let response = router
+        .oneshot(builder.body(body).expect("build request"))
         .await
-        .expect("read response body");
-    let json = parse_body_as_json_or_string(&body);
-    (status, json)
+        .expect("execute request");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("read body");
+    (status, parse_body(&bytes))
+}
+
+async fn register_and_login(app: &common::TestApp, username: &str) -> (String, String) {
+    let (status, body) = request(
+        app.router.clone(),
+        "POST",
+        "/auth/register".to_string(),
+        None,
+        Some(json!({ "username": username, "password": "password123" })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let user_id = body["id"].as_str().expect("registered user id").to_string();
+    let cookie = common::login_user(&app.router, username, "password123")
+        .await
+        .expect("login user");
+    (user_id, cookie)
 }
 
 async fn create_category(app: &common::TestApp, cookie: &str, name: &str) -> String {
-    let (status, body) = json_request(
+    let (status, body) = request(
         app.router.clone(),
         "POST",
-        "/categories",
-        cookie,
-        json!({ "name": name, "is_income": false }),
+        "/categories".to_string(),
+        Some(cookie),
+        Some(json!({ "name": name, "is_income": false })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-    body["id"].as_str().expect("category id string").to_string()
+    body["id"].as_str().expect("category id").to_string()
 }
 
-async fn send_friend_request(app: &common::TestApp, cookie: &str, friend_username: &str) {
-    let (status, _) = json_request(
+async fn make_friends(
+    app: &common::TestApp,
+    requester_cookie: &str,
+    accepter_cookie: &str,
+    requester_id: &str,
+    accepter_username: &str,
+) {
+    let (status, _) = request(
         app.router.clone(),
         "POST",
-        "/friends/request",
-        cookie,
-        json!({ "friend_username": friend_username }),
+        "/friends/request".to_string(),
+        Some(requester_cookie),
+        Some(json!({ "friend_username": accepter_username })),
     )
     .await;
     assert_eq!(status, StatusCode::CREATED);
-}
 
-async fn accept_friend_request(app: &common::TestApp, cookie: &str, friend_id: &str) {
-    let (status, _) = json_request(
+    let (status, _) = request(
         app.router.clone(),
         "POST",
-        "/friends/accept",
-        cookie,
-        json!({ "friend_id": friend_id }),
+        "/friends/accept".to_string(),
+        Some(accepter_cookie),
+        Some(json!({ "friend_id": requester_id })),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
 }
 
-#[tokio::test]
-async fn test_concurrent_split_creation_idempotency_e2e_concurrency() {
+async fn split_fixture(
+    suffix: &str,
+) -> (
+    common::TestApp,
+    String,
+    String,
+    String,
+    String,
+    String,
+    String,
+) {
     let app = common::setup_test_app().await.expect("setup failed");
+    let alice_name = format!("alice_e2e_conc_{suffix}");
+    let bob_name = format!("bob_e2e_conc_{suffix}");
+    let (alice_id, alice_cookie) = register_and_login(&app, &alice_name).await;
+    let (bob_id, bob_cookie) = register_and_login(&app, &bob_name).await;
+    make_friends(&app, &alice_cookie, &bob_cookie, &alice_id, &bob_name).await;
+    let alice_category_id = create_category(&app, &alice_cookie, "Dining conc").await;
+    let bob_category_id = create_category(&app, &bob_cookie, "Shared conc").await;
+    (
+        app,
+        alice_id,
+        bob_id,
+        alice_cookie,
+        bob_cookie,
+        alice_category_id,
+        bob_category_id,
+    )
+}
 
-    let alice_id = common::create_test_user(&app.state, "alice", "password123")
-        .await
-        .expect("create alice");
-    let bob_id = common::create_test_user(&app.state, "bob", "password123")
-        .await
-        .expect("create bob");
+async fn create_one_split(
+    app: &common::TestApp,
+    alice_cookie: &str,
+    bob_id: &str,
+    alice_category_id: &str,
+    key: &str,
+) -> Value {
+    let (status, body) = request(
+        app.router.clone(),
+        "POST",
+        "/splits".to_string(),
+        Some(alice_cookie),
+        Some(json!({
+            "idempotency_key": key,
+            "total_amount": 100.0,
+            "currency": "TWD",
+            "description": "Concurrent split",
+            "date": "2026-02-16",
+            "category_id": alice_category_id,
+            "splits": [{ "user_id": bob_id, "amount": 35.0 }]
+        })),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    body
+}
 
-    let alice_cookie = common::login_user(&app.router, "alice", "password123")
-        .await
-        .expect("login alice");
-    let bob_cookie = common::login_user(&app.router, "bob", "password123")
-        .await
-        .expect("login bob");
+#[tokio::test]
+async fn concurrent_split_creation_with_same_idempotency_key_creates_one_split() {
+    let (app, alice_id, bob_id, alice_cookie, _bob_cookie, alice_category_id, _bob_category_id) =
+        split_fixture("create").await;
 
-    send_friend_request(&app, &alice_cookie, "bob").await;
-    accept_friend_request(&app, &bob_cookie, &alice_id).await;
-
-    let category_id = create_category(&app, &alice_cookie, "Dining").await;
-
-    let shared_payload = Arc::new(json!({
-        "idempotency_key": "e2e-concurrency-split-1",
+    let payload = json!({
+        "idempotency_key": "e2e-concurrency-create-same-key",
         "total_amount": 100.0,
         "currency": "TWD",
-        "description": "Concurrent split create",
+        "description": "Concurrent create",
         "date": "2026-02-16",
-        "category_id": category_id,
-        "splits": [
-            { "user_id": bob_id, "amount": 40.0 }
-        ]
-    }));
+        "category_id": alice_category_id,
+        "splits": [{ "user_id": bob_id, "amount": 40.0 }]
+    });
 
     let mut handles = Vec::new();
     for _ in 0..5 {
         let router = app.router.clone();
         let cookie = alice_cookie.clone();
-        let payload = shared_payload.clone();
+        let payload = payload.clone();
         handles.push(tokio::spawn(async move {
-            json_request(
+            request(
                 router,
                 "POST",
-                "/splits/create",
-                &cookie,
-                payload.as_ref().clone(),
+                "/splits".to_string(),
+                Some(&cookie),
+                Some(payload),
             )
             .await
         }));
     }
 
-    let mut statuses = Vec::new();
-    let mut created_bodies = Vec::new();
+    let mut created = Vec::new();
     for handle in handles {
-        let (status, body) = handle.await.expect("join split create task");
+        let (status, body) = handle.await.expect("join create task");
         if status == StatusCode::CREATED {
-            created_bodies.push(body.clone());
+            created.push(body);
+        } else {
+            assert!(
+                status == StatusCode::CONFLICT || status == StatusCode::TOO_EARLY,
+                "unexpected status {status}: {body:?}"
+            );
         }
-        statuses.push(status);
     }
-
-    let created_count = statuses
-        .iter()
-        .filter(|&&s| s == StatusCode::CREATED)
-        .count();
     assert!(
-        created_count >= 1,
-        "at least one concurrent request must succeed"
+        !created.is_empty(),
+        "one request should create or replay response"
     );
 
-    let split_id = created_bodies
-        .first()
-        .expect("at least one successful create")["split_id"]
-        .as_str()
-        .expect("split_id string")
-        .to_string();
-
-    {
-        let conn = app.state.main_db.connect().expect("connect db");
-        let mut rows = conn
-            .query(
-                "SELECT COUNT(*), MIN(split_id IS NOT NULL AND category_id IS NULL), MAX(split_id IS NOT NULL AND category_id IS NULL), MIN(amount), MAX(amount) FROM records WHERE split_id = ? AND owner_user_id = ?",
-                (split_id.as_str(), bob_id.as_str()),
-            )
-            .await
-            .expect("query bob pending record count");
-        let row = rows
-            .next()
-            .await
-            .expect("next bob count row")
-            .expect("bob count row exists");
-        let pending_count: i64 = row.get(0).expect("pending count");
-        let min_pending: Option<bool> = row.get(1).expect("min pending");
-        let max_pending: Option<bool> = row.get(2).expect("max pending");
-        let min_amount: Option<i64> = row.get(3).expect("min amount");
-        let max_amount: Option<i64> = row.get(4).expect("max amount");
-        assert_eq!(pending_count, 1);
-        assert_eq!(min_pending, Some(true));
-        assert_eq!(max_pending, Some(true));
-        assert_eq!(min_amount, Some(-4000));
-        assert_eq!(max_amount, Some(-4000));
+    let split_id = created[0]["split_id"].as_str().expect("split id");
+    for body in &created {
+        assert_eq!(body["split_id"], split_id);
+        assert_eq!(body["creditor_record_id"], created[0]["creditor_record_id"]);
+        assert_eq!(
+            body["participants"][0]["id"],
+            created[0]["participants"][0]["id"]
+        );
     }
 
-    if !created_bodies.is_empty() {
-        let canonical_split_id = created_bodies[0]["split_id"]
-            .as_str()
-            .expect("split id")
-            .to_string();
-        let canonical_payer_record_id = created_bodies[0]["payer_record_id"]
-            .as_str()
-            .expect("payer record id")
-            .to_string();
-        let canonical_pending = created_bodies[0]["pending_record_ids"]
-            .as_array()
-            .expect("pending array")
-            .first()
-            .expect("pending id exists")
-            .as_str()
-            .expect("pending id string")
-            .to_string();
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM splits WHERE creditor_user_id = ?",
+            [alice_id.as_str()],
+        )
+        .await
+        .expect("count splits");
+    let split_count: i64 = rows
+        .next()
+        .await
+        .expect("next split count")
+        .expect("split count row")
+        .get(0)
+        .expect("split count");
+    assert_eq!(split_count, 1);
 
-        for body in &created_bodies {
-            assert_eq!(body["split_id"], canonical_split_id);
-            assert_eq!(body["payer_record_id"], canonical_payer_record_id);
-            assert_eq!(body["pending_record_ids"][0], canonical_pending);
-        }
-    }
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*), MIN(settled), MAX(settled), MIN(finalized_record_id IS NULL), MAX(finalized_record_id IS NULL), MIN(amount), MAX(amount) FROM split_participants WHERE split_id = ?",
+            [split_id],
+        )
+        .await
+        .expect("query participant count");
+    let row = rows
+        .next()
+        .await
+        .expect("next participant count")
+        .expect("row");
+    assert_eq!(row.get::<i64>(0).expect("participant count"), 1);
+    assert!(!row.get::<bool>(1).expect("min settled"));
+    assert!(!row.get::<bool>(2).expect("max settled"));
+    assert!(row.get::<bool>(3).expect("min unfinalized"));
+    assert!(row.get::<bool>(4).expect("max unfinalized"));
+    assert_eq!(row.get::<i64>(5).expect("min amount"), 4000);
+    assert_eq!(row.get::<i64>(6).expect("max amount"), 4000);
 }
 
 #[tokio::test]
-async fn test_concurrent_finalization_race_safety_e2e_concurrency() {
-    let app = common::setup_test_app().await.expect("setup failed");
-
-    let alice_id = common::create_test_user(&app.state, "alice", "password123")
-        .await
-        .expect("create alice");
-    let bob_id = common::create_test_user(&app.state, "bob", "password123")
-        .await
-        .expect("create bob");
-
-    let alice_cookie = common::login_user(&app.router, "alice", "password123")
-        .await
-        .expect("login alice");
-    let bob_cookie = common::login_user(&app.router, "bob", "password123")
-        .await
-        .expect("login bob");
-
-    send_friend_request(&app, &alice_cookie, "bob").await;
-    accept_friend_request(&app, &bob_cookie, &alice_id).await;
-
-    let alice_category_id = create_category(&app, &alice_cookie, "Dining").await;
-    let bob_category_id = create_category(&app, &bob_cookie, "Shared").await;
-
-    let (split_status, split_body) = json_request(
-        app.router.clone(),
-        "POST",
-        "/splits/create",
+async fn concurrent_finalize_same_participant_creates_one_debtor_record() {
+    let (app, _alice_id, bob_id, alice_cookie, bob_cookie, alice_category_id, bob_category_id) =
+        split_fixture("finalize").await;
+    let split = create_one_split(
+        &app,
         &alice_cookie,
-        json!({
-            "idempotency_key": "e2e-concurrency-finalize-1",
-            "total_amount": 100.0,
-            "currency": "TWD",
-            "description": "Concurrent finalize split",
-            "date": "2026-02-16",
-            "category_id": alice_category_id,
-            "splits": [
-                { "user_id": bob_id, "amount": 35.0 }
-            ]
-        }),
+        &bob_id,
+        &alice_category_id,
+        "e2e-concurrency-finalize-same-participant",
     )
     .await;
-    assert_eq!(split_status, StatusCode::CREATED);
-
-    let pending_record_id = split_body["pending_record_ids"][0]
+    let participant_id = split["participants"][0]["id"]
         .as_str()
-        .expect("pending id")
+        .expect("participant id")
         .to_string();
 
-    let finalize_payload = Arc::new(json!({
-        "record_id": pending_record_id,
-        "category_id": bob_category_id,
-    }));
-
-    let mut handles = Vec::new();
-    for _ in 0..3 {
-        let router = app.router.clone();
-        let cookie = bob_cookie.clone();
-        let payload = finalize_payload.clone();
-        handles.push(tokio::spawn(async move {
-            json_request(
-                router,
-                "POST",
-                "/records/finalize-pending",
-                &cookie,
-                payload.as_ref().clone(),
-            )
-            .await
-        }));
-    }
-
-    let mut statuses = Vec::new();
-    for handle in handles {
-        let (status, _) = handle.await.expect("join finalize task");
-        statuses.push(status);
-    }
-
-    let ok_count = statuses.iter().filter(|&&s| s == StatusCode::OK).count();
-    let conflict_count = statuses
-        .iter()
-        .filter(|&&s| s == StatusCode::CONFLICT)
-        .count();
-    assert_eq!(ok_count, 1);
-    assert_eq!(conflict_count, 2);
-
-    let (post_race_status, post_race_body) = json_request(
+    let run = |router: Router, cookie: String, participant_id: String, category_id: String| async move {
+        request(
+            router,
+            "POST",
+            format!("/splits/participants/{participant_id}/finalize"),
+            Some(&cookie),
+            Some(json!({ "category_id": category_id })),
+        )
+        .await
+    };
+    let first = tokio::spawn(run(
         app.router.clone(),
-        "POST",
-        "/records/finalize-pending",
-        &bob_cookie,
-        json!({
-            "record_id": pending_record_id,
-            "category_id": bob_category_id,
-        }),
-    )
-    .await;
-    assert_eq!(post_race_status, StatusCode::CONFLICT);
-    assert!(
-        post_race_body
-            .as_str()
-            .expect("post-race conflict body string")
-            .contains("finalized")
+        bob_cookie.clone(),
+        participant_id.clone(),
+        bob_category_id.clone(),
+    ));
+    let second = tokio::spawn(run(
+        app.router.clone(),
+        bob_cookie.clone(),
+        participant_id.clone(),
+        bob_category_id.clone(),
+    ));
+    let (first, second) = tokio::join!(first, second);
+    let results = [
+        first.expect("join first finalize"),
+        second.expect("join second finalize"),
+    ];
+    assert_eq!(
+        results
+            .iter()
+            .filter(|(status, _)| *status == StatusCode::OK)
+            .count(),
+        1
+    );
+    assert_eq!(
+        results
+            .iter()
+            .filter(|(status, _)| *status == StatusCode::CONFLICT)
+            .count(),
+        1
     );
 
-    {
-        let conn = app.state.main_db.connect().expect("connect db");
-        let mut rows = conn
-            .query(
-                "SELECT (split_id IS NOT NULL AND category_id IS NULL), category_id, amount, owner_user_id, creditor_user_id FROM records WHERE id = ?",
-                [pending_record_id.as_str()],
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT COUNT(*) FROM records WHERE owner_user_id = ?",
+            [bob_id.as_str()],
+        )
+        .await
+        .expect("count debtor records");
+    assert_eq!(
+        rows.next()
+            .await
+            .expect("next debtor count")
+            .expect("debtor count")
+            .get::<i64>(0)
+            .expect("debtor record count"),
+        1
+    );
+
+    let mut rows = conn
+        .query(
+            "SELECT finalized_record_id IS NOT NULL FROM split_participants WHERE id = ?",
+            [participant_id.as_str()],
+        )
+        .await
+        .expect("query participant finalized");
+    assert!(
+        rows.next()
+            .await
+            .expect("next finalized")
+            .expect("finalized row")
+            .get::<bool>(0)
+            .expect("finalized bool")
+    );
+}
+
+#[tokio::test]
+async fn concurrent_settle_same_participant_is_idempotent() {
+    let (app, _alice_id, bob_id, alice_cookie, bob_cookie, alice_category_id, _bob_category_id) =
+        split_fixture("settle").await;
+    let split = create_one_split(
+        &app,
+        &alice_cookie,
+        &bob_id,
+        &alice_category_id,
+        "e2e-concurrency-settle-same-participant",
+    )
+    .await;
+    let participant_id = split["participants"][0]["id"]
+        .as_str()
+        .expect("participant id")
+        .to_string();
+
+    let first = tokio::spawn({
+        let router = app.router.clone();
+        let cookie = bob_cookie.clone();
+        let participant_id = participant_id.clone();
+        async move {
+            request(
+                router,
+                "PUT",
+                format!("/splits/participants/{participant_id}/settle"),
+                Some(&cookie),
+                None,
             )
             .await
-            .expect("query finalized row");
-        let row = rows
-            .next()
+        }
+    });
+    let second = tokio::spawn({
+        let router = app.router.clone();
+        let cookie = alice_cookie.clone();
+        let participant_id = participant_id.clone();
+        async move {
+            request(
+                router,
+                "PUT",
+                format!("/splits/participants/{participant_id}/settle"),
+                Some(&cookie),
+                None,
+            )
             .await
-            .expect("next finalized row")
-            .expect("finalized row exists");
-        let pending: bool = row.get(0).expect("pending");
-        let category_id: Option<String> = row.get(1).expect("category id");
-        let amount: i64 = row.get(2).expect("amount");
-        let debtor_user_id: Option<String> = row.get(3).expect("debtor id");
-        let creditor_user_id: Option<String> = row.get(4).expect("creditor id");
-        assert!(!pending);
-        assert_eq!(category_id, Some(bob_category_id));
-        assert_eq!(amount, -3500);
-        assert_eq!(debtor_user_id, Some(bob_id));
-        assert_eq!(creditor_user_id, Some(alice_id));
+        }
+    });
+    let (first, second) = tokio::join!(first, second);
+    for (status, body) in [
+        first.expect("join first settle"),
+        second.expect("join second settle"),
+    ] {
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["participant_id"], participant_id);
+        assert_eq!(body["settled"], true);
     }
+
+    let conn = app.state.main_db.connect().expect("connect db");
+    let mut rows = conn
+        .query(
+            "SELECT settled, COUNT(*) FROM split_participants WHERE id = ?",
+            [participant_id.as_str()],
+        )
+        .await
+        .expect("query settled participant");
+    let row = rows
+        .next()
+        .await
+        .expect("next settled")
+        .expect("settled row");
+    assert!(row.get::<bool>(0).expect("settled"));
+    assert_eq!(row.get::<i64>(1).expect("participant rows"), 1);
 }

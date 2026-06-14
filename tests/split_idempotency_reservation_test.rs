@@ -134,6 +134,14 @@ async fn insert_null_reservation(
     .expect("insert null reservation");
 }
 
+async fn count_table(app: &common::TestApp, table: &str) -> i64 {
+    let conn = app.state.main_db.connect().expect("connect db");
+    let sql = format!("SELECT COUNT(*) FROM {table}");
+    let mut rows = conn.query(&sql, ()).await.expect("count query");
+    let row = rows.next().await.expect("next row").expect("row exists");
+    row.get(0).expect("count")
+}
+
 async fn count_records_for_user(app: &common::TestApp, user_id: &str) -> i64 {
     let conn = app.state.main_db.connect().expect("connect db");
     let mut rows = conn
@@ -161,7 +169,7 @@ async fn response_body_is_cached(app: &common::TestApp, user_id: &str, key: &str
 }
 
 #[tokio::test]
-async fn fresh_null_reservation_returns_conflict_without_creating_records() {
+async fn fresh_null_reservation_returns_conflict_without_creating_split_rows() {
     let (app, alice_id, bob_id, alice_cookie, category_id) =
         setup_split_fixture("fresh").await.expect("setup fixture");
     let key = "fresh-null-reservation-ir";
@@ -170,14 +178,17 @@ async fn fresh_null_reservation_returns_conflict_without_creating_records() {
     let (status, _) = json_request(
         &app,
         "POST",
-        "/splits/create",
+        "/splits",
         &alice_cookie,
         split_payload(key, &bob_id, &category_id),
     )
     .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(count_table(&app, "splits").await, 0);
+    assert_eq!(count_table(&app, "split_participants").await, 0);
     assert_eq!(count_records_for_user(&app, &alice_id).await, 0);
+    assert_eq!(count_records_for_user(&app, &bob_id).await, 0);
 }
 
 #[tokio::test]
@@ -193,16 +204,26 @@ async fn stale_null_reservation_is_replaced_and_create_succeeds() {
     )
     .await;
 
-    let (status, _) = json_request(
+    let (status, body) = json_request(
         &app,
         "POST",
-        "/splits/create",
+        "/splits",
         &alice_cookie,
         split_payload(key, &bob_id, &category_id),
     )
     .await;
+    let body: Value = serde_json::from_slice(&body).expect("parse split response");
 
     assert_eq!(status, StatusCode::CREATED);
+    assert!(body["split_id"].as_str().is_some());
+    assert!(body["creditor_record_id"].as_str().is_some());
+    assert_eq!(
+        body["participants"].as_array().expect("participants").len(),
+        1
+    );
+    assert_eq!(count_table(&app, "splits").await, 1);
+    assert_eq!(count_table(&app, "split_participants").await, 1);
     assert_eq!(count_records_for_user(&app, &alice_id).await, 1);
+    assert_eq!(count_records_for_user(&app, &bob_id).await, 0);
     assert!(response_body_is_cached(&app, &alice_id, key).await);
 }

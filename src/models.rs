@@ -178,6 +178,89 @@ pub struct CreateSplitPayload {
     pub splits: Vec<SplitParticipant>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ParticipantBrief {
+    pub id: String,
+    pub debtor_user_id: String,
+    pub amount: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SplitCreatedResponse {
+    pub split_id: String,
+    pub creditor_record_id: String,
+    pub participants: Vec<ParticipantBrief>,
+}
+
+#[derive(Deserialize)]
+pub struct FinalizeSharePayload {
+    pub category_id: String,
+}
+
+#[derive(Serialize)]
+pub struct ShareStatusResponse {
+    pub participant_id: String,
+    pub settled: bool,
+    pub finalized: bool,
+}
+
+#[derive(Deserialize)]
+pub struct PendingSharesQuery {
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub struct UnsettledSharesQuery {
+    pub friend_id: String,
+    pub limit: Option<u32>,
+    pub offset: Option<u32>,
+}
+
+#[derive(Serialize)]
+pub struct PendingShare {
+    pub participant_id: String,
+    pub split_id: String,
+    pub description: String,
+    pub date: String,
+    pub amount: f64,
+    pub currency: String,
+    pub creditor_user_id: String,
+    pub creditor_name: String,
+    pub settled: bool,
+}
+
+#[derive(Serialize)]
+pub struct UnsettledShare {
+    pub participant_id: String,
+    pub split_id: String,
+    pub description: String,
+    pub date: String,
+    pub amount: f64,
+    pub currency: String,
+    pub direction: String,
+    pub counterparty_user_id: String,
+    pub counterparty_name: String,
+    pub finalized: bool,
+    pub settled: bool,
+}
+
+#[derive(Serialize)]
+pub struct PendingShareListResponse {
+    pub shares: Vec<PendingShare>,
+    pub total_count: u32,
+    pub limit: u32,
+    pub offset: u32,
+}
+
+#[derive(Serialize)]
+pub struct UnsettledShareListResponse {
+    pub shares: Vec<UnsettledShare>,
+    pub total_count: u32,
+    pub limit: u32,
+    pub offset: u32,
+}
+
 #[derive(Deserialize)]
 pub struct PendingSplitsQuery {
     pub limit: Option<u32>,

@@ -1,12 +1,12 @@
 use axum::{Json, extract::State, http::StatusCode};
-use serde::{Deserialize, Serialize};
 use tower_sessions::Session;
 use uuid::Uuid;
 
 use crate::auth::get_current_user;
 use crate::errors::{db_error, db_error_with_context};
 use crate::friends::ordered_user_pair;
-use crate::models::{CreateSplitPayload, SplitParticipant};
+use crate::models::{CreateSplitPayload, ParticipantBrief, SplitCreatedResponse, SplitParticipant};
+use crate::money::{to_cents, to_decimal};
 use crate::splits::{calculate_split_amounts, validate_split_participants};
 use crate::validation::{
     validate_category_exists, validate_currency, validate_date, validate_string_length,
@@ -23,6 +23,7 @@ enum SplitRecordError {
     Transaction,
     Db,
     ReservationLost,
+    NotFriend,
 }
 
 impl From<TransactionError> for SplitRecordError {
@@ -31,18 +32,11 @@ impl From<TransactionError> for SplitRecordError {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CreateSplitResponse {
-    pub split_id: String,
-    pub payer_record_id: String,
-    pub pending_record_ids: Vec<String>,
-}
-
 pub async fn create_split(
     State(app_state): State<AppState>,
     session: Session,
     Json(payload): Json<CreateSplitPayload>,
-) -> Result<(StatusCode, Json<CreateSplitResponse>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<SplitCreatedResponse>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
     validate_split_create_payload(&payload, &current_user.id)?;
     validate_all_participants_are_friends(&app_state, &current_user.id, &payload.splits).await?;
@@ -62,10 +56,6 @@ pub async fn create_split(
     .format(&time::format_description::well_known::Rfc3339)
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    // Reserve the idempotency key before writing any records. This ensures that
-    // if the fanout partially succeeds and then fails, a client retry with the
-    // same key will see the reservation (response_body = NULL) and get a 500
-    // rather than re-running the fanout and creating duplicate records.
     let reservation_id = match reserve_idempotency_entry(
         &app_state,
         &payload.idempotency_key,
@@ -98,6 +88,7 @@ pub async fn create_split(
         &split_id,
         &payload,
         &reservation_id,
+        &now,
     )
     .await;
 
@@ -108,8 +99,6 @@ pub async fn create_split(
                 StatusCode::CONFLICT,
                 "A request with this idempotency key is already in progress".to_string(),
             ) {
-                // Fanout failed — delete the reservation so the client can retry
-                // cleanly with the same idempotency key.
                 let _ = delete_idempotency_reservation(&app_state, &reservation_id).await;
             }
             return Err(e);
@@ -122,7 +111,7 @@ pub async fn create_split(
 fn cached_split_response(
     cached: super::idempotency::CachedIdempotency,
     payload_hash: &str,
-) -> Result<(StatusCode, Json<CreateSplitResponse>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<SplitCreatedResponse>), (StatusCode, String)> {
     if cached.payload_hash != payload_hash {
         return Err((
             StatusCode::CONFLICT,
@@ -131,7 +120,7 @@ fn cached_split_response(
     }
 
     let response =
-        serde_json::from_str::<CreateSplitResponse>(&cached.response_body).map_err(|_| {
+        serde_json::from_str::<SplitCreatedResponse>(&cached.response_body).map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Failed to deserialize idempotency response".to_string(),
@@ -230,7 +219,8 @@ async fn create_split_records(
     split_id: &str,
     payload: &CreateSplitPayload,
     reservation_id: &str,
-) -> Result<CreateSplitResponse, (StatusCode, String)> {
+    created_at: &str,
+) -> Result<SplitCreatedResponse, (StatusCode, String)> {
     let calculated = calculate_split_amounts(
         payload.total_amount,
         payload.splits.clone(),
@@ -240,29 +230,31 @@ async fn create_split_records(
 
     validate_category_exists(&app_state.main_db, initiator_user_id, &payload.category_id).await?;
 
-    let payer_record_id = Uuid::new_v4().to_string();
+    let creditor_record_id = Uuid::new_v4().to_string();
     let initiator_share = calculated
         .iter()
         .find(|(user_id, _)| user_id == initiator_user_id)
         .map(|(_, amount)| *amount)
         .ok_or_else(|| db_error_with_context("split calculation missing initiator share"))?;
-    let payer_amount = if initiator_share == 0 {
-        0
-    } else {
-        -initiator_share.abs()
-    };
+    let creditor_amount = -initiator_share.abs();
 
-    // Pre-generate all pending record IDs before entering the transaction
-    let pending_record_ids: Vec<String> = calculated
+    let participants: Vec<(String, String, i64)> = calculated
         .iter()
         .filter(|(uid, _)| uid != initiator_user_id)
-        .map(|_| Uuid::new_v4().to_string())
+        .map(|(uid, amt)| (Uuid::new_v4().to_string(), uid.clone(), amt.abs()))
         .collect();
 
-    let response = CreateSplitResponse {
+    let response = SplitCreatedResponse {
         split_id: split_id.to_string(),
-        payer_record_id: payer_record_id.clone(),
-        pending_record_ids: pending_record_ids.clone(),
+        creditor_record_id: creditor_record_id.clone(),
+        participants: participants
+            .iter()
+            .map(|(id, debtor_user_id, amount)| ParticipantBrief {
+                id: id.clone(),
+                debtor_user_id: debtor_user_id.clone(),
+                amount: to_decimal(*amount),
+            })
+            .collect(),
     };
     let response_body = serde_json::to_string(&response).map_err(|e| {
         (
@@ -272,72 +264,94 @@ async fn create_split_records(
     })?;
 
     {
-        let pending_ids = pending_record_ids.clone();
         let description = payload.description.trim().to_string();
         let category_id = payload.category_id.trim().to_string();
         let currency = validate_currency(&payload.currency)?;
         let date = payload.date.trim().to_string();
-        let split_id_str = split_id.to_string();
+        let split_id = split_id.to_string();
         let initiator_id = initiator_user_id.to_string();
-        let payer_id = payer_record_id.clone();
-        let participants: Vec<(String, i64)> = calculated
-            .iter()
-            .filter(|(uid, _)| uid != initiator_user_id)
-            .map(|(uid, amt)| (uid.clone(), *amt))
-            .collect();
+        let total_amount = to_cents(payload.total_amount);
+        let created_at = created_at.to_string();
         let reservation_id = reservation_id.to_string();
 
         with_transaction(&app_state.main_db, |conn| {
-            let payer_id = payer_id.clone();
+            let creditor_record_id = creditor_record_id.clone();
             let description = description.clone();
             let category_id = category_id.clone();
             let currency = currency.clone();
             let date = date.clone();
-            let split_id_str = split_id_str.clone();
+            let split_id = split_id.clone();
             let initiator_id = initiator_id.clone();
             let participants = participants.clone();
-            let pending_ids = pending_ids.clone();
+            let created_at = created_at.clone();
             let reservation_id = reservation_id.clone();
             let response_body = response_body.clone();
 
             Box::pin(async move {
-                // Payer record
                 conn.execute(
-                    "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date, split_id, settle, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
-                        payer_id.as_str(),
+                        split_id.as_str(),
                         initiator_id.as_str(),
                         description.as_str(),
-                        payer_amount,
                         currency.as_str(),
-                        category_id.as_str(),
                         date.as_str(),
-                        split_id_str.as_str(),
-                        false,
-                        initiator_id.as_str(),
+                        total_amount,
+                        created_at.as_str(),
                     ),
                 )
                 .await
                 .map_err(|_| SplitRecordError::Db)?;
 
-                // Pending records for each participant
-                for ((participant_user_id, amount), pending_record_id) in
-                    participants.iter().zip(pending_ids.iter())
-                {
-                    let pending_amount = -(amount.abs());
+                conn.execute(
+                    "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        creditor_record_id.as_str(),
+                        initiator_id.as_str(),
+                        description.as_str(),
+                        creditor_amount,
+                        currency.as_str(),
+                        category_id.as_str(),
+                        date.as_str(),
+                    ),
+                )
+                .await
+                .map_err(|_| SplitRecordError::Db)?;
+
+                for (_, debtor_user_id, _) in participants.iter() {
+                    let (user_low_id, user_high_id) =
+                        ordered_user_pair(initiator_id.as_str(), debtor_user_id.as_str());
+                    let mut rows = conn
+                        .query(
+                            "SELECT COUNT(*) FROM friendship WHERE user_low_id = ? AND user_high_id = ? AND pending = 0",
+                            (user_low_id, user_high_id),
+                        )
+                        .await
+                        .map_err(|_| SplitRecordError::Db)?;
+                    let count: i64 = if let Some(row) =
+                        rows.next().await.map_err(|_| SplitRecordError::Db)?
+                    {
+                        row.get(0).map_err(|_| SplitRecordError::Db)?
+                    } else {
+                        0
+                    };
+                    drop(rows);
+
+                    if count == 0 {
+                        return Err(SplitRecordError::NotFriend);
+                    }
+                }
+
+                for (participant_id, debtor_user_id, amount) in participants.iter() {
                     conn.execute(
-                        "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date, split_id, settle, creditor_user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO split_participants (id, split_id, debtor_user_id, amount, settled, finalized_record_id) VALUES (?, ?, ?, ?, ?, ?)",
                         (
-                            pending_record_id.as_str(),
-                            participant_user_id.as_str(),
-                            description.as_str(),
-                            pending_amount,
-                            currency.as_str(),
-                            Option::<&str>::None,
-                            date.as_str(),
-                            split_id_str.as_str(),
+                            participant_id.as_str(),
+                            split_id.as_str(),
+                            debtor_user_id.as_str(),
+                            *amount,
                             false,
-                            initiator_id.as_str(),
+                            Option::<&str>::None,
                         ),
                     )
                     .await
@@ -368,6 +382,10 @@ async fn create_split_records(
             SplitRecordError::ReservationLost => (
                 StatusCode::CONFLICT,
                 "A request with this idempotency key is already in progress".to_string(),
+            ),
+            SplitRecordError::NotFriend => (
+                StatusCode::BAD_REQUEST,
+                "Participant is no longer an accepted friend".to_string(),
             ),
             SplitRecordError::Transaction | SplitRecordError::Db => {
                 db_error_with_context("failed to create split records")

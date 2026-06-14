@@ -96,11 +96,6 @@ async fn main() -> Result<()> {
             "/records/{id}",
             put(records::update_record).delete(records::delete_record),
         )
-        .route("/records/{id}/settle", put(records::update_settle))
-        .route(
-            "/records/finalize-pending",
-            post(records::finalize_pending_record),
-        )
         .route(
             "/categories",
             post(categories::create_category).get(categories::get_categories),
@@ -115,15 +110,20 @@ async fn main() -> Result<()> {
         .route("/friends/list", get(friends::list_friends))
         .route("/friends/accept", post(friends::accept_friend))
         .route("/friends/remove", post(friends::remove_friend))
-        .route("/splits/create", post(splits::create_split))
-        .route("/splits/pending", get(splits::list_pending_splits))
+        .route("/splits", post(splits::create_split))
+        .route("/splits/pending", get(splits::list_pending_shares))
+        .route("/splits/unsettled", get(splits::list_unsettled_shares))
         .route(
-            "/splits/unsettled",
-            get(splits::list_unsettled_splits_with_friend),
+            "/splits/participants/{id}/finalize",
+            post(splits::finalize_share),
         )
         .route(
-            "/splits/unsettled/{friend_id}/settle_all",
-            put(splits::settle_all_unsettled_splits_with_friend),
+            "/splits/participants/{id}/settle",
+            put(splits::settle_share),
+        )
+        .route(
+            "/splits/with/{friend_id}/settle-all",
+            put(splits::settle_all_with_friend),
         )
         .layer(cors)
         .layer(session_layer)

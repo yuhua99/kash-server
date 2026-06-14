@@ -1,4 +1,3 @@
-use kash_server::constants::*;
 use kash_server::models::*;
 #[test]
 fn serde_send_friend_request_payload() {
@@ -100,35 +99,21 @@ fn serde_create_split_payload() {
 }
 
 #[test]
-fn serde_finalize_pending_payload() {
-    let json = r#"{"record_id":"rec-001","category_id":"cat-misc"}"#;
-    let payload: FinalizePendingPayload = serde_json::from_str(json).unwrap();
-    assert_eq!(payload.record_id, "rec-001");
-    assert_eq!(payload.category_id, "cat-misc");
-}
-
-#[test]
-fn serde_update_settle_payload() {
-    let json = r#"{}"#;
-    let _payload: UpdateSettlePayload = serde_json::from_str(json).unwrap();
-}
-
-#[test]
-fn serde_split_record_roundtrip() {
-    let record = SplitRecord {
-        id: "split-001".to_string(),
-        payer_id: "user-123".to_string(),
-        total_amount: 150.0,
-        description: "Lunch split".to_string(),
-        date: "2025-02-16".to_string(),
-        status: SPLIT_STATUS_INITIATED.to_string(),
-        created_at: "2025-02-16T10:00:00".to_string(),
-        updated_at: "2025-02-16T10:00:00".to_string(),
+fn serde_split_created_response_roundtrip() {
+    let response = SplitCreatedResponse {
+        split_id: "split-001".to_string(),
+        creditor_record_id: "record-001".to_string(),
+        participants: vec![ParticipantBrief {
+            id: "participant-001".to_string(),
+            debtor_user_id: "user-123".to_string(),
+            amount: 50.0,
+        }],
     };
-    let json = serde_json::to_string(&record).unwrap();
-    let deserialized: SplitRecord = serde_json::from_str(&json).unwrap();
-    assert_eq!(deserialized.id, "split-001");
-    assert_eq!(deserialized.payer_id, "user-123");
-    assert_eq!(deserialized.total_amount, 150.0);
-    assert_eq!(deserialized.status, SPLIT_STATUS_INITIATED);
+    let json = serde_json::to_string(&response).unwrap();
+    let deserialized: SplitCreatedResponse = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.split_id, "split-001");
+    assert_eq!(deserialized.creditor_record_id, "record-001");
+    assert_eq!(deserialized.participants.len(), 1);
+    assert_eq!(deserialized.participants[0].debtor_user_id, "user-123");
+    assert_eq!(deserialized.participants[0].amount, 50.0);
 }

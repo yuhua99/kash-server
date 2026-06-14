@@ -1,462 +1,169 @@
 mod common;
 
-use axum::http::StatusCode;
-use common::{auth_request, create_test_user, login_user, setup_test_app};
+use axum::{
+    body::Body,
+    http::{Request, StatusCode},
+};
+use common::{TestApp, create_test_user, login_user, setup_test_app};
+use serde_json::{Value, json};
+use tower::util::ServiceExt;
+
+async fn json_request(
+    app: &TestApp,
+    method: &str,
+    uri: &str,
+    cookie: &str,
+    payload: Option<Value>,
+) -> anyhow::Result<(StatusCode, Value)> {
+    let mut builder = Request::builder()
+        .method(method)
+        .uri(uri)
+        .header("cookie", cookie);
+    let body = if let Some(payload) = payload {
+        builder = builder.header("content-type", "application/json");
+        Body::from(payload.to_string())
+    } else {
+        Body::empty()
+    };
+    let response = app.router.clone().oneshot(builder.body(body)?).await?;
+    let status = response.status();
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX).await?;
+    let body = serde_json::from_slice(&bytes)
+        .unwrap_or_else(|_| Value::String(String::from_utf8(bytes.to_vec()).expect("utf8")));
+    Ok((status, body))
+}
+
+async fn create_category(app: &TestApp, cookie: &str, name: &str) -> anyhow::Result<String> {
+    let (status, body) = json_request(
+        app,
+        "POST",
+        "/categories",
+        cookie,
+        Some(json!({ "name": name, "is_income": false })),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CREATED);
+    Ok(body["id"].as_str().expect("category id").to_string())
+}
+
+async fn create_record(
+    app: &TestApp,
+    cookie: &str,
+    category_id: &str,
+    name: &str,
+    amount: f64,
+    date: &str,
+) -> anyhow::Result<String> {
+    let (status, body) = json_request(
+        app,
+        "POST",
+        "/records",
+        cookie,
+        Some(json!({
+            "name": name,
+            "amount": amount,
+            "currency": "TWD",
+            "date": date,
+            "category_id": category_id
+        })),
+    )
+    .await?;
+    assert_eq!(status, StatusCode::CREATED);
+    Ok(body["id"].as_str().expect("record id").to_string())
+}
+
+async fn setup_user_with_category(username: &str) -> anyhow::Result<(TestApp, String, String)> {
+    let app = setup_test_app().await?;
+    create_test_user(&app.state, username, "pass").await?;
+    let cookie = login_user(&app.router, username, "pass").await?;
+    let category_id = create_category(&app, &cookie, "Food").await?;
+    Ok((app, cookie, category_id))
+}
 
 #[tokio::test]
-async fn test_records_filter_pending_only() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
+async fn test_records_filter_no_filters_returns_all_ordinary_records() -> anyhow::Result<()> {
+    let (app, cookie, category_id) = setup_user_with_category("filters_all").await?;
+    create_record(&app, &cookie, &category_id, "Lunch", 50.0, "2024-01-01").await?;
+    create_record(&app, &cookie, &category_id, "Dinner", 100.0, "2024-01-02").await?;
 
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records with different pending states
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        // Pending record
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                Option::<&str>::None,
-                "2024-01-01",
-                Some("split_rec1"),
-            ),
-        )
-        .await?;
-
-        // Non-pending record
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                "cat1",
-                "2024-01-02",
-                Option::<&str>::None,
-            ),
-        )
-        .await?;
-    }
-
-    // Query with pending=true filter
-    let (status, body) =
-        auth_request(&test_app.router, "GET", "/records?pending=true", &cookie).await?;
+    let (status, body) = json_request(&app, "GET", "/records", &cookie, None).await?;
     assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
-        .as_array()
-        .expect("should have records array");
-
-    // Should only return the pending record
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["id"], "rec1");
-    assert_eq!(records[0]["name"], "Lunch");
+    assert_eq!(body["records"].as_array().expect("records").len(), 2);
+    assert_eq!(body["total_count"], 2);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_records_filter_settle_only() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
+async fn test_records_filter_with_date_range() -> anyhow::Result<()> {
+    let (app, cookie, category_id) = setup_user_with_category("filters_date").await?;
+    create_record(&app, &cookie, &category_id, "Early", 50.0, "2024-01-01").await?;
+    let middle_id =
+        create_record(&app, &cookie, &category_id, "Middle", 75.0, "2024-01-05").await?;
+    let late_id = create_record(&app, &cookie, &category_id, "Late", 100.0, "2024-01-10").await?;
 
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records with different settle states
-    {
-        // Settled record
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                "cat1",
-                "2024-01-01",
-                true,
-            ),
-        )
-        .await?;
-
-        // Unsettled record
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, settle) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                "cat1",
-                "2024-01-02",
-                false,
-            ),
-        )
-        .await?;
-    }
-
-    // Query with settle=true filter
-    let (status, body) =
-        auth_request(&test_app.router, "GET", "/records?settle=true", &cookie).await?;
-    assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
-        .as_array()
-        .expect("should have records array");
-
-    // Should only return the settled record
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["id"], "rec1");
-    assert_eq!(records[0]["name"], "Lunch");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_records_filter_combined_pending_and_settle() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
-
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records with different combinations
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        // pending=true, settle=false
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                Option::<&str>::None,
-                "2024-01-01",
-                Some("split_rec1"),
-                false,
-            ),
-        )
-        .await?;
-
-        // pending=true, settle=true (both true)
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                Option::<&str>::None,
-                "2024-01-02",
-                Some("split_rec2"),
-                true,
-            ),
-        )
-        .await?;
-
-        // pending=false, settle=false
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec3",
-                user_id.as_str(),
-                "Breakfast",
-                -3000,
-                "cat1",
-                "2024-01-03",
-                Option::<&str>::None,
-                false,
-            ),
-        )
-        .await?;
-
-        // pending=false, settle=true
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec4",
-                user_id.as_str(),
-                "Snack",
-                -2000,
-                "cat1",
-                "2024-01-04",
-                Option::<&str>::None,
-                true,
-            ),
-        )
-        .await?;
-    }
-
-    // Query with both filters: pending=true AND settle=false
-    let (status, body) = auth_request(
-        &test_app.router,
+    let (status, body) = json_request(
+        &app,
         "GET",
-        "/records?pending=true&settle=false",
+        "/records?start_date=2024-01-05&end_date=2024-01-10",
         &cookie,
+        None,
     )
     .await?;
     assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
+    let ids: Vec<&str> = body["records"]
         .as_array()
-        .expect("should have records array");
-
-    // Should only return rec1 (pending=true AND settle=false)
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["id"], "rec1");
-    assert_eq!(records[0]["name"], "Lunch");
+        .expect("records")
+        .iter()
+        .filter_map(|record| record["id"].as_str())
+        .collect();
+    assert_eq!(ids, vec![late_id.as_str(), middle_id.as_str()]);
+    assert_eq!(body["total_count"], 2);
 
     Ok(())
 }
 
 #[tokio::test]
-async fn test_records_filter_backward_compatibility_no_filters() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
+async fn test_records_filter_limit_offset_and_total_count() -> anyhow::Result<()> {
+    let (app, cookie, category_id) = setup_user_with_category("filters_page").await?;
+    create_record(&app, &cookie, &category_id, "First", 10.0, "2024-01-01").await?;
+    let second_id =
+        create_record(&app, &cookie, &category_id, "Second", 20.0, "2024-01-02").await?;
+    create_record(&app, &cookie, &category_id, "Third", 30.0, "2024-01-03").await?;
 
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records with different states
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                Option::<&str>::None,
-                "2024-01-01",
-                Some("split_rec1"),
-                false,
-            ),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id, settle) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                "cat1",
-                "2024-01-02",
-                Option::<&str>::None,
-                true,
-            ),
-        )
-        .await?;
-    }
-
-    // Query without any filters - should return all records
-    let (status, body) = auth_request(&test_app.router, "GET", "/records", &cookie).await?;
-    assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
-        .as_array()
-        .expect("should have records array");
-
-    // Should return both records (no filtering)
-    assert_eq!(records.len(), 2);
-    assert_eq!(response["total_count"], 2);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_records_filter_with_date_filters() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
-
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records with different dates and pending states
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                Option::<&str>::None,
-                "2024-01-01",
-                Some("split_rec1"),
-            ),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                "cat1",
-                "2024-01-05",
-                Option::<&str>::None,
-            ),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec3",
-                user_id.as_str(),
-                "Breakfast",
-                -3000,
-                Option::<&str>::None,
-                "2024-01-10",
-                Some("split_rec3"),
-            ),
-        )
-        .await?;
-    }
-
-    // Query with both date and pending filters
-    let (status, body) = auth_request(
-        &test_app.router,
-        "GET",
-        "/records?start_date=2024-01-05&end_date=2024-01-10&pending=true",
-        &cookie,
-    )
-    .await?;
-    assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
-        .as_array()
-        .expect("should have records array");
-
-    // Should return only rec3 (in date range AND pending=true)
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["id"], "rec3");
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn test_records_filter_pending_false() -> anyhow::Result<()> {
-    let test_app = setup_test_app().await?;
-    let user_id = create_test_user(&test_app.state, "user1", "pass").await?;
-    let cookie = login_user(&test_app.router, "user1", "pass").await?;
-
-    // Create a category first
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO categories (id, owner_user_id, name, is_income) VALUES (?, ?, ?, ?)",
-            ("cat1", user_id.as_str(), "Food", false),
-        )
-        .await?;
-    }
-
-    // Insert test records
-    {
-        let conn = test_app.state.main_db.connect().expect("connect db");
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec1",
-                user_id.as_str(),
-                "Lunch",
-                -5000,
-                Option::<&str>::None,
-                "2024-01-01",
-                Some("split_rec1"),
-            ),
-        )
-        .await?;
-
-        conn.execute(
-            "INSERT INTO records (id, owner_user_id, name, amount, category_id, date, split_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                "rec2",
-                user_id.as_str(),
-                "Dinner",
-                -10000,
-                "cat1",
-                "2024-01-02",
-                Option::<&str>::None,
-            ),
-        )
-        .await?;
-    }
-
-    // Query with pending=false
     let (status, body) =
-        auth_request(&test_app.router, "GET", "/records?pending=false", &cookie).await?;
+        json_request(&app, "GET", "/records?limit=1&offset=1", &cookie, None).await?;
     assert_eq!(status, StatusCode::OK);
-
-    let response: serde_json::Value = serde_json::from_str(&body)?;
-    let records = response["records"]
-        .as_array()
-        .expect("should have records array");
-
-    // Should only return rec2 (pending=false)
+    let records = body["records"].as_array().expect("records");
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0]["id"], "rec2");
+    assert_eq!(records[0]["id"], second_id);
+    assert_eq!(body["total_count"], 3);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_records_filter_ordering_is_date_descending() -> anyhow::Result<()> {
+    let (app, cookie, category_id) = setup_user_with_category("filters_order").await?;
+    let oldest_id =
+        create_record(&app, &cookie, &category_id, "Oldest", 10.0, "2024-01-01").await?;
+    let newest_id =
+        create_record(&app, &cookie, &category_id, "Newest", 20.0, "2024-01-03").await?;
+    let middle_id =
+        create_record(&app, &cookie, &category_id, "Middle", 30.0, "2024-01-02").await?;
+
+    let (status, body) = json_request(&app, "GET", "/records", &cookie, None).await?;
+    assert_eq!(status, StatusCode::OK);
+    let ids: Vec<&str> = body["records"]
+        .as_array()
+        .expect("records")
+        .iter()
+        .filter_map(|record| record["id"].as_str())
+        .collect();
+    assert_eq!(
+        ids,
+        vec![newest_id.as_str(), middle_id.as_str(), oldest_id.as_str()]
+    );
 
     Ok(())
 }
