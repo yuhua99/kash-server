@@ -35,6 +35,30 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 "#;
 
+const CREATE_SPLITS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS splits (
+    id               TEXT    PRIMARY KEY,
+    creditor_user_id TEXT    NOT NULL REFERENCES users(id),
+    description      TEXT    NOT NULL,
+    currency         TEXT    NOT NULL,
+    date             TEXT    NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    total_amount     INTEGER NOT NULL CHECK (total_amount > 0),
+    created_at       TEXT    NOT NULL
+);
+"#;
+
+const CREATE_SPLIT_PARTICIPANTS_TABLE: &str = r#"
+CREATE TABLE IF NOT EXISTS split_participants (
+    id                  TEXT    PRIMARY KEY,
+    split_id            TEXT    NOT NULL REFERENCES splits(id) ON DELETE CASCADE,
+    debtor_user_id      TEXT    NOT NULL REFERENCES users(id),
+    amount              INTEGER NOT NULL CHECK (amount > 0),
+    settled             BOOLEAN NOT NULL DEFAULT 0 CHECK (settled IN (0, 1)),
+    finalized_record_id TEXT    UNIQUE REFERENCES records(id) ON DELETE SET NULL,
+    UNIQUE (split_id, debtor_user_id)
+);
+"#;
+
 const CREATE_RECORDS_OWNER_DATE_INDEX: &str = r#"
 CREATE INDEX IF NOT EXISTS idx_records_owner_date
 ON records(owner_user_id, date DESC, id DESC);
@@ -43,6 +67,20 @@ ON records(owner_user_id, date DESC, id DESC);
 const CREATE_CATEGORIES_OWNER_LOWER_NAME_INDEX: &str = r#"
 CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_owner_lower_name
 ON categories(owner_user_id, LOWER(name));
+"#;
+
+const CREATE_SPLIT_PARTICIPANTS_DEBTOR_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_split_participants_debtor
+ON split_participants(debtor_user_id, settled);
+"#;
+
+const CREATE_SPLIT_PARTICIPANTS_SPLIT_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_split_participants_split
+ON split_participants(split_id);
+"#;
+
+const CREATE_SPLITS_CREDITOR_INDEX: &str = r#"
+CREATE INDEX IF NOT EXISTS idx_splits_creditor ON splits(creditor_user_id);
 "#;
 
 const CREATE_FRIENDSHIP_TABLE: &str = r#"
@@ -171,9 +209,16 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     conn.execute(CREATE_USERS_TABLE, ()).await?;
     conn.execute(CREATE_RECORDS_TABLE, ()).await?;
     conn.execute(CREATE_CATEGORIES_TABLE, ()).await?;
+    conn.execute(CREATE_SPLITS_TABLE, ()).await?;
+    conn.execute(CREATE_SPLIT_PARTICIPANTS_TABLE, ()).await?;
     conn.execute(CREATE_RECORDS_OWNER_DATE_INDEX, ()).await?;
     conn.execute(CREATE_CATEGORIES_OWNER_LOWER_NAME_INDEX, ())
         .await?;
+    conn.execute(CREATE_SPLIT_PARTICIPANTS_DEBTOR_INDEX, ())
+        .await?;
+    conn.execute(CREATE_SPLIT_PARTICIPANTS_SPLIT_INDEX, ())
+        .await?;
+    conn.execute(CREATE_SPLITS_CREDITOR_INDEX, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_TABLE, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_NICKNAMES_TABLE, ()).await?;
     conn.execute(CREATE_FRIENDSHIP_LOW_INDEX, ()).await?;

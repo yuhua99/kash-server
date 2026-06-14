@@ -21,6 +21,8 @@ async fn a1_single_db_init_creates_all_required_tables() {
         "idempotency_keys",
         "records",
         "categories",
+        "splits",
+        "split_participants",
     ] {
         let mut rows = conn
             .query(
@@ -220,6 +222,97 @@ async fn a5_orphan_record_insert_is_rejected_by_foreign_key() {
     assert!(
         result.is_err(),
         "insert with nonexistent owner_user_id must violate the foreign key"
+    );
+}
+
+#[tokio::test]
+async fn a5_split_participants_foreign_keys_are_declared() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
+
+    let mut rows = conn
+        .query(
+            "SELECT \"from\", \"table\" FROM pragma_foreign_key_list('split_participants')",
+            (),
+        )
+        .await
+        .expect("query split_participants foreign keys");
+
+    let mut foreign_keys = Vec::new();
+    while let Some(row) = rows.next().await.expect("next fk row") {
+        let from: String = row.get(0).expect("from column");
+        let table: String = row.get(1).expect("table column");
+        foreign_keys.push((from, table));
+    }
+
+    assert!(
+        foreign_keys.contains(&("split_id".to_string(), "splits".to_string())),
+        "split_participants.split_id must reference splits(id)"
+    );
+    assert!(
+        foreign_keys.contains(&("debtor_user_id".to_string(), "users".to_string())),
+        "split_participants.debtor_user_id must reference users(id)"
+    );
+    assert!(
+        foreign_keys.contains(&("finalized_record_id".to_string(), "records".to_string())),
+        "split_participants.finalized_record_id must reference records(id)"
+    );
+}
+
+#[tokio::test]
+async fn a5_split_participants_constraints_are_enforced_in_db() {
+    let app = common::setup_test_app().await.expect("setup failed");
+    let user_id = common::create_test_user(&app.state, "alice_split_a5", "password123")
+        .await
+        .expect("create user");
+    let conn = kash_server::database::db_conn(&app.state.main_db)
+        .await
+        .expect("connect db");
+
+    conn.execute(
+        "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            "split-a5",
+            user_id.as_str(),
+            "Dinner",
+            "TWD",
+            "2026-01-01",
+            100i64,
+            "2026-01-01T00:00:00Z",
+        ),
+    )
+    .await
+    .expect("insert split");
+
+    let bad_split_result = conn
+        .execute(
+            "INSERT INTO split_participants (id, split_id, debtor_user_id, amount) VALUES (?, ?, ?, ?)",
+            ("part-a5-bad", "no-such-split", user_id.as_str(), 100i64),
+        )
+        .await;
+    assert!(
+        bad_split_result.is_err(),
+        "insert with nonexistent split_id must violate the foreign key"
+    );
+
+    conn.execute(
+        "INSERT INTO split_participants (id, split_id, debtor_user_id, amount) VALUES (?, ?, ?, ?)",
+        ("part-a5-1", "split-a5", user_id.as_str(), 100i64),
+    )
+    .await
+    .expect("insert first participant");
+
+    let duplicate_result = conn
+        .execute(
+            "INSERT INTO split_participants (id, split_id, debtor_user_id, amount) VALUES (?, ?, ?, ?)",
+            ("part-a5-2", "split-a5", user_id.as_str(), 100i64),
+        )
+        .await;
+    assert!(
+        duplicate_result.is_err(),
+        "duplicate split_id and debtor_user_id must violate the unique constraint"
     );
 }
 
