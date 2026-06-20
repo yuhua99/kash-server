@@ -6,40 +6,41 @@ export function registerServiceWorker(): () => void {
   }
 
   const hadController = Boolean(navigator.serviceWorker.controller);
-  let reloading = false;
 
   function onControllerChange() {
-    if (reloading) {
-      return;
+    if (hadController) {
+      window.location.reload();
     }
-    reloading = true;
-    window.location.reload();
   }
 
-  if (hadController) {
-    navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+  navigator.serviceWorker.addEventListener("controllerchange", onControllerChange, { once: true });
+
+  let storedRegistration: ServiceWorkerRegistration | undefined;
+
+  function onUpdateFound() {
+    const installing = storedRegistration?.installing;
+    if (!installing) {
+      return;
+    }
+    installing.addEventListener("statechange", () => {
+      if (installing.state === "installed" && navigator.serviceWorker.controller) {
+        installing.postMessage({ type: "SKIP_WAITING" });
+      }
+    });
   }
 
   navigator.serviceWorker
     .register("/sw.js")
     .then((registration) => {
-      registration.addEventListener("updatefound", () => {
-        const installing = registration.installing;
-        if (!installing) {
-          return;
-        }
-        installing.addEventListener("statechange", () => {
-          if (installing.state === "installed" && navigator.serviceWorker.controller) {
-            installing.postMessage({ type: "SKIP_WAITING" });
-          }
-        });
-      });
+      storedRegistration = registration;
+      registration.addEventListener("updatefound", onUpdateFound);
     })
-    .catch(() => {});
+    .catch((err) => {
+      console.error("Service worker registration failed", err);
+    });
 
   return () => {
-    if (hadController) {
-      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
-    }
+    navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    storedRegistration?.removeEventListener("updatefound", onUpdateFound);
   };
 }
