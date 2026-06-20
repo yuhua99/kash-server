@@ -132,16 +132,6 @@
     text-transform: uppercase;
   }
 
-  h1 {
-    color: var(--text);
-    font-family: var(--font-display);
-    font-size: clamp(2.5rem, 10vw, 4rem);
-    font-weight: 900;
-    letter-spacing: -0.05em;
-    line-height: 0.9;
-    text-transform: uppercase;
-  }
-
   .field {
     display: grid;
     gap: var(--space-2);

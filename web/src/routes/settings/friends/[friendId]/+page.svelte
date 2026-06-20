@@ -163,14 +163,6 @@
     gap: var(--space-4);
   }
 
-  h1 {
-    font-family: var(--font-display);
-    font-size: clamp(1.75rem, 8vw, 3rem);
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    text-transform: uppercase;
-  }
-
   .nickname {
     display: grid;
     grid-template-columns: 1fr auto;

@@ -53,6 +53,14 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+h1 {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 9vw, 3.5rem);
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+}
+
 ::selection {
   background: var(--selection);
 }
@@ -60,6 +68,7 @@ body {
 main {
   width: min(100%, 720px);
   margin: 0 auto;
+  padding: var(--space-4);
 }
 
 input,

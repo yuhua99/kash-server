@@ -68,10 +68,6 @@
     padding-bottom: 64px;
   }
 
-  main {
-    padding: var(--space-4);
-  }
-
   .nav {
     position: fixed;
     inset-inline: 0;

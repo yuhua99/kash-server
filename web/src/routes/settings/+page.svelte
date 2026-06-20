@@ -118,14 +118,6 @@
     gap: var(--space-3);
   }
 
-  h1 {
-    font-family: var(--font-display);
-    font-size: clamp(2rem, 9vw, 3.5rem);
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    text-transform: uppercase;
-  }
-
   :global(.signout) {
     border-color: var(--danger);
     color: var(--danger);

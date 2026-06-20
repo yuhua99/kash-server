@@ -88,18 +88,4 @@
     gap: var(--space-3);
     margin-top: var(--space-4);
   }
-
-  label {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  input:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
 </style>

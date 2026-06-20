@@ -117,12 +117,4 @@
     display: grid;
     gap: var(--space-4);
   }
-
-  h1 {
-    font-family: var(--font-display);
-    font-size: clamp(2rem, 9vw, 3.5rem);
-    font-weight: 900;
-    letter-spacing: -0.04em;
-    text-transform: uppercase;
-  }
 </style>
