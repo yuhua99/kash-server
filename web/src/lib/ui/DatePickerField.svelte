@@ -132,6 +132,7 @@
   :global(.kash-dp-seg) {
     color: var(--text);
     padding: 0 1px;
+    font-variant-numeric: tabular-nums;
   }
 
   :global(.kash-dp-seg[data-placeholder]) {
@@ -146,6 +147,11 @@
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: 0.875rem;
+  }
+
+  :global(.kash-dp-trigger:not(:disabled):hover) {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   :global(.kash-dp-trigger:disabled) {
@@ -190,6 +196,11 @@
     color: var(--accent);
     font-family: var(--font-mono);
     font-size: 1rem;
+  }
+
+  :global(.kash-dp-nav:not(:disabled):hover) {
+    border-color: var(--accent);
+    color: var(--accent);
   }
 
   :global(.kash-dp-nav:disabled) {
@@ -237,13 +248,21 @@
     font-family: var(--font-mono);
     font-size: 0.75rem;
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  :global(.kash-dp-day:not([data-disabled]):not([data-unavailable]):hover) {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: var(--bg);
   }
 
   :global(.kash-dp-day[data-outside-month]) {
     color: var(--text-dim);
   }
 
-  :global(.kash-dp-day[data-disabled]) {
+  :global(.kash-dp-day[data-disabled]),
+  :global(.kash-dp-day[data-unavailable]) {
     color: var(--text-dim);
     cursor: not-allowed;
   }
