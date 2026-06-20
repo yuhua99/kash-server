@@ -3,7 +3,7 @@
   import { validateSearchTerm } from "$lib/validation";
   import SelectField from "$lib/ui/SelectField.svelte";
   import PeriodControls from "$lib/features/periods/PeriodControls.svelte";
-  import type { PeriodPreset } from "$lib/features/periods/presets";
+  import type { PeriodPreset } from "$lib/date";
   import type { CategoryFilterMode, SortMode } from "$lib/features/records/view";
 
   type Category = components["schemas"]["Category"];

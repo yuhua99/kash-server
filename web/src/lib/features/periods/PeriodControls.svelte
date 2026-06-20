@@ -24,12 +24,16 @@
   }
 
   function changeStart(iso: string) {
-    const range = periodFromPreset("custom", { start: iso, end });
+    const clampedEnd = iso > end ? iso : end;
+    const range = periodFromPreset("custom", { start: iso, end: clampedEnd });
+    if (range.start > range.end) range.start = range.end;
     onPeriodChange({ preset: "custom", start: range.start, end: range.end });
   }
 
   function changeEnd(iso: string) {
-    const range = periodFromPreset("custom", { start, end: iso });
+    const clampedStart = iso < start ? iso : start;
+    const range = periodFromPreset("custom", { start: clampedStart, end: iso });
+    if (range.start > range.end) range.start = range.end;
     onPeriodChange({ preset: "custom", start: range.start, end: range.end });
   }
 </script>
