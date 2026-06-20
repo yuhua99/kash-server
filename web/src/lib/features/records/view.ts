@@ -73,7 +73,7 @@ export function summarizeDailySpend(
       total +=
         record.currency === mainCurrency
           ? Math.abs(record.amount)
-          : (convertedSpendById.get(record.id) ?? 0);
+          : (convertedSpendById.get(record.id) ?? Math.abs(record.amount));
     }
     return total > 0 ? [{ currency: mainCurrency, amount: total }] : [];
   }
@@ -100,8 +100,9 @@ export function groupRecordsByDate(
     groups.set(record.date, bucket);
   }
 
+  const descending = mode === "date_desc" || mode === "amount_desc";
   const dates = [...groups.keys()].sort((a, b) =>
-    mode === "date_asc" ? (a < b ? -1 : a > b ? 1 : 0) : a < b ? 1 : a > b ? -1 : 0,
+    descending ? (a < b ? 1 : a > b ? -1 : 0) : a < b ? -1 : a > b ? 1 : 0,
   );
 
   return dates.map((date) => {

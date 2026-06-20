@@ -31,11 +31,9 @@
   let date = $state("");
   let error = $state("");
   let pending = $state(false);
-  let lastRecordId = $state<string | null>(null);
-
+  let previousOpen = $state(false);
   $effect(() => {
-    if (record && record.id !== lastRecordId) {
-      lastRecordId = record.id;
+    if (open && !previousOpen && record) {
       name = record.name;
       isIncome = record.amount > 0;
       amountInput = formatAmount(Math.abs(record.amount), $amountDisplayMode);
@@ -43,6 +41,7 @@
       date = record.date;
       error = "";
     }
+    previousOpen = open;
   });
 
   const categoryItems = $derived(

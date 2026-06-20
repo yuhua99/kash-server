@@ -50,6 +50,26 @@ describe("matchesRecordFilters", () => {
       matchesRecordFilters(expense, { normalizedSearch: "", categoryFilter: "category:salary" }),
     ).toBe(false);
   });
+
+  it("null category_id excluded by category filter", () => {
+    const r = rec({ id: "1", amount: -5, category_id: null });
+    expect(matchesRecordFilters(r, { normalizedSearch: "", categoryFilter: "category:food" })).toBe(
+      false,
+    );
+  });
+
+  it("combined search + category filter", () => {
+    const r = rec({ id: "1", name: "Lunch", amount: -30, category_id: "food" });
+    expect(
+      matchesRecordFilters(r, { normalizedSearch: "lun", categoryFilter: "category:food" }),
+    ).toBe(true);
+    expect(
+      matchesRecordFilters(r, { normalizedSearch: "dinner", categoryFilter: "category:food" }),
+    ).toBe(false);
+    expect(
+      matchesRecordFilters(r, { normalizedSearch: "lun", categoryFilter: "category:other" }),
+    ).toBe(false);
+  });
 });
 
 describe("compareRecords", () => {
@@ -72,6 +92,13 @@ describe("compareRecords", () => {
 
   it("falls back to raw amount when no conversion", () => {
     expect(compareRecords(a, b, "amount_desc", new Map()) > 0).toBe(true);
+  });
+
+  it("tie-breaks by signed amount when abs equal", () => {
+    const x = rec({ id: "x", amount: -50, date: "2024-01-01" });
+    const y = rec({ id: "y", amount: 50, date: "2024-01-01" });
+    expect(compareRecords(x, y, "amount_desc", new Map()) > 0).toBe(true);
+    expect(compareRecords(x, y, "amount_asc", new Map()) < 0).toBe(true);
   });
 });
 
@@ -112,5 +139,23 @@ describe("groupRecordsByDate", () => {
     const asc = groupRecordsByDate(records, "date_asc", new Map(), "USD");
     expect(asc.map((g) => g.date)).toEqual(["2024-01-01", "2024-01-02"]);
     expect(desc[0].spendSummaries).toEqual([{ currency: "USD", amount: 20 }]);
+  });
+
+  it("orders groups ascending for amount_asc", () => {
+    const records = [
+      rec({ id: "1", date: "2024-01-02", amount: -10, currency: "USD" }),
+      rec({ id: "2", date: "2024-01-01", amount: -20, currency: "USD" }),
+    ];
+    const groups = groupRecordsByDate(records, "amount_asc", new Map(), "USD");
+    expect(groups[0].date).toBe("2024-01-01");
+  });
+
+  it("orders groups descending for amount_desc", () => {
+    const records = [
+      rec({ id: "1", date: "2024-01-01", amount: -10, currency: "USD" }),
+      rec({ id: "2", date: "2024-01-02", amount: -20, currency: "USD" }),
+    ];
+    const groups = groupRecordsByDate(records, "amount_desc", new Map(), "USD");
+    expect(groups[0].date).toBe("2024-01-02");
   });
 });
