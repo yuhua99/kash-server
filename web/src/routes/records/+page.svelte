@@ -6,7 +6,7 @@
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
-  import { getFxRates } from "$lib/features/fx/api";
+  import { getFxRates } from "$lib/features/money/rates";
   import { buildRateLookup, convertAmountToMainCurrency } from "$lib/features/money/fx";
   import { deleteRecord } from "$lib/features/records/api";
   import { invalidateRecordsCache } from "$lib/features/records/cache";
@@ -84,11 +84,11 @@
     quotes.add(mainCurrency);
 
     try {
-      const response = await getFxRates({ from: start, to: end, quotes: [...quotes] });
+      const rates = await getFxRates({ from: start, to: end, quotes: [...quotes] });
       if (seq !== convertSeq) {
         return;
       }
-      const lookup = buildRateLookup(response.rates);
+      const lookup = buildRateLookup(rates);
       const byId = new Map<string, number>();
       const spendById = new Map<string, number>();
       for (const record of list) {

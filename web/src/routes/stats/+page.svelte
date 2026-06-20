@@ -4,7 +4,7 @@
   import { handleApiError } from "$lib/api/errors";
   import { periodFromPreset, type PeriodPreset } from "$lib/date";
   import { getCategoriesCached } from "$lib/features/categories/cache";
-  import { getFxRates } from "$lib/features/fx/api";
+  import { getFxRates } from "$lib/features/money/rates";
   import { buildRateLookup, convertAmountToMainCurrency } from "$lib/features/money/fx";
   import { getAllRecordsByDateRange } from "$lib/features/records/query";
   import PeriodControls from "$lib/features/periods/PeriodControls.svelte";
@@ -52,11 +52,11 @@
 
       const quotes = new Set(records.map((record) => record.currency));
       quotes.add(mainCurrency);
-      const response = await getFxRates({ from: start, to: end, quotes: [...quotes] });
+      const rates = await getFxRates({ from: start, to: end, quotes: [...quotes] });
       if (current !== seq) {
         return;
       }
-      const lookup = buildRateLookup(response.rates);
+      const lookup = buildRateLookup(rates);
       statsRecords = records.map((record) => ({
         ...record,
         amount: convertAmountToMainCurrency(record.amount, record.currency, mainCurrency, record.date, lookup),
