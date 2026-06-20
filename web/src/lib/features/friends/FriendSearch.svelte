@@ -37,6 +37,7 @@
     try {
       results = await searchUsers({ query: query.trim(), limit: 20 });
     } catch (err) {
+      results = [];
       const message = await handleApiError(err, "Unable to search users.");
       if (message) {
         toast.error(message);
