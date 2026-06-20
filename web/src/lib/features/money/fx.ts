@@ -19,7 +19,7 @@ export function convertAmountToMainCurrency(
   const toRate = rates.get(`${date}:${to}`);
 
   if (fromRate === undefined || toRate === undefined) {
-    throw new Error(`Missing FX rate for ${date}`);
+    throw new Error(`Exchange rate unavailable for ${date}`);
   }
 
   return amount * (toRate / fromRate);

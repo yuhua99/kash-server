@@ -27,7 +27,7 @@ describe("convertAmountToMainCurrency", () => {
     const rates = buildRateLookup([{ date: "2024-01-02", currency: "USD", rate: 2 }]);
 
     expect(() => convertAmountToMainCurrency(10, "USD", "TWD", "2024-01-02", rates)).toThrow(
-      "Missing FX rate for 2024-01-02",
+      "Exchange rate unavailable for 2024-01-02",
     );
   });
 });

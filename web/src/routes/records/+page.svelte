@@ -6,8 +6,7 @@
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
-  import { getFxRates } from "$lib/features/money/rates";
-  import { buildRateLookup, convertAmountToMainCurrency } from "$lib/features/money/fx";
+  import { convertRecords } from "$lib/features/money/conversion";
   import { getSettingsCached } from "$lib/features/settings/cache";
   import { deleteRecord } from "$lib/features/records/api";
   import { invalidateRecordsCache } from "$lib/features/records/cache";
@@ -73,47 +72,16 @@
 
   async function convert(list: RecordItem[]) {
     const seq = ++convertSeq;
-    if (!mainCurrency) {
-      convertedById = new Map();
-      convertedSpendById = new Map();
-      displayCurrency = "";
-      return;
-    }
-
-    const quotes = new Set(list.map((record) => record.currency));
-    quotes.add(mainCurrency);
-
     try {
-      const rates = await getFxRates({ from: start, to: end, quotes: [...quotes] });
-      if (seq !== convertSeq) {
-        return;
-      }
-      const lookup = buildRateLookup(rates);
-      const byId = new Map<string, number>();
-      const spendById = new Map<string, number>();
-      for (const record of list) {
-        const value = convertAmountToMainCurrency(
-          record.amount,
-          record.currency,
-          mainCurrency,
-          record.date,
-          lookup,
-        );
-        byId.set(record.id, value);
-        if (record.amount < 0) {
-          spendById.set(record.id, Math.abs(value));
-        }
-      }
-      if (seq !== convertSeq) {
-        return;
-      }
-      convertedById = byId;
-      convertedSpendById = spendById;
-      displayCurrency = mainCurrency;
-    } catch {
-      if (seq !== convertSeq) {
-        return;
-      }
+      const result = await convertRecords(list, mainCurrency, { from: start, to: end });
+      if (seq !== convertSeq) return;
+      convertedById = result.convertedById;
+      convertedSpendById = result.convertedSpendById;
+      displayCurrency = result.displayCurrency;
+    } catch (e) {
+      if (seq !== convertSeq) return;
+      const message = await handleApiError(e, "Could not load exchange rates");
+      if (message) toast.error(message);
       convertedById = new Map();
       convertedSpendById = new Map();
       displayCurrency = "";
