@@ -7,6 +7,7 @@ pub struct Config {
     pub port: String,
     pub data_path: String,
     pub session_secret: String,
+    pub static_dir: String,
 }
 
 #[derive(Debug)]
@@ -39,6 +40,7 @@ impl Config {
         let host = env::var("SERVER_HOST").unwrap_or_else(|_| DEFAULT_HOST.to_string());
         let port = env::var("SERVER_PORT").unwrap_or_else(|_| DEFAULT_PORT.to_string());
         let data_path = env::var("DATABASE_PATH").unwrap_or_else(|_| DEFAULT_DATA_PATH.to_string());
+        let static_dir = env::var("STATIC_DIR").unwrap_or_else(|_| DEFAULT_STATIC_DIR.to_string());
 
         // Validate port is a valid number
         if port.parse::<u16>().is_err() {
@@ -61,6 +63,7 @@ impl Config {
             port,
             data_path,
             session_secret,
+            static_dir,
         })
     }
 

@@ -1,11 +1,11 @@
 use axum::{
     Router,
-    response::Html,
     routing::{get, patch, post, put},
 };
 use time::Duration;
 use tower_http::cors::CorsLayer;
-use tower_sessions::{Expiry, MemoryStore, Session, SessionManagerLayer, cookie::Key};
+use tower_http::services::{ServeDir, ServeFile};
+use tower_sessions::{Expiry, MemoryStore, SessionManagerLayer, cookie::Key};
 
 // Import everything from the library crate (no duplicate module declarations)
 use kash_server::{
@@ -76,9 +76,8 @@ async fn main() -> Result<()> {
         ])
         .allow_credentials(true);
 
-    // Build application router
-    let app = Router::new()
-        .route("/", get(root))
+    // Build API router (mounted under /api so the SPA can share the origin)
+    let api = Router::new()
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/auth/me", get(auth::me))
@@ -129,6 +128,12 @@ async fn main() -> Result<()> {
         .layer(session_layer)
         .with_state(app_state);
 
+    // Serve the built SPA, falling back to index.html for client-side routes
+    let index_path = format!("{}/index.html", config.static_dir);
+    let spa = ServeDir::new(&config.static_dir).fallback(ServeFile::new(index_path));
+
+    let app = Router::new().nest(API_PREFIX, api).fallback_service(spa);
+
     // Create TCP listener with proper error handling
     let bind_address = config.bind_address();
     let listener = tokio::net::TcpListener::bind(&bind_address)
@@ -143,21 +148,4 @@ async fn main() -> Result<()> {
         .map_err(|e| format!("Server error: {}", e))?;
 
     Ok(())
-}
-
-async fn root(session: Session) -> Html<String> {
-    let count: usize = session
-        .get("visitor_count")
-        .await
-        .unwrap_or(Some(0))
-        .unwrap_or(0);
-    let new_count = count + 1;
-
-    // Ignore session update errors for this simple endpoint
-    let _ = session.insert("visitor_count", new_count).await;
-
-    Html(format!(
-        "<h1>Kash</h1><p>API Ready - Visit count: {}</p>",
-        new_count
-    ))
 }

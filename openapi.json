@@ -8,6 +8,11 @@
     },
     "version": "0.2.0"
   },
+  "servers": [
+    {
+      "url": "/api"
+    }
+  ],
   "paths": {
     "/auth/login": {
       "post": {

@@ -2,6 +2,8 @@
 pub const DEFAULT_HOST: &str = "0.0.0.0";
 pub const DEFAULT_PORT: &str = "3000";
 pub const DEFAULT_DATA_PATH: &str = "data";
+pub const DEFAULT_STATIC_DIR: &str = "web/build";
+pub const API_PREFIX: &str = "/api";
 
 // Session configuration
 pub const SESSION_NAME: &str = "axum_session";

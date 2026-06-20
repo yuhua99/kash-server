@@ -22,6 +22,7 @@ impl Modify for SessionCookie {
 #[derive(OpenApi)]
 #[openapi(
     info(title = "kash-server", version = env!("CARGO_PKG_VERSION")),
+    servers((url = "/api")),
     modifiers(&SessionCookie),
     security(("session" = [])),
     paths(
