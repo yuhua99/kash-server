@@ -8,6 +8,7 @@
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import { getFxRates } from "$lib/features/money/rates";
   import { buildRateLookup, convertAmountToMainCurrency } from "$lib/features/money/fx";
+  import { getSettingsCached } from "$lib/features/settings/cache";
   import { deleteRecord } from "$lib/features/records/api";
   import { invalidateRecordsCache } from "$lib/features/records/cache";
   import { getAllRecordsByDateRange } from "$lib/features/records/query";
@@ -28,8 +29,7 @@
   type RecordItem = components["schemas"]["Record"];
   type PendingShare = components["schemas"]["PendingShare"];
 
-  let { data } = $props();
-  const mainCurrency = $derived(data.mainCurrency as string);
+  let mainCurrency = $state("");
 
   const initial = periodFromPreset("month");
   let preset = $state<PeriodPreset>("month");
@@ -181,7 +181,14 @@
   }
 
   onMount(async () => {
-    categories = await getCategoriesCached().catch(() => [] as Category[]);
+    const [cats, settings] = await Promise.all([
+      getCategoriesCached().catch(() => [] as Category[]),
+      getSettingsCached()
+        .then((s) => s.main_currency)
+        .catch(() => ""),
+    ]);
+    categories = cats;
+    mainCurrency = settings;
     await loadData();
   });
 </script>

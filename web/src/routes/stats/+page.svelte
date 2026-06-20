@@ -6,6 +6,7 @@
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import { getFxRates } from "$lib/features/money/rates";
   import { buildRateLookup, convertAmountToMainCurrency } from "$lib/features/money/fx";
+  import { getSettingsCached } from "$lib/features/settings/cache";
   import { getAllRecordsByDateRange } from "$lib/features/records/query";
   import PeriodControls from "$lib/features/periods/PeriodControls.svelte";
   import StatsBreakdown from "$lib/features/stats/StatsBreakdown.svelte";
@@ -14,8 +15,7 @@
   type Category = components["schemas"]["Category"];
   type RecordItem = components["schemas"]["Record"];
 
-  let { data } = $props();
-  const mainCurrency = $derived(data.mainCurrency as string);
+  let mainCurrency = $state("");
 
   const initial = periodFromPreset("month");
   let preset = $state<PeriodPreset>("month");
@@ -86,7 +86,14 @@
   }
 
   onMount(async () => {
-    categories = await getCategoriesCached().catch(() => [] as Category[]);
+    const [cats, settings] = await Promise.all([
+      getCategoriesCached().catch(() => [] as Category[]),
+      getSettingsCached()
+        .then((s) => s.main_currency)
+        .catch(() => ""),
+    ]);
+    categories = cats;
+    mainCurrency = settings;
     await loadData();
   });
 </script>

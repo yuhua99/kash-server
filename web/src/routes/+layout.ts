@@ -1,6 +1,5 @@
 import { redirect } from "@sveltejs/kit";
 import { getMe } from "$lib/features/auth/api";
-import { getSettings } from "$lib/features/settings/api";
 import type { LayoutLoad } from "./$types";
 
 export const ssr = false;
@@ -10,12 +9,7 @@ const PROTECTED = ["/home", "/records", "/categories", "/stats", "/settings"];
 const AUTH_ROUTES = ["/login", "/register"];
 
 export const load: LayoutLoad = async ({ url }) => {
-  let user = null;
-  try {
-    user = await getMe();
-  } catch {
-    user = null;
-  }
+  const user = await getMe();
 
   const path = url.pathname;
 
@@ -32,14 +26,5 @@ export const load: LayoutLoad = async ({ url }) => {
     redirect(307, "/home");
   }
 
-  let mainCurrency = "";
-  if (user) {
-    try {
-      mainCurrency = (await getSettings()).main_currency;
-    } catch {
-      mainCurrency = "";
-    }
-  }
-
-  return { user, mainCurrency };
+  return { user };
 };

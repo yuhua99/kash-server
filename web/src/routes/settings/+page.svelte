@@ -14,7 +14,10 @@
   } from "$lib/features/money/amount-display";
   import { SUPPORTED_CURRENCIES, type SupportedCurrencyCode } from "$lib/features/money/currency";
   import { currentCurrency, setCurrentCurrency } from "$lib/features/money/current-currency";
-  import { getSettings, updateSettings } from "$lib/features/settings/api";
+  import { updateSettings } from "$lib/features/settings/api";
+  import { getSettingsCached, invalidateSettingsCache, setSettingsCache } from "$lib/features/settings/cache";
+  import { invalidateCategoriesCache } from "$lib/features/categories/cache";
+  import { invalidateFriendsCache } from "$lib/features/friends/cache";
 
   let mainCurrency = $state("");
   let saving = $state(false);
@@ -27,7 +30,7 @@
 
   onMount(async () => {
     try {
-      mainCurrency = (await getSettings()).main_currency;
+      mainCurrency = (await getSettingsCached()).main_currency;
     } catch {
       mainCurrency = "";
     }
@@ -37,7 +40,8 @@
     mainCurrency = value;
     saving = true;
     try {
-      await updateSettings(value);
+      const updated = await updateSettings(value);
+      setSettingsCache(updated);
       toast.success("Main currency updated");
     } catch (e) {
       const message = await handleApiError(e, "Could not update currency");
@@ -55,6 +59,9 @@
     } catch {
       // ignore; navigate regardless
     }
+    invalidateSettingsCache();
+    invalidateCategoriesCache();
+    invalidateFriendsCache();
     await goto("/login");
   }
 </script>

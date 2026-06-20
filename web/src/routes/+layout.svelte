@@ -5,6 +5,7 @@
   import ToastHost from "$lib/ui/ToastHost.svelte";
   import PendingInbox from "$lib/features/inbox/PendingInbox.svelte";
   import { initializeCurrentCurrency } from "$lib/features/money/current-currency";
+  import { getSettingsCached } from "$lib/features/settings/cache";
   import { isActive, navItems } from "$lib/features/shell/nav";
   import { registerServiceWorker } from "$lib/features/shell/service-worker";
 
@@ -20,7 +21,11 @@
   $effect(() => {
     if (user && initializedFor !== user.id) {
       initializedFor = user.id;
-      initializeCurrentCurrency(data.mainCurrency);
+      getSettingsCached()
+        .then((s) => initializeCurrentCurrency(s.main_currency))
+        .catch(() => initializeCurrentCurrency(""));
+    } else if (!user && initializedFor !== null) {
+      initializedFor = null;
     }
   });
 
