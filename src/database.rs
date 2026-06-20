@@ -188,6 +188,8 @@ pub async fn db_conn(db: &Db) -> Result<Connection, libsql::Error> {
     let conn = db.connect()?;
     let mut foreign_key_rows = conn.query("PRAGMA foreign_keys = ON", ()).await?;
     while foreign_key_rows.next().await?.is_some() {}
+    let mut timeout_rows = conn.query("PRAGMA busy_timeout = 5000", ()).await?;
+    while timeout_rows.next().await?.is_some() {}
     Ok(conn)
 }
 
@@ -200,8 +202,6 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
 
     let mut journal_rows = conn.query("PRAGMA journal_mode = WAL", ()).await?;
     while journal_rows.next().await?.is_some() {}
-    let mut timeout_rows = conn.query("PRAGMA busy_timeout = 5000", ()).await?;
-    while timeout_rows.next().await?.is_some() {}
 
     conn.execute(CREATE_USERS_TABLE, ()).await?;
     conn.execute(CREATE_RECORDS_TABLE, ()).await?;
