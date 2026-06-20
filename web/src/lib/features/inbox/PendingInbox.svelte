@@ -36,6 +36,11 @@
 
   const categoryItems = $derived(categories.map((category) => ({ value: category.id, label: category.name })));
 
+  function getDefaultCategoryId(cats: Category[]): string {
+    const expense = cats.find((c) => !c.is_income);
+    return expense?.id ?? cats[0]?.id ?? "";
+  }
+
   $effect(() => {
     if (userId && userId !== bootstrappedUserId) {
       bootstrappedUserId = userId;
@@ -44,16 +49,28 @@
   });
 
   async function bootstrap() {
-    queue = await loadPendingInbox();
-    if (queue.some((item) => item.kind === "share")) {
-      const all = await getCategoriesCached().catch(() => [] as Category[]);
-      categories = [...all].sort((a, b) => Number(a.is_income) - Number(b.is_income));
-      selectedCategoryId = categories[0]?.id ?? "";
+    try {
+      queue = await loadPendingInbox();
+      if (queue.some((item) => item.kind === "share")) {
+        const all = await getCategoriesCached();
+        categories = [...all].sort((a, b) => Number(a.is_income) - Number(b.is_income));
+        selectedCategoryId = getDefaultCategoryId(categories);
+      }
+    } catch (error) {
+      queue = [];
+      categories = [];
+      const message = await handleApiError(error, "Could not load inbox");
+      if (message) {
+        toast.error(message);
+      }
     }
   }
 
   function dismissHead() {
     queue = queue.slice(1);
+    if (queue[0]?.kind === "share") {
+      selectedCategoryId = getDefaultCategoryId(categories);
+    }
   }
 
   async function runAction(action: () => Promise<void>, fallback: string) {
@@ -94,14 +111,14 @@
 </script>
 
 {#if head?.kind === "friend"}
-  <Dialog {open} title="Friend request" description={`${head.friend.nickname} wants to connect.`}>
+  <Dialog {open} onOpenChange={(o) => { if (!o && !busy) dismissHead(); }} title="Friend request" description={`${head.friend.nickname} wants to connect.`}>
     <ButtonRow>
       <Button variant="secondary" disabled={busy} onclick={() => declineFriendItem(head.friend.user_id)}>Decline</Button>
       <Button variant="primary" disabled={busy} onclick={() => acceptFriendItem(head.friend.user_id)}>Accept</Button>
     </ButtonRow>
   </Dialog>
 {:else if head?.kind === "share"}
-  <Dialog {open} title="Record a shared expense" description={head.share.description}>
+  <Dialog {open} onOpenChange={(o) => { if (!o && !busy) dismissHead(); }} title="Record a shared expense" description={head.share.description}>
     <dl class="share">
       <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
       <div><dt>Date</dt><dd>{head.share.date}</dd></div>
