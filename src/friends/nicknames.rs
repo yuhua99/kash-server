@@ -102,14 +102,17 @@ pub async fn update_nickname(
                     (user_low_id.as_str(), user_high_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("nickname check failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbCheck)?;
 
             let friendship_id: String = rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("nickname check failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbCheck)?
                 .ok_or(UpdateNicknameError::NotFound)?
                 .get(0)
+                .inspect_err(|e| tracing::error!("nickname check failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbCheck)?;
             drop(rows);
 
@@ -120,6 +123,7 @@ pub async fn update_nickname(
                     (friendship_id.as_str(), owner_user_id.as_str(), nickname.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("nickname update failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbUpdate)?;
             } else {
                 conn.execute(
@@ -127,6 +131,7 @@ pub async fn update_nickname(
                     (friendship_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("nickname update failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbUpdate)?;
             }
 
@@ -140,17 +145,19 @@ pub async fn update_nickname(
                     (friend_id.as_str(), owner_user_id.as_str(), friendship_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("nickname select failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbSelect)?;
 
             let row = rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("nickname select failed: {e}"))
                 .map_err(|_| UpdateNicknameError::DbSelect)?
                 .ok_or(UpdateNicknameError::DbSelect)?;
 
-            let id: String = row.get(0).map_err(|_| UpdateNicknameError::DbSelect)?;
-            let pending: i64 = row.get(1).map_err(|_| UpdateNicknameError::DbSelect)?;
-            let nickname: String = row.get(2).map_err(|_| UpdateNicknameError::DbSelect)?;
+            let id: String = row.get(0).inspect_err(|e| tracing::error!("nickname select failed: {e}")).map_err(|_| UpdateNicknameError::DbSelect)?;
+            let pending: i64 = row.get(1).inspect_err(|e| tracing::error!("nickname select failed: {e}")).map_err(|_| UpdateNicknameError::DbSelect)?;
+            let nickname: String = row.get(2).inspect_err(|e| tracing::error!("nickname select failed: {e}")).map_err(|_| UpdateNicknameError::DbSelect)?;
 
             Ok::<FriendshipRelation, UpdateNicknameError>(FriendshipRelation {
                 id,

@@ -189,23 +189,33 @@ async fn load_cached_rates(
 
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     let mut rows = conn
         .query(&sql, params)
         .await
+        .inspect_err(|e| tracing::error!("failed to query exchange rate cache: {e}"))
         .map_err(|_| db_error_with_context("failed to query exchange rate cache"))?;
 
     let mut rates = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to read fx row: {e}"))
+        .map_err(|_| db_error())?
+    {
         rates.push(ExchangeRateRow {
             date: row
                 .get(0)
+                .inspect_err(|e| tracing::error!("invalid fx rate date: {e}"))
                 .map_err(|_| db_error_with_context("invalid fx rate date"))?,
             currency: row
                 .get(1)
+                .inspect_err(|e| tracing::error!("invalid fx currency: {e}"))
                 .map_err(|_| db_error_with_context("invalid fx currency"))?,
             rate: row
                 .get(2)
+                .inspect_err(|e| tracing::error!("invalid fx rate value: {e}"))
                 .map_err(|_| db_error_with_context("invalid fx rate value"))?,
         });
     }
@@ -220,6 +230,7 @@ async fn load_latest_rate_before(
 ) -> Result<Option<f64>, (StatusCode, String)> {
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     let mut rows = conn
         .query(
@@ -227,11 +238,17 @@ async fn load_latest_rate_before(
             (currency, date),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query latest pre-range exchange rate: {e}"))
         .map_err(|_| db_error_with_context("failed to query latest pre-range exchange rate"))?;
 
-    let row = rows.next().await.map_err(|_| db_error())?;
+    let row = rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to read pre-range fx row: {e}"))
+        .map_err(|_| db_error())?;
     row.map(|r| {
         r.get(0)
+            .inspect_err(|e| tracing::error!("invalid pre-range fx rate value: {e}"))
             .map_err(|_| db_error_with_context("invalid pre-range fx rate value"))
     })
     .transpose()
@@ -323,6 +340,7 @@ async fn upsert_exchange_rates(
 
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     for rate in rates {
         conn.execute(
@@ -330,6 +348,7 @@ async fn upsert_exchange_rates(
             (rate.date.as_str(), rate.currency.as_str(), rate.rate),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to store exchange rate cache: {e}"))
         .map_err(|_| db_error_with_context("failed to store exchange rate cache"))?;
     }
 

@@ -57,11 +57,18 @@ pub(crate) async fn get_category_is_income(
             (category_id, user_id),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query category type: {e}"))
         .map_err(|_| db_error_with_context("failed to query category type"))?;
 
-    if let Some(row) = rows.next().await.map_err(|_| db_error())? {
+    if let Some(row) = rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to query category type: {e}"))
+        .map_err(|_| db_error())?
+    {
         let is_income: bool = row
             .get(0)
+            .inspect_err(|e| tracing::error!("invalid category data: {e}"))
             .map_err(|_| db_error_with_context("invalid category data"))?;
         Ok(is_income)
     } else {

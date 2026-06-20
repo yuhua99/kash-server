@@ -23,12 +23,15 @@ pub fn validate_category_name(name: &str) -> Result<(), (StatusCode, String)> {
 pub fn extract_category_from_row(row: libsql::Row) -> Result<Category, (StatusCode, String)> {
     let id: String = row
         .get(0)
+        .inspect_err(|e| tracing::error!("invalid category data: {e}"))
         .map_err(|_| db_error_with_context("invalid category data"))?;
     let name: String = row
         .get(1)
+        .inspect_err(|e| tracing::error!("invalid category data: {e}"))
         .map_err(|_| db_error_with_context("invalid category data"))?;
     let is_income: bool = row
         .get(2)
+        .inspect_err(|e| tracing::error!("invalid category data: {e}"))
         .map_err(|_| db_error_with_context("invalid category data"))?;
 
     Ok(Category {
@@ -106,11 +109,13 @@ pub async fn create_category(
                     (owner_user_id.as_str(), name.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("failed to check existing category: {e}"))
                 .map_err(|_| CreateCategoryError::DbCheck)?;
 
             if existing_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("failed to check existing category: {e}"))
                 .map_err(|_| CreateCategoryError::DbCheck)?
                 .is_some()
             {
@@ -128,6 +133,7 @@ pub async fn create_category(
                 ),
             )
             .await
+            .inspect_err(|e| tracing::error!("category insert failed: {e}"))
             .map_err(|_| CreateCategoryError::DbInsert)?;
 
             Ok(Category {
@@ -175,6 +181,7 @@ pub async fn get_categories(
 
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("failed to connect to database: {e}"))
         .map_err(|_| db_error())?;
 
     let total_count: u32 = if let Some(search) = &search_term {
@@ -185,10 +192,18 @@ pub async fn get_categories(
                 (user.id.as_str(), search_pattern.as_str()),
             )
             .await
+            .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
             .map_err(|_| db_error_with_context("failed to count categories"))?;
 
-        if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-            row.get(0).map_err(|_| db_error())?
+        if let Some(row) = count_rows
+            .next()
+            .await
+            .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
+            .map_err(|_| db_error())?
+        {
+            row.get(0)
+                .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
+                .map_err(|_| db_error())?
         } else {
             0
         }
@@ -199,10 +214,18 @@ pub async fn get_categories(
                 [user.id.as_str()],
             )
             .await
+            .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
             .map_err(|_| db_error_with_context("failed to count categories"))?;
 
-        if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-            row.get(0).map_err(|_| db_error())?
+        if let Some(row) = count_rows
+            .next()
+            .await
+            .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
+            .map_err(|_| db_error())?
+        {
+            row.get(0)
+                .inspect_err(|e| tracing::error!("failed to count categories: {e}"))
+                .map_err(|_| db_error())?
         } else {
             0
         }
@@ -215,6 +238,7 @@ pub async fn get_categories(
             (user.id.as_str(), search_pattern.as_str(), limit, offset),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query categories: {e}"))
         .map_err(|_| db_error_with_context("failed to query categories"))?
     } else {
         conn.query(
@@ -222,11 +246,17 @@ pub async fn get_categories(
             (user.id.as_str(), limit, offset),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query categories: {e}"))
         .map_err(|_| db_error_with_context("failed to query categories"))?
     };
 
     let mut categories = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to iterate categories: {e}"))
+        .map_err(|_| db_error())?
+    {
         categories.push(extract_category_from_row(row)?);
     }
 
@@ -316,11 +346,13 @@ pub async fn update_category(
                     (category_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category update failed: {e}"))
                 .map_err(|_| UpdateCategoryError::Db)?;
 
             let existing_category = if let Some(row) = existing_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("category update failed: {e}"))
                 .map_err(|_| UpdateCategoryError::Db)?
             {
                 extract_category_from_row(row).map_err(|_| UpdateCategoryError::Db)?
@@ -338,11 +370,13 @@ pub async fn update_category(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category conflict check failed: {e}"))
                 .map_err(|_| UpdateCategoryError::Db)?;
 
             if conflict_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("category conflict check failed: {e}"))
                 .map_err(|_| UpdateCategoryError::Db)?
                 .is_some()
             {
@@ -359,6 +393,7 @@ pub async fn update_category(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category update failed: {e}"))
                 .map_err(|_| UpdateCategoryError::Db)?;
 
             if affected_rows == 0 {
@@ -444,11 +479,13 @@ pub async fn delete_category(
                     (category_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category delete check failed: {e}"))
                 .map_err(|_| DeleteCategoryError::Db)?;
 
             if existing_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("category delete check failed: {e}"))
                 .map_err(|_| DeleteCategoryError::Db)?
                 .is_none()
             {
@@ -462,14 +499,19 @@ pub async fn delete_category(
                     (category_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category usage check failed: {e}"))
                 .map_err(|_| DeleteCategoryError::Db)?;
 
             if let Some(row) = usage_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("category usage check failed: {e}"))
                 .map_err(|_| DeleteCategoryError::Db)?
             {
-                let count: u32 = row.get(0).map_err(|_| DeleteCategoryError::Db)?;
+                let count: u32 = row
+                    .get(0)
+                    .inspect_err(|e| tracing::error!("category usage check failed: {e}"))
+                    .map_err(|_| DeleteCategoryError::Db)?;
                 if count > 0 {
                     return Err(DeleteCategoryError::Conflict);
                 }
@@ -482,6 +524,7 @@ pub async fn delete_category(
                     (category_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("category delete failed: {e}"))
                 .map_err(|_| DeleteCategoryError::Db)?;
 
             if affected_rows == 0 {

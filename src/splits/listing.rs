@@ -37,6 +37,7 @@ pub async fn list_pending_shares(
     let offset = validate_offset(query.offset)?;
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
 
     let mut count_rows = conn
@@ -45,13 +46,16 @@ pub async fn list_pending_shares(
             [current_user.id.as_str()],
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to count pending shares: {e}"))
         .map_err(|_| db_error_with_context("failed to count pending shares"))?;
     let total_count_i64: i64 = if let Some(row) = count_rows
         .next()
         .await
+        .inspect_err(|e| tracing::error!("failed to count pending shares: {e}"))
         .map_err(|_| db_error_with_context("failed to count pending shares"))?
     {
         row.get(0)
+            .inspect_err(|e| tracing::error!("failed to count pending shares: {e}"))
             .map_err(|_| db_error_with_context("failed to count pending shares"))?
     } else {
         0
@@ -71,40 +75,51 @@ pub async fn list_pending_shares(
             (current_user.id.as_str(), limit, offset),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query pending shares: {e}"))
         .map_err(|_| db_error_with_context("failed to query pending shares"))?;
 
     let mut shares = Vec::new();
     while let Some(row) = rows
         .next()
         .await
+        .inspect_err(|e| tracing::error!("failed to read pending shares: {e}"))
         .map_err(|_| db_error_with_context("failed to read pending shares"))?
     {
         let participant_id: String = row
             .get(0)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let split_id: String = row
             .get(1)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let description: String = row
             .get(2)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let date: String = row
             .get(3)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let amount_cents: i64 = row
             .get(4)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let currency: String = row
             .get(5)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let creditor_user_id: String = row
             .get(6)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let creditor_name: String = row
             .get(7)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let settled: bool = row
             .get(8)
+            .inspect_err(|e| tracing::error!("failed to read pending share: {e}"))
             .map_err(|_| db_error_with_context("failed to read pending share"))?;
         let creditor_name = if creditor_name.is_empty() {
             creditor_user_id.clone()
@@ -170,6 +185,7 @@ pub async fn list_unsettled_shares(
     let offset = validate_offset(query.offset)?;
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
 
     let mut count_rows = conn
@@ -186,13 +202,16 @@ pub async fn list_unsettled_shares(
             ),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to count unsettled shares: {e}"))
         .map_err(|_| db_error_with_context("failed to count unsettled shares"))?;
     let total_count_i64: i64 = if let Some(row) = count_rows
         .next()
         .await
+        .inspect_err(|e| tracing::error!("failed to count unsettled shares: {e}"))
         .map_err(|_| db_error_with_context("failed to count unsettled shares"))?
     {
         row.get(0)
+            .inspect_err(|e| tracing::error!("failed to count unsettled shares: {e}"))
             .map_err(|_| db_error_with_context("failed to count unsettled shares"))?
     } else {
         0
@@ -220,49 +239,63 @@ pub async fn list_unsettled_shares(
             ),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to query unsettled shares: {e}"))
         .map_err(|_| db_error_with_context("failed to query unsettled shares"))?;
 
     let mut shares = Vec::new();
     while let Some(row) = rows
         .next()
         .await
+        .inspect_err(|e| tracing::error!("failed to read unsettled shares: {e}"))
         .map_err(|_| db_error_with_context("failed to read unsettled shares"))?
     {
         let participant_id: String = row
             .get(0)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let split_id: String = row
             .get(1)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let description: String = row
             .get(2)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let date: String = row
             .get(3)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let amount_cents: i64 = row
             .get(4)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let currency: String = row
             .get(5)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let creditor_user_id: String = row
             .get(6)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let debtor_user_id: String = row
             .get(7)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let creditor_name: String = row
             .get(8)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let debtor_name: String = row
             .get(9)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let finalized: bool = row
             .get(10)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
         let settled: bool = row
             .get(11)
+            .inspect_err(|e| tracing::error!("failed to read unsettled share: {e}"))
             .map_err(|_| db_error_with_context("failed to read unsettled share"))?;
 
         let (direction, counterparty_user_id, counterparty_name) =

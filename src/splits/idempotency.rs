@@ -24,6 +24,7 @@ pub(super) async fn get_existing_idempotency_response(
     let maybe_cached = {
         let conn = crate::database::db_conn(&app_state.main_db)
             .await
+            .inspect_err(|e| tracing::error!("db connection failed: {e}"))
             .map_err(|_| db_error())?;
         let mut rows = conn
             .query(
@@ -31,30 +32,38 @@ pub(super) async fn get_existing_idempotency_response(
                 (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),
             )
             .await
+            .inspect_err(|e| tracing::error!("failed to query idempotency key: {e}"))
             .map_err(|_| db_error_with_context("failed to query idempotency key"))?;
 
         if let Some(row) = rows
             .next()
             .await
+            .inspect_err(|e| tracing::error!("failed to read idempotency key row: {e}"))
             .map_err(|_| db_error_with_context("failed to read idempotency key row"))?
         {
             let reservation_id: String = row
                 .get(0)
+                .inspect_err(|e| tracing::error!("invalid idempotency id: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency id"))?;
             let response_status: i64 = row
                 .get(1)
+                .inspect_err(|e| tracing::error!("invalid idempotency status: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency status"))?;
             let response_body: Option<String> = row
                 .get(2)
+                .inspect_err(|e| tracing::error!("invalid idempotency response body: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency response body"))?;
             let payload_hash: String = row
                 .get(3)
+                .inspect_err(|e| tracing::error!("invalid idempotency payload hash: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency payload hash"))?;
             let expires_at: String = row
                 .get(4)
+                .inspect_err(|e| tracing::error!("invalid idempotency expiration: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency expiration"))?;
             let created_at: String = row
                 .get(5)
+                .inspect_err(|e| tracing::error!("invalid idempotency creation time: {e}"))
                 .map_err(|_| db_error_with_context("invalid idempotency creation time"))?;
             Some((
                 reservation_id,
@@ -128,6 +137,7 @@ pub(super) async fn reserve_idempotency_entry(
     let reservation_id = Uuid::new_v4().to_string();
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     conn.execute(
         "INSERT INTO idempotency_keys (id, key, user_id, endpoint, payload_hash, response_status, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)",
@@ -143,6 +153,7 @@ pub(super) async fn reserve_idempotency_entry(
         ),
     )
     .await
+    .inspect_err(|e| tracing::error!("failed to reserve idempotency key: {e}"))
     .map_err(|_| db_error_with_context("failed to reserve idempotency key"))?;
 
     Ok(reservation_id)
@@ -154,12 +165,14 @@ pub(super) async fn delete_idempotency_reservation(
 ) -> Result<(), (StatusCode, String)> {
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     conn.execute(
         "DELETE FROM idempotency_keys WHERE id = ? AND response_body IS NULL",
         [reservation_id],
     )
     .await
+    .inspect_err(|e| tracing::error!("failed to delete idempotency reservation: {e}"))
     .map_err(|_| db_error_with_context("failed to delete idempotency reservation"))?;
 
     Ok(())
@@ -172,12 +185,14 @@ async fn delete_idempotency_entry(
 ) -> Result<(), (StatusCode, String)> {
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
     conn.execute(
         "DELETE FROM idempotency_keys WHERE key = ? AND user_id = ? AND endpoint = ?",
         (idempotency_key, user_id, SPLIT_CREATE_ENDPOINT),
     )
     .await
+    .inspect_err(|e| tracing::error!("failed to delete expired idempotency entry: {e}"))
     .map_err(|_| db_error_with_context("failed to delete expired idempotency entry"))?;
 
     Ok(())

@@ -61,11 +61,13 @@ pub async fn settle_share(
                         [participant_id.as_str()],
                     )
                     .await
+                    .inspect_err(|e| tracing::error!("failed to load share: {e}"))
                     .map_err(|_| SettleShareError::Db("failed to load share"))?;
 
                 let Some(row) = rows
                     .next()
                     .await
+                    .inspect_err(|e| tracing::error!("failed to load share: {e}"))
                     .map_err(|_| SettleShareError::Db("failed to load share"))?
                 else {
                     return Err(SettleShareError::NotFound);
@@ -73,15 +75,19 @@ pub async fn settle_share(
 
                 let debtor_user_id: String = row
                     .get(0)
+                    .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                     .map_err(|_| SettleShareError::Db("invalid share data"))?;
                 let settled: i64 = row
                     .get(1)
+                    .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                     .map_err(|_| SettleShareError::Db("invalid share data"))?;
                 let finalized: i64 = row
                     .get(2)
+                    .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                     .map_err(|_| SettleShareError::Db("invalid share data"))?;
                 let creditor_user_id: String = row
                     .get(3)
+                    .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                     .map_err(|_| SettleShareError::Db("invalid share data"))?;
 
                 (debtor_user_id, settled != 0, finalized != 0, creditor_user_id)
@@ -105,6 +111,7 @@ pub async fn settle_share(
                     [participant_id.as_str()],
                 )
                 .await
+                .inspect_err(|e| tracing::error!("failed to settle share: {e}"))
                 .map_err(|_| SettleShareError::Db("failed to settle share"))?;
 
             if affected != 1 {
@@ -182,6 +189,7 @@ pub async fn settle_all_with_friend(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("settle all shares failed: {e}"))
                 .map_err(|_| TransactionError::Commit)?;
 
             u32::try_from(affected).map_err(|_| TransactionError::Commit)

@@ -179,11 +179,13 @@ pub async fn send_friend_request(
                     (user_low_id.as_str(), user_high_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("friend request check failed: {e}"))
                 .map_err(|_| SendFriendRequestError::DbCheck)?;
 
             if rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("friend request check failed: {e}"))
                 .map_err(|_| SendFriendRequestError::DbCheck)?
                 .is_some()
             {
@@ -201,6 +203,7 @@ pub async fn send_friend_request(
                 ),
             )
             .await
+            .inspect_err(|e| tracing::error!("friend request insert failed: {e}"))
             .map_err(|_| SendFriendRequestError::DbInsert)?;
 
             Ok(())
@@ -256,6 +259,7 @@ pub async fn accept_friend(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("accept friend update failed: {e}"))
                 .map_err(|_| AcceptFriendError::DbUpdate)?;
 
             if changed != 1 {
@@ -277,17 +281,19 @@ pub async fn accept_friend(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("accept friend select failed: {e}"))
                 .map_err(|_| AcceptFriendError::DbSelect)?;
 
             let row = rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("accept friend select failed: {e}"))
                 .map_err(|_| AcceptFriendError::DbSelect)?
                 .ok_or(AcceptFriendError::DbSelect)?;
 
-            let id: String = row.get(0).map_err(|_| AcceptFriendError::DbSelect)?;
-            let pending: i64 = row.get(1).map_err(|_| AcceptFriendError::DbSelect)?;
-            let nickname: String = row.get(2).map_err(|_| AcceptFriendError::DbSelect)?;
+            let id: String = row.get(0).inspect_err(|e| tracing::error!("accept friend select failed: {e}")).map_err(|_| AcceptFriendError::DbSelect)?;
+            let pending: i64 = row.get(1).inspect_err(|e| tracing::error!("accept friend select failed: {e}")).map_err(|_| AcceptFriendError::DbSelect)?;
+            let nickname: String = row.get(2).inspect_err(|e| tracing::error!("accept friend select failed: {e}")).map_err(|_| AcceptFriendError::DbSelect)?;
 
             Ok(FriendshipRelation {
                 id,
@@ -333,6 +339,7 @@ pub async fn remove_friend(
                     (user_low_id.as_str(), user_high_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("friend removal failed: {e}"))
                 .map_err(|_| RemoveFriendError::DbDelete)?;
 
             if changed == 0 {

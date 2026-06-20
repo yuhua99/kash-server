@@ -101,32 +101,40 @@ pub async fn finalize_share(
                         [participant_id.as_str()],
                     )
                     .await
+                    .inspect_err(|e| tracing::error!("failed to retrieve share: {e}"))
                     .map_err(|_| FinalizeShareError::Db("failed to retrieve share"))?;
 
                 let row = rows
                     .next()
                     .await
+                    .inspect_err(|e| tracing::error!("failed to retrieve share: {e}"))
                     .map_err(|_| FinalizeShareError::Db("failed to retrieve share"))?
                     .ok_or(FinalizeShareError::NotFound)?;
 
                 ShareToFinalize {
                     debtor_user_id: row
                         .get(0)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                     amount: row
                         .get(1)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                     finalized_record_id: row
                         .get(2)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                     description: row
                         .get(3)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                     currency: row
                         .get(4)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                     date: row
                         .get(5)
+                        .inspect_err(|e| tracing::error!("invalid share data: {e}"))
                         .map_err(|_| FinalizeShareError::Db("invalid share data"))?,
                 }
             };
@@ -146,13 +154,16 @@ pub async fn finalize_share(
                         (category_id.as_str(), current_user_id.as_str()),
                     )
                     .await
+                    .inspect_err(|e| tracing::error!("failed to check category: {e}"))
                     .map_err(|_| FinalizeShareError::Db("failed to check category"))?;
 
                 rows.next()
                     .await
+                    .inspect_err(|e| tracing::error!("failed to check category: {e}"))
                     .map_err(|_| FinalizeShareError::Db("failed to check category"))?
                     .ok_or(FinalizeShareError::CategoryNotFound)?
                     .get::<bool>(0)
+                    .inspect_err(|e| tracing::error!("invalid category data: {e}"))
                     .map_err(|_| FinalizeShareError::Db("invalid category data"))?
             };
 
@@ -176,6 +187,7 @@ pub async fn finalize_share(
                 ),
             )
             .await
+            .inspect_err(|e| tracing::error!("record creation failed: {e}"))
             .map_err(|_| FinalizeShareError::Db("record creation failed"))?;
 
             let affected = conn
@@ -184,6 +196,7 @@ pub async fn finalize_share(
                     (record_id.as_str(), participant_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("share finalization failed: {e}"))
                 .map_err(|_| FinalizeShareError::Db("share finalization failed"))?;
 
             if affected != 1 {

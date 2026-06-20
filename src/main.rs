@@ -20,6 +20,14 @@ async fn main() -> Result<()> {
     // Load environment variables
     dotenv::dotenv().ok();
 
+    // Initialize structured logging
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "kash_server=info".into()),
+        )
+        .init();
+
     // Load and validate configuration
     let config = Config::from_env().map_err(|e| format!("Configuration error: {}", e))?;
 

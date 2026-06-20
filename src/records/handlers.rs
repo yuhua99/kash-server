@@ -112,21 +112,27 @@ fn build_records_where_clause(
 fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
     let id: String = row
         .get(0)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let name: String = row
         .get(1)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let amount_cents: i64 = row
         .get(2)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let currency: String = row
         .get(3)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let category_id: Option<String> = row
         .get(4)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
     let date: String = row
         .get(5)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
 
     Ok(Record {
@@ -190,6 +196,7 @@ async fn create_record_for_user(
                 ),
             )
             .await
+            .inspect_err(|e| tracing::error!("record creation failed: {e}"))
             .map_err(|_| CreateRecordError::Db("record creation failed"))?;
 
             Ok::<Record, CreateRecordError>(Record {
@@ -250,6 +257,7 @@ pub async fn get_records(
     let offset = validate_offset(query.offset)?;
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("failed to connect to database: {e}"))
         .map_err(|_| db_error())?;
 
     if let Some(ref start_date) = query.start_date {
@@ -270,10 +278,18 @@ pub async fn get_records(
     let mut count_rows = conn
         .query(&count_sql, base_params.clone())
         .await
+        .inspect_err(|e| tracing::error!("failed to count records: {e}"))
         .map_err(|_| db_error_with_context("failed to count records"))?;
 
-    let total_count: u32 = if let Some(row) = count_rows.next().await.map_err(|_| db_error())? {
-        row.get(0).map_err(|_| db_error())?
+    let total_count: u32 = if let Some(row) = count_rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to count records: {e}"))
+        .map_err(|_| db_error())?
+    {
+        row.get(0)
+            .inspect_err(|e| tracing::error!("failed to count records: {e}"))
+            .map_err(|_| db_error())?
     } else {
         0
     };
@@ -288,10 +304,16 @@ pub async fn get_records(
     let mut rows = conn
         .query(&select_sql, select_params)
         .await
+        .inspect_err(|e| tracing::error!("failed to query records: {e}"))
         .map_err(|_| db_error_with_context("failed to query records"))?;
 
     let mut records = Vec::new();
-    while let Some(row) = rows.next().await.map_err(|_| db_error())? {
+    while let Some(row) = rows
+        .next()
+        .await
+        .inspect_err(|e| tracing::error!("failed to query records: {e}"))
+        .map_err(|_| db_error())?
+    {
         records.push(extract_record_from_row(row)?);
     }
 
@@ -373,32 +395,40 @@ pub async fn update_record(
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("failed to query existing record: {e}"))
                 .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?;
 
             let existing_record = if let Some(row) = existing_rows
                 .next()
                 .await
+                .inspect_err(|e| tracing::error!("failed to query existing record: {e}"))
                 .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?
             {
                 let amount_cents: i64 = row
                     .get(2)
+                    .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                     .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
                 Record {
                     id: row
                         .get(0)
+                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                         .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
                     name: row
                         .get(1)
+                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                         .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
                     amount: to_decimal(amount_cents),
                     currency: row
                         .get(3)
+                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                         .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
                     category_id: row
                         .get(4)
+                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                         .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
                     date: row
                         .get(5)
+                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
                         .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
                 }
             } else {
@@ -443,6 +473,7 @@ pub async fn update_record(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("failed to update record: {e}"))
                 .map_err(|_| UpdateRecordError::Db("failed to update record"))?;
 
             if affected_rows == 0 {
@@ -485,6 +516,7 @@ pub async fn delete_record(
     let user = get_current_user(&session).await?;
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("failed to connect to database: {e}"))
         .map_err(|_| db_error())?;
 
     let affected_rows = conn
@@ -493,6 +525,7 @@ pub async fn delete_record(
             (record_id.as_str(), user.id.as_str()),
         )
         .await
+        .inspect_err(|e| tracing::error!("failed to delete record: {e}"))
         .map_err(|_| db_error_with_context("failed to delete record"))?;
 
     if affected_rows == 0 {

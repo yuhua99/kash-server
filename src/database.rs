@@ -166,14 +166,19 @@ where
     >,
     E: From<TransactionError>,
 {
-    let conn = db_conn(db).await.map_err(|_| TransactionError::Begin)?;
+    let conn = db_conn(db)
+        .await
+        .inspect_err(|e| tracing::error!("transaction connection failed: {e}"))
+        .map_err(|_| TransactionError::Begin)?;
     conn.execute("BEGIN IMMEDIATE", ())
         .await
+        .inspect_err(|e| tracing::error!("transaction begin failed: {e}"))
         .map_err(|_| TransactionError::Begin)?;
     match f(&conn).await {
         Ok(result) => {
             conn.execute("COMMIT", ())
                 .await
+                .inspect_err(|e| tracing::error!("transaction commit failed: {e}"))
                 .map_err(|_| TransactionError::Commit)?;
             Ok(result)
         }

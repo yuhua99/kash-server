@@ -190,6 +190,7 @@ async fn validate_all_participants_are_friends(
 ) -> Result<(), (StatusCode, String)> {
     let conn = crate::database::db_conn(&app_state.main_db)
         .await
+        .inspect_err(|e| tracing::error!("db connection failed: {e}"))
         .map_err(|_| db_error())?;
 
     for participant in participants {
@@ -200,17 +201,21 @@ async fn validate_all_participants_are_friends(
                 (user_low_id, user_high_id, 0i64),
             )
             .await
+            .inspect_err(|e| tracing::error!("failed to validate friendship relation: {e}"))
             .map_err(|_| db_error_with_context("failed to validate friendship relation"))?;
 
-        let count: i64 =
-            if let Some(row) = rows.next().await.map_err(|_| {
-                db_error_with_context("failed to fetch friendship validation result")
-            })? {
-                row.get(0)
-                    .map_err(|_| db_error_with_context("invalid friendship validation result"))?
-            } else {
-                0
-            };
+        let count: i64 = if let Some(row) = rows
+            .next()
+            .await
+            .inspect_err(|e| tracing::error!("failed to fetch friendship validation result: {e}"))
+            .map_err(|_| db_error_with_context("failed to fetch friendship validation result"))?
+        {
+            row.get(0)
+                .inspect_err(|e| tracing::error!("invalid friendship validation result: {e}"))
+                .map_err(|_| db_error_with_context("invalid friendship validation result"))?
+        } else {
+            0
+        };
 
         if count == 0 {
             return Err((
@@ -314,6 +319,7 @@ async fn create_split_records(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("split record write failed: {e}"))
                 .map_err(|_| SplitRecordError::Db)?;
 
                 conn.execute(
@@ -329,6 +335,7 @@ async fn create_split_records(
                     ),
                 )
                 .await
+                .inspect_err(|e| tracing::error!("split record write failed: {e}"))
                 .map_err(|_| SplitRecordError::Db)?;
 
                 for (_, debtor_user_id, _) in participants.iter() {
@@ -340,11 +347,16 @@ async fn create_split_records(
                             (user_low_id, user_high_id),
                         )
                         .await
+                        .inspect_err(|e| tracing::error!("split record read failed: {e}"))
                         .map_err(|_| SplitRecordError::Db)?;
                     let count: i64 = if let Some(row) =
-                        rows.next().await.map_err(|_| SplitRecordError::Db)?
+                        rows.next().await
+                            .inspect_err(|e| tracing::error!("split record read failed: {e}"))
+                            .map_err(|_| SplitRecordError::Db)?
                     {
-                        row.get(0).map_err(|_| SplitRecordError::Db)?
+                        row.get(0)
+                            .inspect_err(|e| tracing::error!("split record read failed: {e}"))
+                            .map_err(|_| SplitRecordError::Db)?
                     } else {
                         0
                     };
@@ -368,6 +380,7 @@ async fn create_split_records(
                         ),
                     )
                     .await
+                    .inspect_err(|e| tracing::error!("split record write failed: {e}"))
                     .map_err(|_| SplitRecordError::Db)?;
                 }
 
@@ -381,6 +394,7 @@ async fn create_split_records(
                         ),
                     )
                     .await
+                    .inspect_err(|e| tracing::error!("split record write failed: {e}"))
                     .map_err(|_| SplitRecordError::Db)?;
 
                 if updated != 1 {
