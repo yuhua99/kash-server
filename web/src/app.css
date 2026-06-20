@@ -1,0 +1,147 @@
+:root {
+  /* substrate (deactivated CRT — never pure #000) */
+  --bg: #0f0f0f;
+  --surface: #161616;
+  --panel: #1a1a1a;
+  --panel-strong: #232323;
+  --border: #282828;
+  --border-strong: #3a3a3a;
+  /* phosphor text */
+  --text: #eaeaea;
+  --text-muted: #a0a0a0;
+  --text-dim: #8a8a8a;
+  /* accent (KEPT — not hazard red) */
+  --accent: #ffc799;
+  --accent-strong: #ffd8b8;
+  /* semantic only */
+  --success: #99ffe4;
+  --danger: #ff8080;
+  --selection: #ffffff25;
+  /* type */
+  --font-mono: "IBM Plex Mono", "SF Mono", Menlo, Monaco, Consolas, monospace;
+  --font-display: "Archivo", "Inter", system-ui, sans-serif;
+  /* spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--selection);
+}
+
+main {
+  width: min(100%, 720px);
+  margin: 0 auto;
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border-radius: 0;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: var(--space-2) var(--space-3);
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+label {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+[role="alert"] {
+  color: var(--danger);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+[role="status"] {
+  color: var(--text-muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.text-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.text-link:hover {
+  border-bottom-color: var(--accent);
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+}
