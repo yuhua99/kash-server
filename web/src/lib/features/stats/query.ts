@@ -25,7 +25,7 @@ export function calculateTotals(records: RecordItem[]): Totals {
   for (const record of records) {
     if (record.amount > 0) {
       incomeTotal += record.amount;
-    } else {
+    } else if (record.amount < 0) {
       expenseTotal += Math.abs(record.amount);
     }
   }

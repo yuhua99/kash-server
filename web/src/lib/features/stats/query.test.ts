@@ -46,4 +46,35 @@ describe("buildBreakdown", () => {
     const breakdown = buildBreakdown([rec("1", -5, null)], categories);
     expect(breakdown[0]).toMatchObject({ categoryId: "", name: "Uncategorized", isIncome: false });
   });
+
+  it("sorts by absoluteTotal descending", () => {
+    const records = [rec("1", -10, "food"), rec("2", 500, "salary"), rec("3", -20, null)];
+    const breakdown = buildBreakdown(records, categories);
+    expect(breakdown.map((item) => item.absoluteTotal)).toEqual([500, 20, 10]);
+  });
+
+  it("shares sum to 1 with unequal buckets", () => {
+    const records = [rec("1", -60, "food"), rec("2", 40, "salary")];
+    const breakdown = buildBreakdown(records, categories);
+    const totalShare = breakdown.reduce((sum, item) => sum + item.share, 0);
+    expect(totalShare).toBeCloseTo(1);
+    expect(breakdown[0].share).toBeCloseTo(0.6);
+    expect(breakdown[1].share).toBeCloseTo(0.4);
+  });
+
+  it("groups undefined and null category_id together as Uncategorized", () => {
+    const records = [rec("1", -10, null), rec("2", -5, undefined as unknown as string | null)];
+    const breakdown = buildBreakdown(records, categories);
+    expect(breakdown).toHaveLength(1);
+    expect(breakdown[0]).toMatchObject({
+      categoryId: "",
+      name: "Uncategorized",
+      absoluteTotal: 15,
+    });
+  });
+
+  it("infers isIncome from total sign for uncategorized", () => {
+    const breakdown = buildBreakdown([rec("1", 100, null)], categories);
+    expect(breakdown[0].isIncome).toBe(true);
+  });
 });

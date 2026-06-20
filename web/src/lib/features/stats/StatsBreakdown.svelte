@@ -11,6 +11,21 @@
   };
 
   let { totals, breakdown, currency, note }: Props = $props();
+
+  let percentages = $derived.by(() => {
+    const raw = breakdown.map((item) => item.share * 100);
+    const floored = raw.map(Math.floor);
+    let remainder = 100 - floored.reduce((a, b) => a + b, 0);
+    if (remainder === 100 && floored.every((v) => v === 0)) return floored;
+    const diffs = raw.map((v, i) => ({ i, d: v - floored[i] }));
+    diffs.sort((a, b) => b.d - a.d);
+    for (const { i } of diffs) {
+      if (remainder <= 0) break;
+      floored[i]++;
+      remainder--;
+    }
+    return floored;
+  });
 </script>
 
 <div class="stats">
@@ -42,7 +57,7 @@
       <p class="stats__empty">No data for this period.</p>
     {:else}
       <ul class="breakdown">
-        {#each breakdown as item (item.categoryId)}
+        {#each breakdown as item, i (item.categoryId)}
           <li class="breakdown__row">
             <div class="breakdown__head">
               <span class="breakdown__name">{item.name}</span>
@@ -51,9 +66,9 @@
               </data>
             </div>
             <div class="breakdown__bar" aria-hidden="true">
-              <span class="breakdown__fill" style:width={`${Math.round(item.share * 100)}%`}></span>
+              <span class="breakdown__fill" style:width={`${percentages[i]}%`}></span>
             </div>
-            <span class="breakdown__share">{Math.round(item.share * 100)}%</span>
+            <span class="breakdown__share">{percentages[i]}%</span>
           </li>
         {/each}
       </ul>
