@@ -26,7 +26,7 @@ export function computeAutoShares(args: {
   const pool = unlocked.length + 1;
   const totalUnits = Math.round(remaining / unit);
   const perUnits = pool > 0 ? Math.floor(totalUnits / pool) : 0;
-  const perShare = perUnits * unit;
+  const perShare = roundToCents(perUnits * unit);
 
   const result: Record<string, string> = {};
   for (const id of selectedIds) {
@@ -65,5 +65,5 @@ export function buildParticipantSplits(
   ids: string[],
   amountInputs: Record<string, string>,
 ): { user_id: string; amount: number }[] {
-  return ids.map((id) => ({ user_id: id, amount: roundToCents(Number(amountInputs[id])) }));
+  return ids.map((id) => ({ user_id: id, amount: roundToCents(Number(amountInputs[id] ?? 0)) }));
 }
