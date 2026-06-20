@@ -147,7 +147,7 @@ pub async fn create_category(
     get,
     path = "/categories",
     tag = "categories",
-    params(crate::models::GetCategoriesQuery),
+    params(GetCategoriesQuery),
     responses(
         (status = 200, description = "Categories retrieved", body = crate::models::GetCategoriesResponse),
         (status = 401, description = "Unauthorized"),

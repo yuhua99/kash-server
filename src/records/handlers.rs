@@ -232,7 +232,7 @@ pub async fn create_record(
     get,
     path = "/records",
     tag = "records",
-    params(crate::models::GetRecordsQuery),
+    params(GetRecordsQuery),
     responses(
         (status = 200, description = "Records retrieved", body = crate::models::GetRecordsResponse),
         (status = 401, description = "Unauthorized"),

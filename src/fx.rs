@@ -29,7 +29,7 @@ struct FrankfurterRateRow {
     get,
     path = "/fx/rates",
     tag = "fx",
-    params(crate::models::GetFxRatesQuery),
+    params(GetFxRatesQuery),
     responses(
         (status = 200, description = "FX rates", body = crate::models::GetFxRatesResponse),
         (status = 401, description = "Not logged in"),

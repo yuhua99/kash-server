@@ -19,7 +19,7 @@ use crate::validation::{validate_offset, validate_records_limit, validate_string
     get,
     path = "/splits/pending",
     tag = "splits",
-    params(crate::models::PendingSharesQuery),
+    params(PendingSharesQuery),
     responses(
         (status = 200, description = "Pending shares", body = crate::models::PendingShareListResponse),
         (status = 401, description = "Unauthorized"),
@@ -140,7 +140,7 @@ pub async fn list_pending_shares(
     get,
     path = "/splits/unsettled",
     tag = "splits",
-    params(crate::models::UnsettledSharesQuery),
+    params(UnsettledSharesQuery),
     responses(
         (status = 200, description = "Unsettled shares", body = crate::models::UnsettledShareListResponse),
         (status = 401, description = "Unauthorized"),

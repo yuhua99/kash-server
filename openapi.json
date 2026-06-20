@@ -144,8 +144,8 @@
         "parameters": [
           {
             "name": "limit",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -157,8 +157,8 @@
           },
           {
             "name": "offset",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -170,8 +170,8 @@
           },
           {
             "name": "search",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -643,7 +643,7 @@
         "parameters": [
           {
             "name": "from",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
@@ -651,7 +651,7 @@
           },
           {
             "name": "to",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
@@ -659,7 +659,7 @@
           },
           {
             "name": "quotes",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
@@ -701,8 +701,8 @@
         "parameters": [
           {
             "name": "start_date",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -712,8 +712,8 @@
           },
           {
             "name": "end_date",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "string",
@@ -723,8 +723,8 @@
           },
           {
             "name": "limit",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -736,8 +736,8 @@
           },
           {
             "name": "offset",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -1108,8 +1108,8 @@
         "parameters": [
           {
             "name": "limit",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -1121,8 +1121,8 @@
           },
           {
             "name": "offset",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -1165,7 +1165,7 @@
         "parameters": [
           {
             "name": "friend_id",
-            "in": "path",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
@@ -1173,8 +1173,8 @@
           },
           {
             "name": "limit",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
@@ -1186,8 +1186,8 @@
           },
           {
             "name": "offset",
-            "in": "path",
-            "required": true,
+            "in": "query",
+            "required": false,
             "schema": {
               "type": [
                 "integer",
