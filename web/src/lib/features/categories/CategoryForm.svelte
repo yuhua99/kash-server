@@ -52,7 +52,7 @@
 <Block title="New category">
   <form class="category-form" onsubmit={submit}>
     <label for="category-name">Name</label>
-    <input id="category-name" bind:value={name} disabled={pending} autocomplete="off" />
+    <input id="category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
     {#if error}
       <p role="alert">{error}</p>
     {/if}
@@ -116,5 +116,10 @@
   :global(.type-tabs__trigger[data-state="active"]) {
     background: var(--surface);
     color: var(--accent);
+  }
+
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
   }
 </style>

@@ -71,7 +71,7 @@
 <Dialog bind:open {onOpenChange} title="Edit category">
   <form class="edit-form" onsubmit={save}>
     <label for="edit-category-name">Name</label>
-    <input id="edit-category-name" bind:value={name} disabled={pending} autocomplete="off" />
+    <input id="edit-category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
     {#if error}
       <p role="alert">{error}</p>
     {/if}
@@ -96,5 +96,10 @@
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  input:focus {
+    outline: none;
+    border-color: var(--accent);
   }
 </style>
