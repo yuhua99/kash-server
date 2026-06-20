@@ -1,0 +1,81 @@
+<script lang="ts">
+  import type { Snippet } from "svelte";
+
+  type Props = {
+    variant?: "primary" | "secondary";
+    size?: "compact";
+    type?: "button" | "submit" | "reset";
+    disabled?: boolean;
+    onclick?: (event: MouseEvent) => void;
+    className?: string;
+    children?: Snippet;
+  };
+
+  let {
+    variant = "primary",
+    size,
+    type = "button",
+    disabled = false,
+    onclick,
+    className = "",
+    children,
+  }: Props = $props();
+</script>
+
+<button
+  class={["btn", `btn-${variant}`, size === "compact" ? "btn--compact" : "", className]
+    .filter(Boolean)
+    .join(" ")}
+  {type}
+  {disabled}
+  {onclick}
+>
+  {@render children?.()}
+</button>
+
+<style>
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .btn:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .btn:disabled {
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    border-color: var(--accent);
+    background: var(--surface);
+    color: var(--accent);
+  }
+
+  .btn-secondary {
+    border-color: var(--border-strong);
+    background: transparent;
+    color: var(--text-muted);
+  }
+
+  .btn--compact {
+    min-height: 30px;
+    padding: var(--space-2) var(--space-3);
+    font-size: 10px;
+  }
+</style>
