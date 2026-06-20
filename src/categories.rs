@@ -72,6 +72,19 @@ impl From<CreateCategoryError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/categories",
+    tag = "categories",
+    request_body = crate::models::CreateCategoryPayload,
+    responses(
+        (status = 201, description = "Category created", body = crate::models::Category),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 409, description = "Conflict"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn create_category(
     State(app_state): State<AppState>,
     session: Session,
@@ -130,6 +143,18 @@ pub async fn create_category(
     Ok((StatusCode::CREATED, Json(category)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/categories",
+    tag = "categories",
+    params(crate::models::GetCategoriesQuery),
+    responses(
+        (status = 200, description = "Categories retrieved", body = crate::models::GetCategoriesResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn get_categories(
     State(app_state): State<AppState>,
     session: Session,
@@ -248,6 +273,21 @@ impl From<UpdateCategoryError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    put,
+    path = "/categories/{id}",
+    tag = "categories",
+    params(("id" = String, Path, description = "category id")),
+    request_body = crate::models::UpdateCategoryPayload,
+    responses(
+        (status = 200, description = "Category updated", body = crate::models::Category),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "Not found"),
+        (status = 409, description = "Conflict"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn update_category(
     State(app_state): State<AppState>,
     session: Session,
@@ -374,6 +414,19 @@ impl From<DeleteCategoryError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    delete,
+    path = "/categories/{id}",
+    tag = "categories",
+    params(("id" = String, Path, description = "category id")),
+    responses(
+        (status = 204, description = "Category deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Not found"),
+        (status = 409, description = "Conflict"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn delete_category(
     State(app_state): State<AppState>,
     session: Session,

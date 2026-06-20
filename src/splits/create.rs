@@ -32,6 +32,19 @@ impl From<TransactionError> for SplitRecordError {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/splits",
+    tag = "splits",
+    request_body = crate::models::CreateSplitPayload,
+    responses(
+        (status = 201, description = "Split created", body = crate::models::SplitCreatedResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 409, description = "Conflict"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn create_split(
     State(app_state): State<AppState>,
     session: Session,

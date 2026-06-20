@@ -25,6 +25,19 @@ struct FrankfurterRateRow {
     rate: f64,
 }
 
+#[utoipa::path(
+    get,
+    path = "/fx/rates",
+    tag = "fx",
+    params(crate::models::GetFxRatesQuery),
+    responses(
+        (status = 200, description = "FX rates", body = crate::models::GetFxRatesResponse),
+        (status = 401, description = "Not logged in"),
+        (status = 400, description = "Invalid input"),
+        (status = 502, description = "Upstream FX provider error"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_fx_rates(
     State(app_state): State<AppState>,
     session: Session,

@@ -3,12 +3,11 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
 };
-use serde_json::json;
 use tower_sessions::Session;
 
 use crate::auth::get_current_user;
 use crate::errors::db_error_with_context;
-use crate::models::ShareStatusResponse;
+use crate::models::{SettleAllResponse, ShareStatusResponse};
 use crate::validation::validate_string_length;
 use crate::{AppState, TransactionError, with_transaction};
 
@@ -25,6 +24,19 @@ impl From<TransactionError> for SettleShareError {
     }
 }
 
+#[utoipa::path(
+    put,
+    path = "/splits/participants/{id}/settle",
+    tag = "splits",
+    params(("id" = String, Path, description = "split participant id")),
+    responses(
+        (status = 200, description = "Share settled", body = crate::models::ShareStatusResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "Share not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn settle_share(
     State(app_state): State<AppState>,
     session: Session,
@@ -123,11 +135,23 @@ pub async fn settle_share(
     Ok((StatusCode::OK, Json(response)))
 }
 
+#[utoipa::path(
+    put,
+    path = "/splits/with/{friend_id}/settle-all",
+    tag = "splits",
+    params(("friend_id" = String, Path, description = "friend user id")),
+    responses(
+        (status = 200, description = "Shares settled", body = crate::models::SettleAllResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn settle_all_with_friend(
     State(app_state): State<AppState>,
     session: Session,
     Path(friend_id): Path<String>,
-) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<SettleAllResponse>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
     validate_string_length(
         &friend_id,
@@ -169,8 +193,5 @@ pub async fn settle_all_with_friend(
         TransactionError::Commit => db_error_with_context("failed to commit settle all transaction"),
     })?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({ "updated_count": updated_count })),
-    ))
+    Ok((StatusCode::OK, Json(SettleAllResponse { updated_count })))
 }

@@ -8,6 +8,7 @@ pub mod friends;
 pub mod fx;
 pub mod models;
 pub mod money;
+pub mod openapi;
 pub mod records;
 pub mod settings;
 pub mod splits;

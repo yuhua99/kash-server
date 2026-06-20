@@ -1,7 +1,6 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
-use serde_json::json;
 use tower_sessions::Session;
 use uuid::Uuid;
 
@@ -10,7 +9,8 @@ use crate::auth::{get_current_user, get_user_by_username_public};
 use crate::constants::*;
 use crate::errors::db_error_with_context;
 use crate::models::{
-    AcceptFriendPayload, FriendshipRelation, RemoveFriendPayload, SendFriendRequestPayload,
+    AcceptFriendPayload, FriendshipRelation, RemoveFriendPayload, RemoveFriendResponse,
+    SendFriendRequestPayload,
 };
 use crate::{TransactionError, with_transaction};
 
@@ -117,6 +117,20 @@ impl From<RemoveFriendError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/friends/request",
+    tag = "friends",
+    request_body = crate::models::SendFriendRequestPayload,
+    responses(
+        (status = 201, description = "Friend request created", body = crate::models::FriendshipRelation),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "User not found"),
+        (status = 409, description = "Friend request already exists"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn send_friend_request(
     State(app_state): State<AppState>,
     session: Session,
@@ -206,6 +220,18 @@ pub async fn send_friend_request(
     ))
 }
 
+#[utoipa::path(
+    post,
+    path = "/friends/accept",
+    tag = "friends",
+    request_body = crate::models::AcceptFriendPayload,
+    responses(
+        (status = 200, description = "Friend request accepted", body = crate::models::FriendshipRelation),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Friend request not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn accept_friend(
     State(app_state): State<AppState>,
     session: Session,
@@ -277,11 +303,23 @@ pub async fn accept_friend(
     Ok((StatusCode::OK, Json(relation)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/friends/remove",
+    tag = "friends",
+    request_body = crate::models::RemoveFriendPayload,
+    responses(
+        (status = 200, description = "Friendship removed", body = crate::models::RemoveFriendResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Friendship not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn remove_friend(
     State(app_state): State<AppState>,
     session: Session,
     Json(payload): Json<RemoveFriendPayload>,
-) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<RemoveFriendResponse>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
     let (user_low_id, user_high_id) = ordered_user_pair(&current_user.id, &payload.friend_id);
 
@@ -307,5 +345,5 @@ pub async fn remove_friend(
     .await
     .map_err(Into::<(StatusCode, String)>::into)?;
 
-    Ok((StatusCode::OK, Json(json!({}))))
+    Ok((StatusCode::OK, Json(RemoveFriendResponse {})))
 }

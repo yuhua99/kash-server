@@ -58,6 +58,21 @@ impl From<FinalizeShareError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    post,
+    path = "/splits/participants/{id}/finalize",
+    tag = "splits",
+    params(("id" = String, Path, description = "split participant id")),
+    request_body = crate::models::FinalizeSharePayload,
+    responses(
+        (status = 200, description = "Share finalized", body = crate::models::Record),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "Share not found"),
+        (status = 409, description = "Conflict"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn finalize_share(
     State(app_state): State<AppState>,
     session: Session,

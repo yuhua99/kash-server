@@ -206,6 +206,18 @@ async fn create_record_for_user(
     .map_err(<(StatusCode, String)>::from)
 }
 
+#[utoipa::path(
+    post,
+    path = "/records",
+    tag = "records",
+    request_body = crate::models::CreateRecordPayload,
+    responses(
+        (status = 201, description = "Record created", body = crate::models::Record),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn create_record(
     State(app_state): State<AppState>,
     session: Session,
@@ -216,6 +228,18 @@ pub async fn create_record(
     Ok((StatusCode::CREATED, Json(record)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/records",
+    tag = "records",
+    params(crate::models::GetRecordsQuery),
+    responses(
+        (status = 200, description = "Records retrieved", body = crate::models::GetRecordsResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn get_records(
     State(app_state): State<AppState>,
     session: Session,
@@ -280,6 +304,20 @@ pub async fn get_records(
     ))
 }
 
+#[utoipa::path(
+    put,
+    path = "/records/{id}",
+    tag = "records",
+    params(("id" = String, Path, description = "record id")),
+    request_body = crate::models::UpdateRecordPayload,
+    responses(
+        (status = 200, description = "Record updated", body = crate::models::Record),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "Not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn update_record(
     State(app_state): State<AppState>,
     session: Session,
@@ -427,6 +465,18 @@ pub async fn update_record(
     Ok((StatusCode::OK, Json(updated_record)))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/records/{id}",
+    tag = "records",
+    params(("id" = String, Path, description = "record id")),
+    responses(
+        (status = 204, description = "Record deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn delete_record(
     State(app_state): State<AppState>,
     session: Session,

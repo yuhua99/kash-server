@@ -7,6 +7,17 @@ use crate::errors::{db_error, db_error_with_context};
 use crate::models::{UpdateUserSettingsPayload, UserSettings};
 use crate::validation::validate_currency;
 
+#[utoipa::path(
+    get,
+    path = "/settings",
+    tag = "settings",
+    responses(
+        (status = 200, description = "User settings", body = crate::models::UserSettings),
+        (status = 401, description = "Not logged in"),
+        (status = 404, description = "User not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_settings(
     State(app_state): State<AppState>,
     session: Session,
@@ -34,6 +45,18 @@ pub async fn get_settings(
     Err((StatusCode::NOT_FOUND, "User not found".to_string()))
 }
 
+#[utoipa::path(
+    put,
+    path = "/settings",
+    tag = "settings",
+    request_body = crate::models::UpdateUserSettingsPayload,
+    responses(
+        (status = 200, description = "Updated user settings", body = crate::models::UserSettings),
+        (status = 401, description = "Not logged in"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn update_settings(
     State(app_state): State<AppState>,
     session: Session,

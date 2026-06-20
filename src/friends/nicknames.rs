@@ -50,6 +50,19 @@ impl From<UpdateNicknameError> for (StatusCode, String) {
     }
 }
 
+#[utoipa::path(
+    patch,
+    path = "/friends/nickname",
+    tag = "friends",
+    request_body = crate::models::UpdateNicknamePayload,
+    responses(
+        (status = 200, description = "Nickname updated", body = crate::models::FriendshipRelation),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 404, description = "Friendship relation not found"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn update_nickname(
     State(app_state): State<AppState>,
     session: Session,

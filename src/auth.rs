@@ -50,6 +50,19 @@ async fn create_user(db: &Db, username: &str, password: &str) -> anyhow::Result<
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/register",
+    tag = "auth",
+    request_body = crate::models::RegisterPayload,
+    responses(
+        (status = 201, description = "User registered", body = crate::models::PublicUser),
+        (status = 400, description = "Invalid input"),
+        (status = 409, description = "Username already exists"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(())
+)]
 pub async fn register(
     State(app_state): State<AppState>,
     Json(payload): Json<RegisterPayload>,
@@ -177,6 +190,19 @@ pub async fn authenticate_user(
     })
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/login",
+    tag = "auth",
+    request_body = crate::models::LoginPayload,
+    responses(
+        (status = 200, description = "User logged in", body = crate::models::PublicUser),
+        (status = 400, description = "Invalid input"),
+        (status = 401, description = "Invalid credentials"),
+        (status = 500, description = "Internal server error")
+    ),
+    security(())
+)]
 pub async fn login(
     State(app_state): State<AppState>,
     session: Session,
@@ -214,11 +240,28 @@ pub async fn get_current_user(session: &Session) -> Result<PublicUser, (StatusCo
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/auth/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Current user", body = crate::models::PublicUser),
+        (status = 401, description = "Not logged in"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn me(session: Session) -> Result<(StatusCode, Json<PublicUser>), (StatusCode, String)> {
     let user = get_current_user(&session).await?;
     Ok((StatusCode::OK, Json(user)))
 }
 
+#[utoipa::path(
+    post,
+    path = "/auth/logout",
+    tag = "auth",
+    responses((status = 204, description = "Logged out")),
+    security(())
+)]
 pub async fn logout(session: Session) -> Result<StatusCode, (StatusCode, String)> {
     session.clear().await;
 

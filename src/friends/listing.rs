@@ -2,23 +2,35 @@ use axum::Json;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
-use serde_json::json;
 use tower_sessions::Session;
+use utoipa::IntoParams;
 
 use crate::AppState;
 use crate::auth::get_current_user;
 use crate::constants::*;
 use crate::errors::{db_error, db_error_with_context};
-use crate::models::{FriendshipRelation, PublicUser};
+use crate::models::{FriendListResponse, FriendshipRelation, PublicUser};
 use crate::validation::{validate_limit, validate_offset};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct SearchUsersQuery {
     pub query: String,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/friends/search",
+    tag = "friends",
+    params(SearchUsersQuery),
+    responses(
+        (status = 200, description = "Users matching search query", body = Vec<crate::models::PublicUser>),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn search_users(
     State(app_state): State<AppState>,
     session: Session,
@@ -77,18 +89,30 @@ pub async fn search_users(
     Ok((StatusCode::OK, Json(users)))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, IntoParams)]
 pub struct ListFriendsQuery {
     pub pending: Option<bool>,
     pub limit: Option<u32>,
     pub offset: Option<u32>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/friends/list",
+    tag = "friends",
+    params(ListFriendsQuery),
+    responses(
+        (status = 200, description = "Friends list", body = crate::models::FriendListResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn list_friends(
     State(app_state): State<AppState>,
     session: Session,
     Query(query): Query<ListFriendsQuery>,
-) -> Result<(StatusCode, Json<serde_json::Value>), (StatusCode, String)> {
+) -> Result<(StatusCode, Json<FriendListResponse>), (StatusCode, String)> {
     let current_user = get_current_user(&session).await?;
     let user_id = &current_user.id;
 
@@ -214,11 +238,11 @@ pub async fn list_friends(
 
     Ok((
         StatusCode::OK,
-        Json(json!({
-            "friends": friends,
-            "total_count": total_count,
-            "limit": limit,
-            "offset": offset
-        })),
+        Json(FriendListResponse {
+            friends,
+            total_count,
+            limit,
+            offset,
+        }),
     ))
 }

@@ -15,6 +15,18 @@ use crate::models::{
 use crate::money::to_decimal;
 use crate::validation::{validate_offset, validate_records_limit, validate_string_length};
 
+#[utoipa::path(
+    get,
+    path = "/splits/pending",
+    tag = "splits",
+    params(crate::models::PendingSharesQuery),
+    responses(
+        (status = 200, description = "Pending shares", body = crate::models::PendingShareListResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn list_pending_shares(
     State(app_state): State<AppState>,
     session: Session,
@@ -124,6 +136,18 @@ pub async fn list_pending_shares(
     ))
 }
 
+#[utoipa::path(
+    get,
+    path = "/splits/unsettled",
+    tag = "splits",
+    params(crate::models::UnsettledSharesQuery),
+    responses(
+        (status = 200, description = "Unsettled shares", body = crate::models::UnsettledShareListResponse),
+        (status = 401, description = "Unauthorized"),
+        (status = 400, description = "Invalid input"),
+        (status = 500, description = "Internal server error"),
+    ),
+)]
 pub async fn list_unsettled_shares(
     State(app_state): State<AppState>,
     session: Session,
