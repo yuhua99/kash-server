@@ -12,6 +12,6 @@
 <style>
   .home {
     display: grid;
-    gap: var(--space-6);
+    gap: var(--space-4);
   }
 </style>
