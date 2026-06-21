@@ -1,58 +1,52 @@
-# Kash Server
+# Kash
 
-Personal expense tracking backend in Rust (edition 2024) — Axum HTTP API.
+Personal budget tracker. Rust (Axum) API + SvelteKit web UI in one repo, served
+as a single binary backed by one SQLite file.
 
-## Stack
+## Layout
 
-- **Axum 0.8** — HTTP framework
-- **libsql** — Single shared SQLite DB (`data/users.db`)
-- **tower-sessions** — Session-based auth (Argon2)
+- `src/` — Rust API server (Axum, libsql, tower-sessions). Serves `/api` and the
+  built web UI on one port.
+- `web/` — SvelteKit SPA (adapter-static), talks to `/api` same-origin.
+- `data/` — SQLite database (`users.db`).
 
-## Run
+## Develop
 
 ```bash
-cp .env.example .env   # fill SESSION_SECRET at minimum
-cargo run              # API server → http://localhost:3000
+cp .env.example .env                  # set SESSION_SECRET (openssl rand -hex 64)
+
+cargo run                             # API → http://localhost:3000
+cd web && npm install && npm run dev  # UI dev server (proxies to the API)
 ```
 
-## Configuration
+## Deploy (Docker)
+
+One image builds the SPA and the binary; the binary serves both.
+
+```bash
+cp .env.example .env                  # set SESSION_SECRET
+docker compose up -d --build          # runs on 127.0.0.1:3000
+docker compose logs -f                # follow logs
+```
+
+State persists in the `kash-data` volume. `PRODUCTION=true` (set in
+`docker-compose.yml`) enables secure cookies, so login requires HTTPS — run it
+behind a reverse proxy. Sessions are in-memory: restarting logs everyone out.
+
+## Configure
 
 | Variable | Required | Default |
 |---|---|---|
-| `SESSION_SECRET` | ✅ (API) | — min 64 chars |
+| `SESSION_SECRET` | ✅ | — (min 64 chars) |
+| `SERVER_HOST` | | `0.0.0.0` |
+| `SERVER_PORT` | | `3000` |
 | `DATABASE_PATH` | | `./data` |
+| `STATIC_DIR` | | `web/build` |
+| `PRODUCTION` | | `false` |
 
-## Dev
-
-```bash
-cargo check
-cargo fmt
-cargo clippy --tests -- -D warnings
-cargo test --no-fail-fast
-```
-
-## Deploy (Docker + Cloudflare)
-
-One image serves the API and the built SPA on a single port.
+## Quality gates
 
 ```bash
-cp .env.example .env                 # set SESSION_SECRET: openssl rand -hex 64
-docker compose up -d --build         # builds web + binary, runs on 127.0.0.1:3000
+cargo fmt && cargo clippy --tests -- -D warnings && cargo test --no-fail-fast
+cd web && npm run check
 ```
-
-State lives in the `kash-data` volume (`/app/data/users.db`). The compose file
-sets `PRODUCTION=true` (secure cookies), which assumes the browser reaches the
-app over HTTPS — so put it behind a Cloudflare Tunnel:
-
-```bash
-cloudflared tunnel --url http://127.0.0.1:3000   # quick test
-# or a named tunnel routed to your domain in the Cloudflare dashboard
-```
-
-Run `cloudflared` on the host (it reaches the localhost-bound port). For local
-HTTP testing without Cloudflare, set `PRODUCTION=false`, otherwise the login
-cookie won't be sent over plain HTTP.
-
-## Notes
-
-- Fresh `data/` dir required — no migration from legacy per-user DB files.
