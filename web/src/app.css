@@ -43,6 +43,8 @@ html {
 }
 
 body {
+  /* Kill double-tap zoom; pinch/scale already blocked via viewport meta. */
+  touch-action: manipulation;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-mono);
