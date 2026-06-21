@@ -1,0 +1,22 @@
+services:
+  kash:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kash-server:latest
+    container_name: kash-server
+    restart: unless-stopped
+    environment:
+      # Cloudflare terminates HTTPS to the browser, so secure cookies are safe.
+      PRODUCTION: "true"
+      # Read from the project .env (must be >= 64 chars). Generate with:
+      #   openssl rand -hex 64
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env (>= 64 chars)}
+    # Bound to localhost: expose it publicly via a Cloudflare Tunnel on the host.
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - kash-data:/app/data
+
+volumes:
+  kash-data:
