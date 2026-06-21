@@ -6,17 +6,13 @@ services:
     image: kash-server:latest
     container_name: kash-server
     restart: unless-stopped
-    environment:
-      # Cloudflare terminates HTTPS to the browser, so secure cookies are safe.
-      PRODUCTION: "true"
-      # Read from the project .env (must be >= 64 chars). Generate with:
-      #   openssl rand -hex 64
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env (>= 64 chars)}
-    # Bound to localhost: expose it publicly via a Cloudflare Tunnel on the host.
+    # All config (SESSION_SECRET, SERVER_PORT, PRODUCTION, paths) comes from .env.
+    env_file:
+      - .env
+    # Bound to localhost; expose it publicly however you like (e.g. a reverse
+    # proxy or a Cloudflare Tunnel running on the host). Must match SERVER_PORT.
     ports:
       - "127.0.0.1:3000:3000"
     volumes:
-      - kash-data:/app/data
-
-volumes:
-  kash-data:
+      # Bind mount: use the existing ./data/users.db on the host.
+      - ./data:/app/data
