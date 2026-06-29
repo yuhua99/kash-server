@@ -89,9 +89,30 @@
   :global(.kash-select-content) {
     z-index: 60;
     min-width: var(--bits-select-anchor-width);
+    max-height: min(320px, var(--bits-select-content-available-height, 320px));
+    overflow-y: auto;
     border: 1px solid var(--border);
     background: var(--panel);
     padding: var(--space-1);
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+
+  :global(.kash-select-content::-webkit-scrollbar) {
+    width: 8px;
+  }
+
+  :global(.kash-select-content::-webkit-scrollbar-track) {
+    background: transparent;
+  }
+
+  :global(.kash-select-content::-webkit-scrollbar-thumb) {
+    background: var(--border-strong);
+    border: 2px solid var(--panel);
+  }
+
+  :global(.kash-select-content::-webkit-scrollbar-thumb:hover) {
+    background: var(--text-dim);
   }
 
   :global(.kash-select-item) {
