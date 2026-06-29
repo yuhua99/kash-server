@@ -83,7 +83,7 @@
   :global(.kash-dp-label) {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -98,7 +98,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -150,7 +150,7 @@
     gap: var(--space-2);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -167,7 +167,7 @@
     background: var(--surface);
     color: var(--accent);
     font-family: var(--font-mono);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
   }
 
   :global(.kash-dp-nav:not(:disabled):hover) {
@@ -197,7 +197,7 @@
     height: 24px;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 0.625rem;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -218,7 +218,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     font-variant-numeric: tabular-nums;
   }

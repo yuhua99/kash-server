@@ -125,7 +125,7 @@
     padding: var(--space-4);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -153,7 +153,7 @@
   .tag {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     letter-spacing: 0.1em;
   }

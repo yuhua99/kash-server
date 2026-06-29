@@ -50,7 +50,7 @@
   }
 
   .kind {
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.1em;
     line-height: 1;
     text-transform: uppercase;
@@ -66,7 +66,7 @@
 
   .message {
     color: var(--text);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.04em;
   }
 </style>

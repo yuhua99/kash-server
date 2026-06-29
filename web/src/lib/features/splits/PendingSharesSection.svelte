@@ -62,7 +62,7 @@
   .pending__meta {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -76,7 +76,7 @@
 
   .pending__currency {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
   }
 </style>

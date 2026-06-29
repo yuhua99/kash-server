@@ -35,13 +35,13 @@
   .friends-list__empty {
     margin: 0;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.05em;
     text-transform: uppercase;
   }
 
   .friends-list__nickname {
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 </style>

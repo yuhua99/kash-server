@@ -88,7 +88,7 @@
     background: var(--panel);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-align: center;

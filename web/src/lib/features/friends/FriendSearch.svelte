@@ -118,7 +118,7 @@
   .friend-search__error {
     margin: 0;
     color: var(--danger);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 
   .friend-search__results {
@@ -135,6 +135,6 @@
 
   .friend-search__username {
     color: var(--text);
-    font-size: 14px;
+    font-size: var(--font-size-md);
   }
 </style>

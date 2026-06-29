@@ -33,7 +33,7 @@
     margin: 0;
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     line-height: 1;

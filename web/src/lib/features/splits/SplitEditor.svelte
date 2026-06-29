@@ -194,13 +194,13 @@
   .split-footer {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
 
   .split-empty {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
   }
 </style>

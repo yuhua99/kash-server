@@ -44,7 +44,7 @@
     background: transparent;
     color: var(--accent);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     line-height: 1;
@@ -76,6 +76,6 @@
   .btn--compact {
     min-height: 30px;
     padding: var(--space-2) var(--space-3);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
   }
 </style>

@@ -91,7 +91,7 @@
   .stats__empty {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -114,7 +114,7 @@
   .totals dt {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }
@@ -181,7 +181,7 @@
     grid-column: 2;
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
   }
 </style>

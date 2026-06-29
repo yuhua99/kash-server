@@ -51,7 +51,7 @@
     margin: 0;
     color: var(--text);
     font-family: var(--font-display);
-    font-size: 1rem;
+    font-size: var(--font-size-lg);
     font-weight: 800;
     line-height: 1;
     letter-spacing: 0.08em;
@@ -62,7 +62,7 @@
     margin: var(--space-3) 0 var(--space-4);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     line-height: 1.5;
     letter-spacing: 0.05em;
     text-transform: uppercase;

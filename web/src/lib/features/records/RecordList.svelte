@@ -87,7 +87,7 @@
     border: 1px solid var(--border);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.06em;
     text-transform: uppercase;
   }
@@ -106,7 +106,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -144,7 +144,7 @@
   .record__meta {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
@@ -162,7 +162,7 @@
 
   .record__currency {
     color: var(--text-muted);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
   }
 

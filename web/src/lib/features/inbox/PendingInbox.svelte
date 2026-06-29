@@ -163,7 +163,7 @@
   .share dt {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.1em;
     text-transform: uppercase;
   }

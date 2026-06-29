@@ -269,7 +269,7 @@
     background: var(--surface);
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.04em;
   }
 
@@ -280,7 +280,7 @@
     background: var(--panel);
     color: var(--accent);
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }

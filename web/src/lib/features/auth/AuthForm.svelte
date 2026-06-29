@@ -127,7 +127,7 @@
   .auth-footer {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }

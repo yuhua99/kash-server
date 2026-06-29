@@ -56,7 +56,7 @@
   .select-field label {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: 0.75rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -69,7 +69,7 @@
     color: var(--text);
     padding: var(--space-3) var(--space-4);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     font-weight: 600;
     letter-spacing: 0.08em;
     text-align: left;
@@ -98,7 +98,7 @@
     padding: var(--space-2) var(--space-3);
     color: var(--text);
     font-family: var(--font-mono);
-    font-size: 0.8125rem;
+    font-size: var(--font-size-sm);
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
