@@ -36,11 +36,6 @@
 
   const categoryItems = $derived(categories.map((category) => ({ value: category.id, label: category.name })));
 
-  function getDefaultCategoryId(cats: Category[]): string {
-    const expense = cats.find((c) => !c.is_income);
-    return expense?.id ?? cats[0]?.id ?? "";
-  }
-
   $effect(() => {
     if (userId && userId !== bootstrappedUserId) {
       bootstrappedUserId = userId;
@@ -54,7 +49,6 @@
       if (queue.some((item) => item.kind === "share")) {
         const all = await getCategoriesCached();
         categories = [...all].sort((a, b) => Number(a.is_income) - Number(b.is_income));
-        selectedCategoryId = getDefaultCategoryId(categories);
       }
     } catch (error) {
       queue = [];
@@ -68,9 +62,7 @@
 
   function dismissHead() {
     queue = queue.slice(1);
-    if (queue[0]?.kind === "share") {
-      selectedCategoryId = getDefaultCategoryId(categories);
-    }
+    selectedCategoryId = "";
   }
 
   async function runAction(action: () => Promise<void>, fallback: string) {
@@ -102,10 +94,6 @@
   }
 
   function saveShareItem(participantId: string) {
-    if (!selectedCategoryId) {
-      toast.error("Select a category");
-      return;
-    }
     void runAction(() => savePendingShare(participantId, selectedCategoryId), "Could not save share");
   }
 </script>
@@ -119,39 +107,46 @@
   </Dialog>
 {:else if head?.kind === "share"}
   <Dialog {open} onOpenChange={(o) => { if (!o && !busy) dismissHead(); }} title="Record a shared expense" description={head.share.description}>
-    <dl class="share">
-      <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
-      <div><dt>Date</dt><dd>{head.share.date}</dd></div>
-      <div><dt>Amount</dt><dd>{formatMoney(head.share.amount, head.share.currency)} {head.share.currency}</dd></div>
-    </dl>
-    {#if categories.length === 0}
-      <p role="alert">No categories available. Create one first.</p>
-    {:else}
-      <SelectField
-        id="inbox-share-category"
-        label="Category"
-        value={selectedCategoryId}
-        items={categoryItems}
-        onValueChange={(value) => (selectedCategoryId = value)}
-      />
-    {/if}
-    <ButtonRow>
-      <Button
-        variant="primary"
-        disabled={busy || categories.length === 0}
-        onclick={() => saveShareItem(head.share.participant_id)}
-      >
-        {busy ? "Saving" : "Save"}
-      </Button>
-    </ButtonRow>
+    <div class="share-form">
+      <dl class="share">
+        <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
+        <div><dt>Date</dt><dd>{head.share.date}</dd></div>
+        <div><dt>Amount</dt><dd>{formatMoney(head.share.amount, head.share.currency)} {head.share.currency}</dd></div>
+      </dl>
+      {#if categories.length === 0}
+        <p role="alert">No categories available. Create one first.</p>
+      {:else}
+        <SelectField
+          id="inbox-share-category"
+          label="Category"
+          value={selectedCategoryId}
+          items={categoryItems}
+          onValueChange={(value) => (selectedCategoryId = value)}
+        />
+      {/if}
+      <ButtonRow>
+        <Button
+          variant="primary"
+          disabled={busy || categories.length === 0 || !selectedCategoryId}
+          onclick={() => saveShareItem(head.share.participant_id)}
+        >
+          {busy ? "Saving" : "Save"}
+        </Button>
+      </ButtonRow>
+    </div>
   </Dialog>
 {/if}
 
 <style>
+  .share-form {
+    display: grid;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+
   .share {
     display: grid;
     gap: var(--space-2);
-    margin: var(--space-4) 0;
   }
 
   .share div {
