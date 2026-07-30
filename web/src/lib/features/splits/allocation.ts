@@ -1,11 +1,13 @@
 import {
-  formatAmount,
+  amountInputStep,
+  formatAmountInput,
+  normalizeAmountInputValue,
   roundToCents,
   type AmountDisplayMode,
 } from "$lib/features/money/amount-display";
 
-function unitFor(mode: AmountDisplayMode): number {
-  return mode === "whole" ? 1 : 0.01;
+function unitFor(mode: AmountDisplayMode, currency?: string): number {
+  return Number(amountInputStep(mode, currency));
 }
 
 export function computeAutoShares(args: {
@@ -14,9 +16,10 @@ export function computeAutoShares(args: {
   lockedAmounts: Record<string, number>;
   touched: Set<string>;
   mode: AmountDisplayMode;
+  currency?: string;
 }): Record<string, string> {
-  const { selectedIds, total, lockedAmounts, touched, mode } = args;
-  const unit = unitFor(mode);
+  const { selectedIds, total, lockedAmounts, touched, mode, currency } = args;
+  const unit = unitFor(mode, currency);
 
   const unlocked = selectedIds.filter((id) => !touched.has(id));
   const lockedSelected = selectedIds.filter((id) => touched.has(id));
@@ -31,8 +34,8 @@ export function computeAutoShares(args: {
   const result: Record<string, string> = {};
   for (const id of selectedIds) {
     result[id] = touched.has(id)
-      ? formatAmount(lockedAmounts[id] ?? 0, mode)
-      : formatAmount(perShare, mode);
+      ? formatAmountInput(lockedAmounts[id] ?? 0, mode, currency)
+      : formatAmountInput(perShare, mode, currency);
   }
   return result;
 }
@@ -41,14 +44,15 @@ export function assignAllToFriends(args: {
   selectedIds: string[];
   total: number;
   mode: AmountDisplayMode;
+  currency?: string;
 }): Record<string, string> {
-  const { selectedIds, total, mode } = args;
+  const { selectedIds, total, mode, currency } = args;
   const n = selectedIds.length;
   if (n === 0) {
     return {};
   }
 
-  const unit = unitFor(mode);
+  const unit = unitFor(mode, currency);
   const totalUnits = Math.round(total / unit);
   const base = Math.floor(totalUnits / n);
   const remainder = totalUnits - base * n;
@@ -56,7 +60,7 @@ export function assignAllToFriends(args: {
   const result: Record<string, string> = {};
   selectedIds.forEach((id, i) => {
     const units = base + (i < remainder ? 1 : 0);
-    result[id] = formatAmount(units * unit, mode);
+    result[id] = formatAmountInput(units * unit, mode, currency);
   });
   return result;
 }
@@ -64,6 +68,11 @@ export function assignAllToFriends(args: {
 export function buildParticipantSplits(
   ids: string[],
   amountInputs: Record<string, string>,
+  mode: AmountDisplayMode = "cents",
+  currency?: string,
 ): { user_id: string; amount: number }[] {
-  return ids.map((id) => ({ user_id: id, amount: roundToCents(Number(amountInputs[id] ?? 0)) }));
+  return ids.map((id) => ({
+    user_id: id,
+    amount: normalizeAmountInputValue(Number(amountInputs[id] ?? 0), mode, currency),
+  }));
 }

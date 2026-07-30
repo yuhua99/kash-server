@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  formatAmount,
-  formatSignedAmount,
+  amountInputStep,
+  formatAmountInput,
+  formatMoney,
   normalizeAmountInputValue,
   roundToCents,
 } from "./amount-display";
@@ -22,36 +23,51 @@ describe("normalizeAmountInputValue", () => {
   it("rounds in cents mode", () => {
     expect(normalizeAmountInputValue(12.344, "cents")).toBe(12.34);
   });
+
+  it("rounds zero-decimal currencies to whole amounts", () => {
+    expect(normalizeAmountInputValue(12.6, "cents", "TWD")).toBe(13);
+  });
 });
 
-describe("formatAmount", () => {
+describe("formatAmountInput", () => {
   it("formats whole mode", () => {
-    expect(formatAmount(12.9, "whole")).toBe("12");
+    expect(formatAmountInput(12.9, "whole")).toBe("12");
   });
 
   it("formats cents mode with a two-decimal currency", () => {
-    expect(formatAmount(12.5, "cents", "USD")).toBe("12.50");
+    expect(formatAmountInput(12.5, "cents", "USD")).toBe("12.50");
   });
 
   it("formats cents mode with a zero-decimal currency", () => {
-    expect(formatAmount(12, "cents", "TWD")).toBe("12");
+    expect(formatAmountInput(12.6, "cents", "TWD")).toBe("13");
+    expect(amountInputStep("cents", "TWD")).toBe("1");
   });
 
   it("formats cents mode without a currency", () => {
-    expect(formatAmount(1.2, "cents")).toBe("1.20");
+    expect(formatAmountInput(1.2, "cents")).toBe("1.20");
   });
 });
 
-describe("formatSignedAmount", () => {
-  it("adds a plus sign for positive amounts", () => {
-    expect(formatSignedAmount(12.5, "cents", "USD")).toBe("+12.50");
+describe("formatMoney", () => {
+  it("formats whole mode with grouping", () => {
+    expect(formatMoney(1234.9, "whole", "USD")).toBe("1,234");
   });
 
-  it("keeps the minus sign for negative amounts", () => {
-    expect(formatSignedAmount(-12.5, "cents", "USD")).toBe("-12.50");
+  it("formats cents mode with currency fraction digits", () => {
+    expect(formatMoney(1234.5, "cents", "USD")).toBe("1,234.50");
+    expect(formatMoney(1234, "cents", "TWD")).toBe("1,234");
   });
 
-  it("does not add a plus sign for zero", () => {
-    expect(formatSignedAmount(0, "cents", "USD")).toBe("0.00");
+  it("adds a plus sign for positive signed amounts", () => {
+    expect(formatMoney(12.5, "cents", "USD", { signed: true })).toBe("+12.50");
+    expect(formatMoney(-12.5, "cents", "USD", { signed: true })).toBe("-12.50");
+    expect(formatMoney(0, "cents", "USD", { signed: true })).toBe("0.00");
+  });
+
+  it("omits signs for sub-unit values that round to zero", () => {
+    expect(formatMoney(0.001, "cents", "USD", { signed: true })).toBe("0.00");
+    expect(formatMoney(-0.001, "cents", "USD", { signed: true })).toBe("0.00");
+    expect(formatMoney(0.9, "whole", "USD", { signed: true })).toBe("0");
+    expect(formatMoney(-0.9, "whole", "USD", { signed: true })).toBe("0");
   });
 });

@@ -9,7 +9,11 @@
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
-  import { amountDisplayMode, normalizeAmountInputValue } from "$lib/features/money/amount-display";
+  import {
+    amountDisplayMode,
+    amountInputStep,
+    normalizeAmountInputValue,
+  } from "$lib/features/money/amount-display";
   import { currentCurrency } from "$lib/features/money/current-currency";
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import { getAcceptedFriendsCached } from "$lib/features/friends/cache";
@@ -56,7 +60,9 @@
       .map((category) => ({ value: category.id, label: category.name })),
   );
 
-  const total = $derived(normalizeAmountInputValue(Number(amountInput) || 0, $amountDisplayMode));
+  const total = $derived(
+    normalizeAmountInputValue(Number(amountInput) || 0, $amountDisplayMode, $currentCurrency),
+  );
 
   const suggestions = $derived.by(() => {
     if (!categoryId) {
@@ -192,7 +198,7 @@
       id="quick-amount"
       type="number"
       min="0"
-      step={$amountDisplayMode === "whole" ? "1" : "0.01"}
+      step={amountInputStep($amountDisplayMode, $currentCurrency)}
       bind:value={amountInput}
     />
   </div>

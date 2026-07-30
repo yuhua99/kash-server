@@ -1,6 +1,6 @@
 <script lang="ts">
   import Block from "$lib/ui/Block.svelte";
-  import { formatMoney, formatSignedMoney } from "$lib/features/money/currency";
+  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { BreakdownItem, Totals } from "$lib/features/stats/query";
 
   type Props = {
@@ -38,16 +38,16 @@
       <div class="totals__cell">
         <dt>Net</dt>
         <dd class:totals__value--negative={totals.netTotal < 0}>
-          {formatSignedMoney(totals.netTotal, currency)} {currency}
+          {formatMoney(totals.netTotal, $amountDisplayMode, currency, { signed: true })} {currency}
         </dd>
       </div>
       <div class="totals__cell">
         <dt>Income</dt>
-        <dd class="totals__value--income">{formatMoney(totals.incomeTotal, currency)} {currency}</dd>
+        <dd class="totals__value--income">{formatMoney(totals.incomeTotal, $amountDisplayMode, currency)} {currency}</dd>
       </div>
       <div class="totals__cell">
         <dt>Expense</dt>
-        <dd class="totals__value--negative">{formatMoney(totals.expenseTotal, currency)} {currency}</dd>
+        <dd class="totals__value--negative">{formatMoney(totals.expenseTotal, $amountDisplayMode, currency)} {currency}</dd>
       </div>
     </dl>
   </Block>
@@ -62,7 +62,7 @@
             <div class="breakdown__head">
               <span class="breakdown__name">{item.name}</span>
               <data class="breakdown__amount" class:breakdown__amount--income={item.isIncome} value={item.total}>
-                {formatSignedMoney(item.total, currency)} {currency}
+                {formatMoney(item.total, $amountDisplayMode, currency, { signed: true })} {currency}
               </data>
             </div>
             <div class="breakdown__bar" aria-hidden="true">

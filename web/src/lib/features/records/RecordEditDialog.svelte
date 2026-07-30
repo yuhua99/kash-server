@@ -7,7 +7,12 @@
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
-  import { amountDisplayMode, formatAmount } from "$lib/features/money/amount-display";
+  import {
+    amountDisplayMode,
+    amountInputStep,
+    formatAmountInput,
+    normalizeAmountInputValue,
+  } from "$lib/features/money/amount-display";
   import { updateRecord } from "$lib/features/records/api";
   import { invalidateRecordsCache } from "$lib/features/records/cache";
 
@@ -36,7 +41,7 @@
     if (open && !previousOpen && record) {
       name = record.name;
       isIncome = record.amount > 0;
-      amountInput = formatAmount(Math.abs(record.amount), $amountDisplayMode);
+      amountInput = formatAmountInput(Math.abs(record.amount), $amountDisplayMode, record.currency);
       categoryId = record.category_id ?? "";
       date = record.date;
       error = "";
@@ -62,7 +67,7 @@
       return;
     }
 
-    const amount = Number(amountInput);
+    const amount = normalizeAmountInputValue(Number(amountInput), $amountDisplayMode, record.currency);
     if (amount < 0) {
       error = "Amount cannot be negative.";
       return;
@@ -118,7 +123,7 @@
         id="edit-record-amount"
         type="number"
         min="0"
-        step={$amountDisplayMode === "whole" ? "1" : "0.01"}
+        step={amountInputStep($amountDisplayMode, record?.currency)}
         bind:value={amountInput}
       />
     </div>

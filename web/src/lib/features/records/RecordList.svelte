@@ -2,8 +2,7 @@
   import type { components } from "$lib/api/schema";
   import Button from "$lib/ui/Button.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
-  import { amountDisplayMode, formatSignedAmount } from "$lib/features/money/amount-display";
-  import { formatMoney } from "$lib/features/money/currency";
+  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { DateGroup } from "$lib/features/records/view";
 
   type RecordItem = components["schemas"]["Record"];
@@ -35,7 +34,7 @@
         <span class="record__meta">{categoryLabel(record)} / {record.date}</span>
       </div>
       <data class="record__amount" class:record__amount--income={record.amount > 0} value={record.amount}>
-        {formatSignedAmount(record.amount, $amountDisplayMode, record.currency)}
+        {formatMoney(record.amount, $amountDisplayMode, record.currency, { signed: true })}
         <span class="record__currency">{record.currency}</span>
       </data>
       <div class="record__actions">
@@ -63,7 +62,7 @@
           <span class="group__date">{group.date}</span>
           <span class="group__spend">
             {#each group.spendSummaries as summary (summary.currency)}
-              <span class="group__spend-item">{formatMoney(summary.amount, summary.currency)} {summary.currency}</span>
+              <span class="group__spend-item">{formatMoney(summary.amount, $amountDisplayMode, summary.currency)} {summary.currency}</span>
             {/each}
           </span>
         </header>

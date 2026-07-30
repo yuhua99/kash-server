@@ -26,16 +26,3 @@ export function getCurrencyConfig(code: string): CurrencyConfig {
     ? CURRENCY_CONFIG[code]
     : CURRENCY_CONFIG[DEFAULT_CURRENCY_CODE];
 }
-
-export function formatMoney(amount: number, code: string): string {
-  const fractionDigits = getCurrencyConfig(code).fractionDigits;
-
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  }).format(amount);
-}
-
-export function formatSignedMoney(amount: number, code: string): string {
-  return `${amount > 0 ? "+" : ""}${formatMoney(amount, code)}`;
-}

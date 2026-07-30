@@ -6,7 +6,8 @@
   } from "$lib/validation";
   import Button from "$lib/ui/Button.svelte";
   import {
-    formatAmount,
+    amountInputStep,
+    formatMoney,
     type AmountDisplayMode,
   } from "$lib/features/money/amount-display";
   import {
@@ -54,6 +55,7 @@
       lockedAmounts,
       touched: touchedSet(),
       mode,
+      currency,
     });
   }
 
@@ -75,7 +77,7 @@
   }
 
   function assignMax() {
-    amounts = assignAllToFriends({ selectedIds, total, mode });
+    amounts = assignAllToFriends({ selectedIds, total, mode, currency });
     for (const id of selectedIds) {
       lockedAmounts[id] = Number(amounts[id]) || 0;
       touched[id] = true;
@@ -92,7 +94,7 @@
   );
 
   $effect(() => {
-    const participants = buildParticipantSplits(selectedIds, amounts);
+    const participants = buildParticipantSplits(selectedIds, amounts, mode, currency);
     let error: string | null = null;
     if (selectedIds.length === 0) {
       error = "Select at least one friend.";
@@ -136,7 +138,7 @@
               class="split-amount"
               type="number"
               min="0"
-              step={mode === "whole" ? "1" : "0.01"}
+              step={amountInputStep(mode, currency)}
               value={amounts[friend.user_id] ?? ""}
               oninput={(event) => editAmount(friend.user_id, (event.currentTarget as HTMLInputElement).value)}
               aria-label={`Amount for ${friend.nickname}`}
@@ -145,7 +147,7 @@
         </li>
       {/each}
     </ul>
-    <p class="split-footer">Your share: {formatAmount(yourShare, mode, currency)} {currency}</p>
+    <p class="split-footer">Your share: {formatMoney(yourShare, mode, currency)} {currency}</p>
   {/if}
 </div>
 

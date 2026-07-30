@@ -2,7 +2,7 @@
   import type { components } from "$lib/api/schema";
   import Block from "$lib/ui/Block.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
-  import { formatMoney } from "$lib/features/money/currency";
+  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
 
   type PendingShare = components["schemas"]["PendingShare"];
 
@@ -24,7 +24,7 @@
               <span class="pending__meta">{share.date} / {share.creditor_name}</span>
             </div>
             <data class="pending__amount" value={share.amount}>
-              {formatMoney(share.amount, share.currency)}
+              {formatMoney(share.amount, $amountDisplayMode, share.currency)}
               <span class="pending__currency">{share.currency}</span>
             </data>
           </div>

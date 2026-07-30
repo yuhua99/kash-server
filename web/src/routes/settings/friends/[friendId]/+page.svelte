@@ -13,7 +13,7 @@
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
   import { removeFriend, updateNickname } from "$lib/features/friends/api";
   import { notifyFriendsSync } from "$lib/features/friends/sync";
-  import { formatMoney } from "$lib/features/money/currency";
+  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import { listUnsettledShares, settleAllWithFriend } from "$lib/features/splits/api";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
@@ -135,7 +135,7 @@
                   <span class="share__meta">{share.date} / {share.direction}</span>
                 </div>
                 <data class="share__amount" value={share.amount}>
-                  {formatMoney(share.amount, share.currency)} {share.currency}
+                  {formatMoney(share.amount, $amountDisplayMode, share.currency)} {share.currency}
                 </data>
               </div>
             </ListRow>
