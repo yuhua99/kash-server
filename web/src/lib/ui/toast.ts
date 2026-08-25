@@ -10,7 +10,7 @@ function push(kind: ToastKind, message: string): void {
   const id = nextId;
   nextId += 1;
   toasts.update((items) => [...items, { id, kind, message }]);
-  setTimeout(() => toast.dismiss(id), 4000);
+  setTimeout(() => toast.dismiss(id), kind === "error" ? 7000 : 4000);
 }
 
 export const toast = {
