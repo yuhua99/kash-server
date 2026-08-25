@@ -176,7 +176,8 @@
 
   .share {
     display: grid;
-    grid-template-columns: 1fr auto;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-3);
   }
@@ -188,6 +189,7 @@
   }
 
   .share__desc {
+    min-width: 0;
     overflow: hidden;
     color: var(--text);
     text-overflow: ellipsis;
@@ -195,11 +197,15 @@
   }
 
   .share__meta {
+    min-width: 0;
+    overflow: hidden;
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     letter-spacing: 0.08em;
+    text-overflow: ellipsis;
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
   .share__amount {

@@ -135,13 +135,15 @@
 
   .breakdown {
     display: grid;
+    min-width: 0;
     gap: var(--space-3);
     list-style: none;
   }
 
   .breakdown__row {
     display: grid;
-    grid-template-columns: 1fr auto;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-1) var(--space-3);
   }
 
@@ -150,7 +152,11 @@
   }
 
   .breakdown__name {
+    min-width: 0;
+    overflow: hidden;
     color: var(--text);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .breakdown__amount {
@@ -158,6 +164,7 @@
     font-family: var(--font-mono);
     font-weight: 600;
     text-align: right;
+    white-space: nowrap;
   }
 
   .breakdown__amount--income {

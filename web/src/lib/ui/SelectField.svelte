@@ -50,6 +50,7 @@
 <style>
   .select-field {
     display: grid;
+    min-width: 0;
     gap: var(--space-2);
   }
 
@@ -64,6 +65,10 @@
 
   :global(.kash-select-trigger) {
     width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--text);
@@ -116,7 +121,11 @@
   }
 
   :global(.kash-select-item) {
+    min-width: 0;
+    overflow: hidden;
     padding: var(--space-2) var(--space-3);
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text);
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);

@@ -41,7 +41,12 @@
   }
 
   .friends-list__nickname {
+    display: block;
+    min-width: 0;
+    overflow: hidden;
     color: var(--text);
     font-size: var(--font-size-md);
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 </style>
