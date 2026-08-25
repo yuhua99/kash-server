@@ -10,6 +10,7 @@
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
   import FormField from "$lib/ui/FormField.svelte";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
@@ -109,7 +110,7 @@
 
 <section class="page">
   <a class="text-link" href="/settings/friends">Back to friends</a>
-  <h1>{friend?.nickname ?? "Friend"}</h1>
+  <PageHeader title={friend?.nickname ?? "Friend"} />
 
   {#if loading}
     <StatusMessage kind="loading" message="Loading…" />

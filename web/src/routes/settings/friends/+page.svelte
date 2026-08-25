@@ -3,6 +3,7 @@
   import type { components } from "$lib/api/schema";
   import FriendSearch from "$lib/features/friends/FriendSearch.svelte";
   import FriendsList from "$lib/features/friends/FriendsList.svelte";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
   import { friendsSyncRevision } from "$lib/features/friends/sync";
@@ -36,7 +37,7 @@
 </script>
 
 <section class="page">
-  <h1>Friends</h1>
+  <PageHeader title="Friends" />
 
   <FriendSearch onChange={reload} />
 

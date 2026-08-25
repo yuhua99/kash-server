@@ -4,6 +4,7 @@
   import { handleApiError } from "$lib/api/errors";
   import Block from "$lib/ui/Block.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
   import { logout } from "$lib/features/auth/api";
@@ -67,7 +68,7 @@
 </script>
 
 <section class="page">
-  <h1>Settings</h1>
+  <PageHeader title="Settings" />
 
   <Block title="Currency">
     <div class="stack">

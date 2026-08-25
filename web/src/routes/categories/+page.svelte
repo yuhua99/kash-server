@@ -4,6 +4,7 @@
   import CategoryForm from "$lib/features/categories/CategoryForm.svelte";
   import CategoryList from "$lib/features/categories/CategoryList.svelte";
   import { getCategoriesCached } from "$lib/features/categories/cache";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
 
   type Category = components["schemas"]["Category"];
@@ -28,7 +29,7 @@
 </script>
 
 <section class="page">
-  <h1>Categories</h1>
+  <PageHeader title="Categories" />
 
   <CategoryForm onChange={refresh} />
 

@@ -1,11 +1,10 @@
 <script lang="ts">
   import QuickAddForm from "$lib/features/records/QuickAddForm.svelte";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
 </script>
 
 <section class="page">
-  <header class="home__header">
-    <h1>Add</h1>
-  </header>
+  <PageHeader title="Add" />
   <QuickAddForm />
 </section>
 

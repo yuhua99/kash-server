@@ -4,6 +4,7 @@
   import { handleApiError } from "$lib/api/errors";
   import { periodFromPreset, type PeriodPreset } from "$lib/date";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
+  import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
@@ -189,7 +190,7 @@
 </script>
 
 <section class="page">
-  <h1>Records</h1>
+  <PageHeader title="Records" />
 
   <PendingSharesSection shares={pendingShares} />
 
