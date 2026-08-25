@@ -28,6 +28,8 @@
   type RecordItem = components["schemas"]["Record"];
   type PendingShare = components["schemas"]["PendingShare"];
 
+  const RENDER_PAGE_SIZE = 100;
+
   let mainCurrency = $state("");
 
   const initial = periodFromPreset("month");
@@ -35,8 +37,10 @@
   let start = $state(initial.start);
   let end = $state(initial.end);
   let search = $state("");
+  let debouncedSearch = $state("");
   let categoryFilter = $state<CategoryFilterMode>("all_expenses");
   let sortMode = $state<SortMode>("date_desc");
+  let renderLimit = $state(RENDER_PAGE_SIZE);
 
   let categories = $state<Category[]>([]);
   let records = $state<RecordItem[]>([]);
@@ -58,8 +62,30 @@
   const categoryNames = $derived(new Map(categories.map((c) => [c.id, c.name])));
   const grouped = $derived(sortMode === "date_desc" || sortMode === "date_asc");
 
+  $effect(() => {
+    if (!search) {
+      debouncedSearch = "";
+      return;
+    }
+
+    const timeout = setTimeout(() => {
+      debouncedSearch = search;
+    }, 200);
+
+    return () => clearTimeout(timeout);
+  });
+
+  $effect(() => {
+    void debouncedSearch;
+    void categoryFilter;
+    void sortMode;
+    void start;
+    void end;
+    renderLimit = RENDER_PAGE_SIZE;
+  });
+
   const visibleRecords = $derived.by(() => {
-    const normalizedSearch = search.trim().toLowerCase();
+    const normalizedSearch = debouncedSearch.trim().toLowerCase();
     return records
       .filter((record) => matchesRecordFilters(record, { normalizedSearch, categoryFilter }))
       .slice()
@@ -185,7 +211,16 @@
   {:else if error}
     <p role="alert">{error}</p>
   {:else}
-    <RecordList {grouped} {groups} records={visibleRecords} {categoryNames} {onEdit} {onDelete} />
+    <RecordList
+      {grouped}
+      {groups}
+      records={visibleRecords}
+      {categoryNames}
+      limit={renderLimit}
+      onShowMore={() => (renderLimit += RENDER_PAGE_SIZE)}
+      {onEdit}
+      {onDelete}
+    />
   {/if}
 </section>
 

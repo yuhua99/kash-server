@@ -12,11 +12,29 @@
     groups: DateGroup[];
     records: RecordItem[];
     categoryNames: Map<string, string>;
+    limit: number;
+    onShowMore: () => void;
     onEdit: (record: RecordItem) => void;
     onDelete: (record: RecordItem) => void;
   };
 
-  let { grouped, groups, records, categoryNames, onEdit, onDelete }: Props = $props();
+  let { grouped, groups, records, categoryNames, limit, onShowMore, onEdit, onDelete }: Props = $props();
+
+  const renderedGroups = $derived.by(() => {
+    let remaining = limit;
+    const result: DateGroup[] = [];
+
+    for (const group of groups) {
+      if (remaining <= 0) break;
+      const groupRecords = group.records.slice(0, remaining);
+      result.push({ ...group, records: groupRecords });
+      remaining -= groupRecords.length;
+    }
+
+    return result;
+  });
+  const renderedRecords = $derived(records.slice(0, limit));
+  const remaining = $derived(Math.max(records.length - limit, 0));
 
   function categoryLabel(record: RecordItem): string {
     if (!record.category_id) {
@@ -56,7 +74,7 @@
   {#if groups.length === 0}
     <p class="empty">No records in this period.</p>
   {:else}
-    {#each groups as group (group.date)}
+    {#each renderedGroups as group (group.date)}
       <section class="group">
         <header class="group__header">
           <span class="group__date">{group.date}</span>
@@ -75,9 +93,15 @@
 {:else if records.length === 0}
   <p class="empty">No records in this period.</p>
 {:else}
-  {#each records as record (record.id)}
+  {#each renderedRecords as record (record.id)}
     {@render row(record)}
   {/each}
+{/if}
+
+{#if remaining > 0}
+  <div class="show-more">
+    <Button variant="secondary" onclick={onShowMore}>Show more ({remaining} remaining)</Button>
+  </div>
 {/if}
 
 <style>
@@ -116,8 +140,13 @@
 
   .group__spend {
     display: flex;
+    flex-wrap: wrap;
     gap: var(--space-3);
     color: var(--text-muted);
+  }
+
+  .group__spend-item {
+    white-space: nowrap;
   }
 
   .record {
@@ -153,6 +182,11 @@
     font-family: var(--font-mono);
     font-weight: 600;
     white-space: nowrap;
+  }
+
+  .show-more {
+    display: flex;
+    justify-content: center;
   }
 
   .record__amount--income {
