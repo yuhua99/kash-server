@@ -2,12 +2,11 @@
   import type { Snippet } from "svelte";
 
   type Props = {
-    variant?: "primary" | "secondary";
+    variant?: "primary" | "secondary" | "danger";
     size?: "compact";
     type?: "button" | "submit" | "reset";
     disabled?: boolean;
     onclick?: (event: MouseEvent) => void;
-    className?: string;
     children?: Snippet;
   };
 
@@ -17,15 +16,12 @@
     type = "button",
     disabled = false,
     onclick,
-    className = "",
     children,
   }: Props = $props();
 </script>
 
 <button
-  class={["btn", `btn-${variant}`, size === "compact" ? "btn--compact" : "", className]
-    .filter(Boolean)
-    .join(" ")}
+  class={`btn btn-${variant}${size === "compact" ? " btn--compact" : ""}`}
   {type}
   {disabled}
   {onclick}
@@ -71,6 +67,11 @@
     border-color: var(--border-strong);
     background: transparent;
     color: var(--text-muted);
+  }
+
+  .btn-danger {
+    border-color: var(--danger);
+    color: var(--danger);
   }
 
   .btn--compact {

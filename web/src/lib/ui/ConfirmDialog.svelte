@@ -34,15 +34,9 @@
 <Dialog bind:open {onOpenChange} {title} {description}>
   <ButtonRow>
     <Button variant="secondary" type="button" onclick={closeDialog}>Cancel</Button>
-    <Button variant="primary" type="button" disabled={busy} onclick={onConfirm} className="btn-danger">
+    <Button variant="danger" type="button" disabled={busy} onclick={onConfirm}>
       {busy ? confirmBusyLabel : confirmLabel}
     </Button>
   </ButtonRow>
 </Dialog>
 
-<style>
-  :global(.btn-danger) {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
-</style>

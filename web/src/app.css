@@ -78,6 +78,11 @@ main {
   padding: var(--space-4);
 }
 
+.page {
+  display: grid;
+  gap: var(--space-4);
+}
+
 input,
 textarea,
 select,
