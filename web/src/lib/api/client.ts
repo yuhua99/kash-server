@@ -3,7 +3,7 @@ import type { ApiError } from "$lib/api/errors";
 
 type QueryValue = string | number | boolean | undefined | null | Array<string | number>;
 
-export type RequestOptions = {
+type RequestOptions = {
   method?: string;
   body?: unknown;
   query?: Record<string, QueryValue>;
@@ -34,7 +34,7 @@ async function parseErrorMessage(res: Response): Promise<string> {
   }
 }
 
-export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> =
     options.body !== undefined ? { "Content-Type": "application/json" } : {};
   const res = await fetch(`${getApiBaseUrl()}${path}${buildQueryString(options.query)}`, {
@@ -64,7 +64,6 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 export const client = {
-  request,
   get<T>(path: string, query?: Record<string, QueryValue>, headers?: Record<string, string>) {
     return request<T>(path, { method: "GET", query, headers });
   },
