@@ -2,6 +2,7 @@
   import { goto } from "$app/navigation";
   import Button from "$lib/ui/Button.svelte";
   import FormField from "$lib/ui/FormField.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { login, register } from "./api";
   import { handleAuthSubmit } from "./submit";
 
@@ -70,7 +71,7 @@
       </FormField>
 
       {#if formError}
-        <p class="form-error" role="alert">{formError}</p>
+        <StatusMessage kind="error" message={formError} />
       {/if}
 
       <Button variant="primary" type="submit" disabled={pending}>{pending ? pendingLabel : submitLabel}</Button>
@@ -119,12 +120,6 @@
   .auth-card form :global(input) {
     min-height: 42px;
     border-color: var(--border-strong);
-    background: var(--surface);
-  }
-
-  .form-error {
-    border: 1px solid var(--danger);
-    padding: var(--space-3);
     background: var(--surface);
   }
 

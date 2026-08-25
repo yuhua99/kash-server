@@ -8,6 +8,7 @@
   import FormField from "$lib/ui/FormField.svelte";
   import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import {
     amountDisplayMode,
@@ -151,7 +152,7 @@
     />
 
     {#if error}
-      <p role="alert">{error}</p>
+      <StatusMessage kind="error" message={error} />
     {/if}
 
     <Button variant="primary" disabled={pending} onclick={save}>
