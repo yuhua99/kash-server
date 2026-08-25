@@ -3,7 +3,7 @@
   import Button from "$lib/ui/Button.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
   import LedgerRow from "$lib/features/money/LedgerRow.svelte";
-  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import type { DateGroup } from "$lib/features/records/view";
 
   type RecordItem = components["schemas"]["Record"];
@@ -77,7 +77,7 @@
           <span class="group__date">{group.date}</span>
           <span class="group__spend">
             {#each group.spendSummaries as summary (summary.currency)}
-              <span class="group__spend-item">{formatMoney(summary.amount, $amountDisplayMode, summary.currency)} {summary.currency}</span>
+              <MoneyAmount amount={summary.amount} currency={summary.currency} plain />
             {/each}
           </span>
         </header>
@@ -130,10 +130,6 @@
     flex-wrap: wrap;
     gap: var(--space-3);
     color: var(--text-muted);
-  }
-
-  .group__spend-item {
-    white-space: nowrap;
   }
 
   .show-more {

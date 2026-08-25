@@ -2,7 +2,6 @@
   import Block from "$lib/ui/Block.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
   import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
-  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { BreakdownItem, Totals } from "$lib/features/stats/query";
 
   type Props = {
@@ -39,17 +38,17 @@
     <dl class="totals">
       <div class="totals__cell">
         <dt>Net</dt>
-        <dd class:totals__value--negative={totals.netTotal < 0}>
-          {formatMoney(totals.netTotal, $amountDisplayMode, currency, { signed: true })} {currency}
+        <dd>
+          <MoneyAmount amount={totals.netTotal} {currency} signed plain tone={totals.netTotal < 0 ? "danger" : "default"} />
         </dd>
       </div>
       <div class="totals__cell">
         <dt>Income</dt>
-        <dd class="totals__value--income">{formatMoney(totals.incomeTotal, $amountDisplayMode, currency)} {currency}</dd>
+        <dd><MoneyAmount amount={totals.incomeTotal} {currency} plain tone="income" /></dd>
       </div>
       <div class="totals__cell">
         <dt>Expense</dt>
-        <dd class="totals__value--negative">{formatMoney(totals.expenseTotal, $amountDisplayMode, currency)} {currency}</dd>
+        <dd><MoneyAmount amount={totals.expenseTotal} {currency} plain tone="danger" /></dd>
       </div>
     </dl>
   </Block>
@@ -116,14 +115,6 @@
     color: var(--text);
     font-family: var(--font-mono);
     font-weight: 600;
-  }
-
-  .totals__value--income {
-    color: var(--success);
-  }
-
-  .totals__value--negative {
-    color: var(--danger);
   }
 
   .breakdown {
