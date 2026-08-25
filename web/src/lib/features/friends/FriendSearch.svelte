@@ -7,6 +7,7 @@
   import { validateFriendSearchQuery } from "$lib/validation";
   import Block from "$lib/ui/Block.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
   import { toast } from "$lib/ui/toast";
 
@@ -67,22 +68,13 @@
 </script>
 
 <Block title="Find friends">
-  <form class="friend-search" onsubmit={handleSearch}>
-    <label for="friend-search-query">Username</label>
-    <div class="friend-search__controls">
-      <input
-        id="friend-search-query"
-        type="search"
-        bind:value={query}
-        autocomplete="off"
-        aria-invalid={error ? "true" : "false"}
-        aria-describedby={error ? "friend-search-error" : undefined}
-      />
-      <Button type="submit" disabled={searching}>{searching ? "Searching" : "Search"}</Button>
-    </div>
-    {#if error}
-      <p id="friend-search-error" class="friend-search__error" role="alert">{error}</p>
-    {/if}
+  <form onsubmit={handleSearch}>
+    <FormField id="friend-search-query" label="Username" error={error || undefined}>
+      <div class="friend-search__controls">
+        <input id="friend-search-query" type="search" bind:value={query} autocomplete="off" />
+        <Button type="submit" disabled={searching}>{searching ? "Searching" : "Search"}</Button>
+      </div>
+    </FormField>
   </form>
 
   <div class="friend-search__results" role="list">
@@ -104,21 +96,10 @@
 </Block>
 
 <style>
-  .friend-search {
-    display: grid;
-    gap: var(--space-2);
-  }
-
   .friend-search__controls {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: var(--space-2);
-  }
-
-  .friend-search__error {
-    margin: 0;
-    color: var(--danger);
-    font-size: var(--font-size-sm);
   }
 
   .friend-search__results {

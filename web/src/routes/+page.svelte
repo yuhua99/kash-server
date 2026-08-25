@@ -1,11 +1,5 @@
-<p class="loading" role="status">Loading…</p>
+<script lang="ts">
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
+</script>
 
-<style>
-  .loading {
-    padding: var(--space-6);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-</style>
+<StatusMessage kind="loading" message="Loading…" />

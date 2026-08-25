@@ -1,5 +1,7 @@
 <script lang="ts">
   import Block from "$lib/ui/Block.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { BreakdownItem, Totals } from "$lib/features/stats/query";
 
@@ -54,16 +56,14 @@
 
   <Block title="By category">
     {#if breakdown.length === 0}
-      <p class="stats__empty">No data for this period.</p>
+      <EmptyState message="No data for this period." />
     {:else}
       <ul class="breakdown">
         {#each breakdown as item, i (item.categoryId)}
           <li class="breakdown__row">
             <div class="breakdown__head">
               <span class="breakdown__name">{item.name}</span>
-              <data class="breakdown__amount" class:breakdown__amount--income={item.isIncome} value={item.total}>
-                {formatMoney(item.total, $amountDisplayMode, currency, { signed: true })} {currency}
-              </data>
+              <MoneyAmount amount={item.total} {currency} signed tone={item.isIncome ? "income" : "default"} />
             </div>
             <div class="breakdown__bar" aria-hidden="true">
               <span class="breakdown__fill" style:width={`${percentages[i]}%`}></span>
@@ -88,13 +88,6 @@
     background: var(--surface);
   }
 
-  .stats__empty {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
 
   .totals {
     display: grid;
@@ -159,17 +152,6 @@
     white-space: nowrap;
   }
 
-  .breakdown__amount {
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-weight: 600;
-    text-align: right;
-    white-space: nowrap;
-  }
-
-  .breakdown__amount--income {
-    color: var(--success);
-  }
 
   .breakdown__bar {
     grid-column: 1 / -1;

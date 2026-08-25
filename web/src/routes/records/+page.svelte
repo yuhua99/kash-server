@@ -4,6 +4,7 @@
   import { handleApiError } from "$lib/api/errors";
   import { periodFromPreset, type PeriodPreset } from "$lib/date";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import { convertRecords } from "$lib/features/money/conversion";
@@ -207,9 +208,9 @@
   />
 
   {#if loading}
-    <p role="status">Loading…</p>
+    <StatusMessage kind="loading" message="Loading…" />
   {:else if error}
-    <p role="alert">{error}</p>
+    <StatusMessage kind="error" message={error} />
   {:else}
     <RecordList
       {grouped}
@@ -242,9 +243,3 @@
   onConfirm={confirmDelete}
 />
 
-<style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-</style>

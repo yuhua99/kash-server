@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { Tabs } from "bits-ui";
   import { periodFromPreset, todayIso, type PeriodPreset } from "$lib/date";
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
+  import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
   import { PERIOD_PRESETS } from "$lib/features/periods/presets";
 
   const MONTH_NAMES = [
@@ -88,13 +88,12 @@
 </script>
 
 <div class="period">
-  <Tabs.Root class="period-tabs" value={preset} onValueChange={selectPreset}>
-    <Tabs.List class="period-tabs__list" aria-label="Period preset">
-      {#each PERIOD_PRESETS as item (item.value)}
-        <Tabs.Trigger class="period-tabs__trigger" value={item.value}>{item.label}</Tabs.Trigger>
-      {/each}
-    </Tabs.List>
-  </Tabs.Root>
+  <SegmentedControl
+    items={PERIOD_PRESETS}
+    value={preset}
+    onValueChange={selectPreset}
+    ariaLabel="Period preset"
+  />
 
   {#if preset === "month"}
     <div class="period__selects">
@@ -141,31 +140,6 @@
   .period {
     display: grid;
     gap: var(--space-3);
-  }
-
-  :global(.period-tabs__list) {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px;
-    border: 1px solid var(--border-strong);
-    background: var(--border);
-  }
-
-  :global(.period-tabs__trigger) {
-    min-height: 38px;
-    border: 0;
-    background: var(--panel);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  :global(.period-tabs__trigger[data-state="active"]) {
-    background: var(--surface);
-    color: var(--accent);
   }
 
   .period__custom,

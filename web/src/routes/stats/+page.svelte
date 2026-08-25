@@ -9,6 +9,7 @@
   import { getSettingsCached } from "$lib/features/settings/cache";
   import { getAllRecordsByDateRange } from "$lib/features/records/query";
   import PeriodControls from "$lib/features/periods/PeriodControls.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import StatsBreakdown from "$lib/features/stats/StatsBreakdown.svelte";
   import { buildBreakdown, calculateTotals } from "$lib/features/stats/query";
 
@@ -104,17 +105,11 @@
   <PeriodControls {preset} {start} {end} onPeriodChange={changePeriod} />
 
   {#if loading}
-    <p role="status">Loading…</p>
+    <StatusMessage kind="loading" message="Loading…" />
   {:else if error}
-    <p role="alert">{error}</p>
+    <StatusMessage kind="error" message={error} />
   {:else}
     <StatsBreakdown {totals} {breakdown} currency={statsCurrency} {note} />
   {/if}
 </section>
 
-<style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-</style>

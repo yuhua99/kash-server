@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { components } from "$lib/api/schema";
   import { validateSearchTerm } from "$lib/validation";
+  import FormField from "$lib/ui/FormField.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import PeriodControls from "$lib/features/periods/PeriodControls.svelte";
   import type { PeriodPreset } from "$lib/date";
@@ -65,8 +66,7 @@
 <div class="filters">
   <PeriodControls {preset} {start} {end} {onPeriodChange} />
 
-  <div class="field">
-    <label for="record-search">Search</label>
+  <FormField id="record-search" label="Search" error={searchError}>
     <input
       id="record-search"
       type="search"
@@ -74,10 +74,7 @@
       autocomplete="off"
       oninput={handleSearchInput}
     />
-    {#if searchError}
-      <p role="alert">{searchError}</p>
-    {/if}
-  </div>
+  </FormField>
 
   <div class="filters__selects">
     <SelectField
@@ -101,11 +98,6 @@
   .filters {
     display: grid;
     gap: var(--space-3);
-  }
-
-  .field {
-    display: grid;
-    gap: var(--space-2);
   }
 
   .filters__selects {

@@ -5,6 +5,7 @@
   import Button from "$lib/ui/Button.svelte";
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
   import Dialog from "$lib/ui/Dialog.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
   import { toast } from "$lib/ui/toast";
   import { updateCategory } from "$lib/features/categories/api";
   import { invalidateCategoriesCache } from "$lib/features/categories/cache";
@@ -70,11 +71,9 @@
 
 <Dialog bind:open {onOpenChange} title="Edit category">
   <form class="edit-form" onsubmit={save}>
-    <label for="edit-category-name">Name</label>
-    <input id="edit-category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
-    {#if error}
-      <p role="alert">{error}</p>
-    {/if}
+    <FormField id="edit-category-name" label="Name" {error}>
+      <input id="edit-category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
+    </FormField>
     <ButtonRow>
       <Button variant="secondary" type="button" disabled={pending} onclick={closeDialog}>Cancel</Button>
       <Button type="submit" disabled={pending || !category}>{pending ? "Saving" : "Save"}</Button>

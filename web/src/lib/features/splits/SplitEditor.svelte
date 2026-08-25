@@ -5,9 +5,10 @@
     validateSplitTotals,
   } from "$lib/validation";
   import Button from "$lib/ui/Button.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import {
     amountInputStep,
-    formatMoney,
     type AmountDisplayMode,
   } from "$lib/features/money/amount-display";
   import {
@@ -117,7 +118,7 @@
 
 <div class="split-editor">
   {#if friends.length === 0}
-    <p class="split-empty">No friends to split with.</p>
+    <EmptyState message="No friends to split with." />
   {:else}
     <div class="split-actions">
       <Button variant="secondary" size="compact" onclick={assignMax}>Max to friends</Button>
@@ -147,7 +148,7 @@
         </li>
       {/each}
     </ul>
-    <p class="split-footer">Your share: {formatMoney(yourShare, mode, currency)} {currency}</p>
+    <p class="split-footer">Your share: <MoneyAmount amount={yourShare} {currency} /></p>
   {/if}
 </div>
 
@@ -201,8 +202,4 @@
     text-transform: uppercase;
   }
 
-  .split-empty {
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-  }
 </style>

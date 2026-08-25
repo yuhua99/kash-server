@@ -8,12 +8,15 @@
   import Block from "$lib/ui/Block.svelte";
   import Button from "$lib/ui/Button.svelte";
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
   import { removeFriend, updateNickname } from "$lib/features/friends/api";
   import { notifyFriendsSync } from "$lib/features/friends/sync";
-  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import { listUnsettledShares, settleAllWithFriend } from "$lib/features/splits/api";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
@@ -110,21 +113,20 @@
   <h1>{friend?.nickname ?? "Friend"}</h1>
 
   {#if loading}
-    <p role="status">Loading…</p>
+    <StatusMessage kind="loading" message="Loading…" />
   {:else}
     <Block title="Nickname">
-      <div class="nickname">
-        <input bind:value={nickname} aria-label="Nickname" autocomplete="off" />
-        <Button variant="primary" disabled={savingNickname} onclick={saveNickname}>Save</Button>
-      </div>
-      {#if nicknameError}
-        <p role="alert">{nicknameError}</p>
-      {/if}
+      <FormField id="friend-nickname" label="Nickname" error={nicknameError || undefined}>
+        <div class="nickname">
+          <input id="friend-nickname" bind:value={nickname} autocomplete="off" />
+          <Button variant="primary" disabled={savingNickname} onclick={saveNickname}>Save</Button>
+        </div>
+      </FormField>
     </Block>
 
     <Block title="Unsettled">
       {#if shares.length === 0}
-        <p class="empty">Nothing to settle.</p>
+        <EmptyState message="Nothing to settle." />
       {:else}
         <div class="shares">
           {#each shares as share (share.participant_id)}
@@ -134,9 +136,7 @@
                   <span class="share__desc">{share.description}</span>
                   <span class="share__meta">{share.date} / {share.direction}</span>
                 </div>
-                <data class="share__amount" value={share.amount}>
-                  {formatMoney(share.amount, $amountDisplayMode, share.currency)} {share.currency}
-                </data>
+                <MoneyAmount amount={share.amount} currency={share.currency} />
               </div>
             </ListRow>
           {/each}
@@ -150,7 +150,7 @@
     </Block>
 
     <Block title="Danger zone">
-      <Button variant="secondary" className="remove" disabled={removing} onclick={remove}>
+      <Button variant="danger" disabled={removing} onclick={remove}>
         {removing ? "Removing" : "Remove friend"}
       </Button>
     </Block>
@@ -158,11 +158,6 @@
 </section>
 
 <style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-
   .nickname {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -208,23 +203,4 @@
     white-space: nowrap;
   }
 
-  .share__amount {
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .empty {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  :global(.remove) {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
 </style>

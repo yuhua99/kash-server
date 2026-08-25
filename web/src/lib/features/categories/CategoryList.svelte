@@ -3,6 +3,7 @@
   import type { components } from "$lib/api/schema";
   import Button from "$lib/ui/Button.svelte";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
   import { toast } from "$lib/ui/toast";
   import { deleteCategory } from "$lib/features/categories/api";
@@ -75,7 +76,7 @@
 
 <div class="category-list">
   {#if categories.length === 0}
-    <p class="empty">No categories found.</p>
+    <EmptyState message="No categories found." />
   {:else}
     {#each categories as category (category.id)}
       <ListRow>
@@ -89,9 +90,8 @@
           <div class="row__actions">
             <Button variant="secondary" size="compact" onclick={() => openEdit(category)}>Edit</Button>
             <Button
-              variant="secondary"
+              variant="danger"
               size="compact"
-              className="delete-button"
               onclick={() => openDelete(category)}
             >
               Delete
@@ -118,16 +118,6 @@
 <style>
   .category-list {
     border: 1px solid var(--border);
-  }
-
-  .empty {
-    margin: 0;
-    padding: var(--space-4);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 
   .row {
@@ -167,11 +157,6 @@
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: var(--space-2);
-  }
-
-  :global(.delete-button) {
-    border-color: var(--danger);
-    color: var(--danger);
   }
 
   @media (max-width: 520px) {

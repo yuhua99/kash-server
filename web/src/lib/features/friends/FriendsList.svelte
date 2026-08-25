@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { components } from "$lib/api/schema";
   import Block from "$lib/ui/Block.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
@@ -15,7 +16,7 @@
 
 <Block title="Friends">
   {#if friends.length === 0}
-    <p class="friends-list__empty">No friends yet.</p>
+    <EmptyState message="No friends yet." />
   {:else}
     <div class="friends-list" role="list">
       {#each friends as friend (friend.user_id)}
@@ -30,14 +31,6 @@
 <style>
   .friends-list {
     border-top: 1px solid var(--border);
-  }
-
-  .friends-list__empty {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--font-size-sm);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
   }
 
   .friends-list__nickname {

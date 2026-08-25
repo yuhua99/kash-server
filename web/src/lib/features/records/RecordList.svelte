@@ -1,7 +1,9 @@
 <script lang="ts">
   import type { components } from "$lib/api/schema";
   import Button from "$lib/ui/Button.svelte";
+  import EmptyState from "$lib/ui/EmptyState.svelte";
   import ListRow from "$lib/ui/ListRow.svelte";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { DateGroup } from "$lib/features/records/view";
 
@@ -51,16 +53,17 @@
         <span class="record__name">{record.name}</span>
         <span class="record__meta">{categoryLabel(record)} / {record.date}</span>
       </div>
-      <data class="record__amount" class:record__amount--income={record.amount > 0} value={record.amount}>
-        {formatMoney(record.amount, $amountDisplayMode, record.currency, { signed: true })}
-        <span class="record__currency">{record.currency}</span>
-      </data>
+      <MoneyAmount
+        amount={record.amount}
+        currency={record.currency}
+        signed
+        tone={record.amount > 0 ? "income" : "default"}
+      />
       <div class="record__actions">
         <Button variant="secondary" size="compact" onclick={() => onEdit(record)}>Edit</Button>
         <Button
-          variant="secondary"
+          variant="danger"
           size="compact"
-          className="record-delete"
           onclick={() => onDelete(record)}
         >
           Delete
@@ -72,7 +75,7 @@
 
 {#if grouped}
   {#if groups.length === 0}
-    <p class="empty">No records in this period.</p>
+    <EmptyState variant="boxed" message="No records in this period." />
   {:else}
     {#each renderedGroups as group (group.date)}
       <section class="group">
@@ -91,7 +94,7 @@
     {/each}
   {/if}
 {:else if records.length === 0}
-  <p class="empty">No records in this period.</p>
+  <EmptyState variant="boxed" message="No records in this period." />
 {:else}
   {#each renderedRecords as record (record.id)}
     {@render row(record)}
@@ -105,16 +108,6 @@
 {/if}
 
 <style>
-  .empty {
-    padding: var(--space-4);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
   .group {
     border: 1px solid var(--border);
     margin-bottom: var(--space-3);
@@ -177,36 +170,14 @@
     text-transform: uppercase;
   }
 
-  .record__amount {
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
   .show-more {
     display: flex;
     justify-content: center;
   }
 
-  .record__amount--income {
-    color: var(--success);
-  }
-
-  .record__currency {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-  }
-
   .record__actions {
     display: flex;
     gap: var(--space-2);
-  }
-
-  :global(.record-delete) {
-    border-color: var(--danger);
-    color: var(--danger);
   }
 
   @media (max-width: 560px) {

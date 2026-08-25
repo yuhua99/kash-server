@@ -7,6 +7,8 @@
   import { validateAmount, validateDate, validateRecordName } from "$lib/validation";
   import Button from "$lib/ui/Button.svelte";
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
+  import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
   import {
@@ -192,8 +194,7 @@
 </script>
 
 <form class="quick-add" onsubmit={submit}>
-  <div class="field">
-    <label for="quick-amount">Amount ({$currentCurrency})</label>
+  <FormField id="quick-amount" label="Amount ({$currentCurrency})">
     <input
       id="quick-amount"
       type="number"
@@ -201,12 +202,14 @@
       step={amountInputStep($amountDisplayMode, $currentCurrency)}
       bind:value={amountInput}
     />
-  </div>
+  </FormField>
 
-  <div class="toggle">
-    <Button variant={isIncome ? "secondary" : "primary"} size="compact" onclick={() => selectType(false)}>Expense</Button>
-    <Button variant={isIncome ? "primary" : "secondary"} size="compact" onclick={() => selectType(true)}>Income</Button>
-  </div>
+  <SegmentedControl
+    items={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]}
+    value={isIncome ? "income" : "expense"}
+    onValueChange={(value) => selectType(value === "income")}
+    ariaLabel="Record type"
+  />
 
   <SelectField
     id="quick-category"
@@ -216,8 +219,7 @@
     onValueChange={(value) => (categoryId = value)}
   />
 
-  <div class="field">
-    <label for="quick-name">Name</label>
+  <FormField id="quick-name" label="Name">
     <input id="quick-name" bind:value={name} autocomplete="off" />
     {#if suggestions.length > 0}
       <div class="suggestions">
@@ -226,7 +228,7 @@
         {/each}
       </div>
     {/if}
-  </div>
+  </FormField>
 
   <DatePickerField id="quick-date" label="Date" value={date} maxIso={todayIso()} onChange={(iso) => (date = iso)} />
 
@@ -250,17 +252,6 @@
   .quick-add {
     display: grid;
     gap: var(--space-4);
-  }
-
-  .field {
-    display: grid;
-    gap: var(--space-2);
-  }
-
-  .toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-2);
   }
 
   .suggestions {

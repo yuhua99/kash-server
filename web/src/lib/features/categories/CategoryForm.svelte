@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { Tabs } from "bits-ui";
   import { handleApiError } from "$lib/api/errors";
   import { validateCategoryName } from "$lib/validation";
   import Block from "$lib/ui/Block.svelte";
   import Button from "$lib/ui/Button.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
+  import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
   import { toast } from "$lib/ui/toast";
   import { createCategory } from "$lib/features/categories/api";
   import { invalidateCategoriesCache } from "$lib/features/categories/cache";
@@ -51,24 +52,19 @@
 
 <Block title="New category">
   <form class="category-form" onsubmit={submit}>
-    <label for="category-name">Name</label>
-    <input id="category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
-    {#if error}
-      <p role="alert">{error}</p>
-    {/if}
+    <FormField id="category-name" label="Name" {error}>
+      <input id="category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
+    </FormField>
 
-    <Tabs.Root
-      class="type-tabs"
+    <SegmentedControl
+      items={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]}
       value={isIncome ? "income" : "expense"}
       onValueChange={(value) => {
         isIncome = value === "income";
       }}
-    >
-      <Tabs.List class="type-tabs__list" aria-label="Category type">
-        <Tabs.Trigger class="type-tabs__trigger" value="expense" disabled={pending}>Expense</Tabs.Trigger>
-        <Tabs.Trigger class="type-tabs__trigger" value="income" disabled={pending}>Income</Tabs.Trigger>
-      </Tabs.List>
-    </Tabs.Root>
+      ariaLabel="Category type"
+      disabled={pending}
+    />
 
     <Button type="submit" disabled={pending}>{pending ? "Creating" : "Create category"}</Button>
   </form>
@@ -78,34 +74,5 @@
   .category-form {
     display: grid;
     gap: var(--space-3);
-  }
-
-  :global(.type-tabs) {
-    display: block;
-  }
-
-  :global(.type-tabs__list) {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1px;
-    border: 1px solid var(--border-strong);
-    background: var(--border);
-  }
-
-  :global(.type-tabs__trigger) {
-    min-height: 40px;
-    border: 0;
-    background: var(--panel);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  :global(.type-tabs__trigger[data-state="active"]) {
-    background: var(--surface);
-    color: var(--accent);
   }
 </style>

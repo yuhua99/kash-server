@@ -102,24 +102,15 @@
   <Block title="Account">
     <div class="stack">
       <a class="text-link" href="/settings/friends">Manage friends</a>
-      <Button variant="secondary" className="signout" onclick={signOut}>Sign out</Button>
+      <Button variant="danger" onclick={signOut}>Sign out</Button>
     </div>
   </Block>
 </section>
 
 <style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-
   .stack {
     display: grid;
     gap: var(--space-3);
   }
 
-  :global(.signout) {
-    border-color: var(--danger);
-    color: var(--danger);
-  }
 </style>

@@ -4,6 +4,7 @@
   import CategoryForm from "$lib/features/categories/CategoryForm.svelte";
   import CategoryList from "$lib/features/categories/CategoryList.svelte";
   import { getCategoriesCached } from "$lib/features/categories/cache";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
 
   type Category = components["schemas"]["Category"];
 
@@ -32,17 +33,11 @@
   <CategoryForm onChange={refresh} />
 
   {#if loading}
-    <p role="status">Loading…</p>
+    <StatusMessage kind="loading" message="Loading…" />
   {:else if error}
-    <p role="alert">{error}</p>
+    <StatusMessage kind="error" message={error} />
   {:else}
     <CategoryList {categories} onChange={refresh} />
   {/if}
 </section>
 
-<style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-</style>

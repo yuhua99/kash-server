@@ -5,6 +5,8 @@
   import Button from "$lib/ui/Button.svelte";
   import Dialog from "$lib/ui/Dialog.svelte";
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
+  import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
   import {
@@ -112,13 +114,11 @@
 
 <Dialog bind:open {onOpenChange} title="Edit record">
   <form class="edit-form" onsubmit={(event) => event.preventDefault()}>
-    <div class="field">
-      <label for="edit-record-name">Name</label>
+    <FormField id="edit-record-name" label="Name">
       <input id="edit-record-name" bind:value={name} autocomplete="off" />
-    </div>
+    </FormField>
 
-    <div class="field">
-      <label for="edit-record-amount">Amount</label>
+    <FormField id="edit-record-amount" label="Amount">
       <input
         id="edit-record-amount"
         type="number"
@@ -126,24 +126,14 @@
         step={amountInputStep($amountDisplayMode, record?.currency)}
         bind:value={amountInput}
       />
-    </div>
+    </FormField>
 
-    <div class="toggle">
-      <Button
-        variant={isIncome ? "secondary" : "primary"}
-        size="compact"
-        onclick={() => (isIncome = false)}
-      >
-        Expense
-      </Button>
-      <Button
-        variant={isIncome ? "primary" : "secondary"}
-        size="compact"
-        onclick={() => (isIncome = true)}
-      >
-        Income
-      </Button>
-    </div>
+    <SegmentedControl
+      items={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]}
+      value={isIncome ? "income" : "expense"}
+      onValueChange={(value) => (isIncome = value === "income")}
+      ariaLabel="Record type"
+    />
 
     <SelectField
       id="edit-record-category"
@@ -177,14 +167,4 @@
     margin-top: var(--space-4);
   }
 
-  .field {
-    display: grid;
-    gap: var(--space-2);
-  }
-
-  .toggle {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-2);
-  }
 </style>

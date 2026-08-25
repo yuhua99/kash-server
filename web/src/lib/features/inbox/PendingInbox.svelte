@@ -7,7 +7,7 @@
   import SelectField from "$lib/ui/SelectField.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
-  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
+  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import {
     acceptPendingFriend,
     declinePendingFriend,
@@ -111,7 +111,7 @@
       <dl class="share">
         <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
         <div><dt>Date</dt><dd>{head.share.date}</dd></div>
-        <div><dt>Amount</dt><dd>{formatMoney(head.share.amount, $amountDisplayMode, head.share.currency)} {head.share.currency}</dd></div>
+        <div><dt>Amount</dt><dd><MoneyAmount amount={head.share.amount} currency={head.share.currency} /></dd></div>
       </dl>
       {#if categories.length === 0}
         <p role="alert">No categories available. Create one first.</p>

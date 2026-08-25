@@ -3,6 +3,7 @@
   import type { components } from "$lib/api/schema";
   import FriendSearch from "$lib/features/friends/FriendSearch.svelte";
   import FriendsList from "$lib/features/friends/FriendsList.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
   import { friendsSyncRevision } from "$lib/features/friends/sync";
 
@@ -40,15 +41,9 @@
   <FriendSearch onChange={reload} />
 
   {#if loading}
-    <p role="status">Loading…</p>
+    <StatusMessage kind="loading" message="Loading…" />
   {:else}
     <FriendsList {friends} onSelect={(friend) => goto(`/settings/friends/${friend.user_id}`)} />
   {/if}
 </section>
 
-<style>
-  .page {
-    display: grid;
-    gap: var(--space-4);
-  }
-</style>

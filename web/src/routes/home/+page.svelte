@@ -2,16 +2,10 @@
   import QuickAddForm from "$lib/features/records/QuickAddForm.svelte";
 </script>
 
-<section class="home">
+<section class="page">
   <header class="home__header">
     <h1>Add</h1>
   </header>
   <QuickAddForm />
 </section>
 
-<style>
-  .home {
-    display: grid;
-    gap: var(--space-4);
-  }
-</style>

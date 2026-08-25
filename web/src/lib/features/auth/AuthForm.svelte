@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import Button from "$lib/ui/Button.svelte";
+  import FormField from "$lib/ui/FormField.svelte";
   import { login, register } from "./api";
   import { handleAuthSubmit } from "./submit";
 
@@ -55,35 +56,18 @@
     </header>
 
     <form onsubmit={submit} novalidate>
-      <div class="field">
-        <label for="auth-username">Username</label>
-        <input
-          id="auth-username"
-          type="text"
-          bind:value={username}
-          autocomplete="username"
-          aria-invalid={usernameError ? "true" : "false"}
-          aria-describedby={usernameError ? "auth-username-error" : undefined}
-        />
-        {#if usernameError}
-          <p id="auth-username-error" role="alert">{usernameError}</p>
-        {/if}
-      </div>
+      <FormField id="auth-username" label="Username" error={usernameError ?? undefined}>
+        <input id="auth-username" type="text" bind:value={username} autocomplete="username" />
+      </FormField>
 
-      <div class="field">
-        <label for="auth-password">Password</label>
+      <FormField id="auth-password" label="Password" error={passwordError ?? undefined}>
         <input
           id="auth-password"
           type="password"
           bind:value={password}
           autocomplete={isLogin ? "current-password" : "new-password"}
-          aria-invalid={passwordError ? "true" : "false"}
-          aria-describedby={passwordError ? "auth-password-error" : undefined}
         />
-        {#if passwordError}
-          <p id="auth-password-error" role="alert">{passwordError}</p>
-        {/if}
-      </div>
+      </FormField>
 
       {#if formError}
         <p class="form-error" role="alert">{formError}</p>
@@ -132,12 +116,7 @@
     text-transform: uppercase;
   }
 
-  .field {
-    display: grid;
-    gap: var(--space-2);
-  }
-
-  .field :global(input) {
+  .auth-card form :global(input) {
     min-height: 42px;
     border-color: var(--border-strong);
     background: var(--surface);
