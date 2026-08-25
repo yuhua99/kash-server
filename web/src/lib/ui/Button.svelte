@@ -74,7 +74,7 @@
   }
 
   .btn--compact {
-    min-height: 30px;
+    min-height: 36px;
     padding: var(--space-2) var(--space-3);
     font-size: var(--font-size-xs);
   }
