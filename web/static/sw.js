@@ -34,6 +34,23 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     (async () => {
       const cache = await caches.open(CACHE);
+
+      if (request.mode === "navigate") {
+        try {
+          const response = await fetch(request);
+          if (response.ok) {
+            event.waitUntil(cache.put(request, response.clone()));
+          }
+          return response;
+        } catch (error) {
+          const cached = (await cache.match(request)) || (await cache.match("/"));
+          if (cached) {
+            return cached;
+          }
+          throw error;
+        }
+      }
+
       const cached = await cache.match(request);
       if (cached) {
         event.waitUntil(
@@ -48,21 +65,11 @@ self.addEventListener("fetch", (event) => {
         return cached;
       }
 
-      try {
-        const response = await fetch(request);
-        if (response.ok) {
-          cache.put(request, response.clone());
-        }
-        return response;
-      } catch (error) {
-        if (request.mode === "navigate") {
-          const shell = await cache.match("/");
-          if (shell) {
-            return shell;
-          }
-        }
-        throw error;
+      const response = await fetch(request);
+      if (response.ok) {
+        cache.put(request, response.clone());
       }
+      return response;
     })(),
   );
 });
