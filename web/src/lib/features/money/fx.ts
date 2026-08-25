@@ -24,17 +24,3 @@ export function convertAmountToMainCurrency(
 
   return amount * (toRate / fromRate);
 }
-
-export function buildCurrencySubtotals(
-  items: { currency: string; amount: number }[],
-): { currency: string; total: number }[] {
-  const totals = new Map<string, number>();
-
-  for (const item of items) {
-    totals.set(item.currency, (totals.get(item.currency) ?? 0) + item.amount);
-  }
-
-  return Array.from(totals, ([currency, total]) => ({ currency, total })).sort((a, b) =>
-    a.currency.localeCompare(b.currency),
-  );
-}

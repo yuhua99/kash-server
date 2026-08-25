@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCurrencySubtotals, buildRateLookup, convertAmountToMainCurrency } from "./fx";
+import { buildRateLookup, convertAmountToMainCurrency } from "./fx";
 
 describe("buildRateLookup", () => {
   it("keys rates by date and currency", () => {
@@ -29,22 +29,5 @@ describe("convertAmountToMainCurrency", () => {
     expect(() => convertAmountToMainCurrency(10, "USD", "TWD", "2024-01-02", rates)).toThrow(
       "Exchange rate unavailable for 2024-01-02",
     );
-  });
-});
-
-describe("buildCurrencySubtotals", () => {
-  it("aggregates totals and sorts by currency", () => {
-    expect(
-      buildCurrencySubtotals([
-        { currency: "USD", amount: 10 },
-        { currency: "TWD", amount: 20 },
-        { currency: "USD", amount: -3 },
-        { currency: "EUR", amount: 5 },
-      ]),
-    ).toEqual([
-      { currency: "EUR", total: 5 },
-      { currency: "TWD", total: 20 },
-      { currency: "USD", total: 7 },
-    ]);
   });
 });
