@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { components } from "$lib/api/schema";
   import Block from "$lib/ui/Block.svelte";
-  import ListRow from "$lib/ui/ListRow.svelte";
-  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
+  import LedgerRow from "$lib/features/money/LedgerRow.svelte";
 
   type PendingShare = components["schemas"]["PendingShare"];
 
@@ -17,15 +16,13 @@
   <Block title="You owe">
     <div class="pending">
       {#each shares as share (share.participant_id)}
-        <ListRow>
-          <div class="pending__row">
-            <div class="pending__main">
-              <span class="pending__desc">{share.description}</span>
-              <span class="pending__meta">{share.date} / {share.creditor_name}</span>
-            </div>
-            <MoneyAmount amount={share.amount} currency={share.currency} tone="danger" />
-          </div>
-        </ListRow>
+        <LedgerRow
+          title={share.description}
+          meta={`${share.date} / ${share.creditor_name}`}
+          amount={share.amount}
+          currency={share.currency}
+          tone="danger"
+        />
       {/each}
     </div>
   </Block>
@@ -34,34 +31,6 @@
 <style>
   .pending {
     border: 1px solid var(--border);
-  }
-
-  .pending__row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .pending__main {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  .pending__desc {
-    overflow: hidden;
-    color: var(--text);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pending__meta {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
 </style>

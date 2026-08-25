@@ -2,8 +2,7 @@
   import type { components } from "$lib/api/schema";
   import Button from "$lib/ui/Button.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
-  import ListRow from "$lib/ui/ListRow.svelte";
-  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
+  import LedgerRow from "$lib/features/money/LedgerRow.svelte";
   import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import type { DateGroup } from "$lib/features/records/view";
 
@@ -47,30 +46,25 @@
 </script>
 
 {#snippet row(record: RecordItem)}
-  <ListRow>
-    <div class="record">
-      <div class="record__main">
-        <span class="record__name">{record.name}</span>
-        <span class="record__meta">{categoryLabel(record)} / {record.date}</span>
-      </div>
-      <MoneyAmount
-        amount={record.amount}
-        currency={record.currency}
-        signed
-        tone={record.amount > 0 ? "income" : "default"}
-      />
-      <div class="record__actions">
-        <Button variant="secondary" size="compact" onclick={() => onEdit(record)}>Edit</Button>
-        <Button
-          variant="danger"
-          size="compact"
-          onclick={() => onDelete(record)}
-        >
-          Delete
-        </Button>
-      </div>
-    </div>
-  </ListRow>
+  <LedgerRow
+    title={record.name}
+    meta={`${categoryLabel(record)} / ${record.date}`}
+    amount={record.amount}
+    currency={record.currency}
+    signed
+    tone={record.amount > 0 ? "income" : "default"}
+  >
+    {#snippet actions()}
+      <Button variant="secondary" size="compact" onclick={() => onEdit(record)}>Edit</Button>
+      <Button
+        variant="danger"
+        size="compact"
+        onclick={() => onDelete(record)}
+      >
+        Delete
+      </Button>
+    {/snippet}
+  </LedgerRow>
 {/snippet}
 
 {#if grouped}
@@ -142,52 +136,8 @@
     white-space: nowrap;
   }
 
-  .record {
-    display: grid;
-    grid-template-columns: 1fr auto auto;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .record__main {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  .record__name {
-    overflow: hidden;
-    color: var(--text);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .record__meta {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
   .show-more {
     display: flex;
     justify-content: center;
-  }
-
-  .record__actions {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  @media (max-width: 560px) {
-    .record {
-      grid-template-columns: 1fr auto;
-    }
-
-    .record__actions {
-      grid-column: 1 / -1;
-      justify-content: flex-end;
-    }
   }
 </style>

@@ -10,13 +10,12 @@
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
   import FormField from "$lib/ui/FormField.svelte";
-  import ListRow from "$lib/ui/ListRow.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getAcceptedFriendsCached, invalidateFriendsCache } from "$lib/features/friends/cache";
   import { removeFriend, updateNickname } from "$lib/features/friends/api";
   import { notifyFriendsSync } from "$lib/features/friends/sync";
-  import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
+  import LedgerRow from "$lib/features/money/LedgerRow.svelte";
   import { listUnsettledShares, settleAllWithFriend } from "$lib/features/splits/api";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
@@ -130,15 +129,12 @@
       {:else}
         <div class="shares">
           {#each shares as share (share.participant_id)}
-            <ListRow>
-              <div class="share">
-                <div class="share__main">
-                  <span class="share__desc">{share.description}</span>
-                  <span class="share__meta">{share.date} / {share.direction}</span>
-                </div>
-                <MoneyAmount amount={share.amount} currency={share.currency} />
-              </div>
-            </ListRow>
+            <LedgerRow
+              title={share.description}
+              meta={`${share.date} / ${share.direction}`}
+              amount={share.amount}
+              currency={share.currency}
+            />
           {/each}
         </div>
         <ButtonRow>
@@ -167,40 +163,6 @@
   .shares {
     border: 1px solid var(--border);
     margin-bottom: var(--space-3);
-  }
-
-  .share {
-    display: grid;
-    min-width: 0;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
-  .share__main {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  .share__desc {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .share__meta {
-    min-width: 0;
-    overflow: hidden;
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
   }
 
 </style>
