@@ -65,7 +65,7 @@
   }
 
   .app--shell {
-    padding-bottom: 64px;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
 
   .nav {
@@ -78,6 +78,7 @@
     gap: 1px;
     border-top: 1px solid var(--border-strong);
     background: var(--border);
+    padding-bottom: env(safe-area-inset-bottom);
   }
 
   .nav__link {
