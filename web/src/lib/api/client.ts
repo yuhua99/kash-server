@@ -26,11 +26,16 @@ function buildQueryString(query?: Record<string, QueryValue>): string {
 }
 
 async function parseErrorMessage(res: Response): Promise<string> {
-  try {
-    const body = (await res.json()) as { message?: string; error?: string };
-    return body.message || body.error || res.statusText;
-  } catch {
+  const text = await res.text();
+  if (!text) {
     return res.statusText;
+  }
+
+  try {
+    const body = JSON.parse(text) as { message?: string; error?: string };
+    return body.message || body.error || text;
+  } catch {
+    return text;
   }
 }
 
