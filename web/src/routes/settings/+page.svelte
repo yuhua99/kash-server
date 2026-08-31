@@ -38,6 +38,7 @@
   });
 
   async function changeMainCurrency(value: string) {
+    const previousMainCurrency = mainCurrency;
     mainCurrency = value;
     saving = true;
     try {
@@ -45,6 +46,7 @@
       setSettingsCache(updated);
       toast.success("Main currency updated");
     } catch (e) {
+      mainCurrency = previousMainCurrency;
       const message = await handleApiError(e, "Could not update currency");
       if (message) {
         toast.error(message);
