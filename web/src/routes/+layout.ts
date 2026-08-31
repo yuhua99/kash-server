@@ -7,9 +7,13 @@ export const prerender = false;
 
 const PROTECTED = ["/home", "/records", "/categories", "/stats", "/settings"];
 const AUTH_ROUTES = ["/login", "/register"];
+let lastKnownUser: Awaited<ReturnType<typeof getMe>> = null;
 
 export const load: LayoutLoad = async ({ url }) => {
-  const user = await getMe();
+  const user = await getMe().then(
+    (result) => (lastKnownUser = result),
+    () => lastKnownUser,
+  );
 
   const path = url.pathname;
 
