@@ -7,7 +7,7 @@ const STORAGE_KEY = "kash_amount_display_mode";
 const DEFAULT_MODE: AmountDisplayMode = "cents";
 
 function readStored(): AmountDisplayMode {
-  if (typeof localStorage !== "undefined") {
+  if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
     const stored = localStorage.getItem(STORAGE_KEY);
 
     if (stored === "whole" || stored === "cents") {
@@ -23,7 +23,7 @@ export const amountDisplayMode = writable<AmountDisplayMode>(readStored());
 export function setAmountDisplayMode(mode: AmountDisplayMode): void {
   amountDisplayMode.set(mode);
 
-  if (typeof localStorage !== "undefined") {
+  if (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function") {
     localStorage.setItem(STORAGE_KEY, mode);
   }
 }

@@ -8,7 +8,7 @@ import {
 const STORAGE_KEY = "kash_current_currency";
 
 function readStored(): SupportedCurrencyCode {
-  if (typeof localStorage !== "undefined") {
+  if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
     const stored = localStorage.getItem(STORAGE_KEY);
 
     if (stored !== null && isSupportedCurrencyCode(stored)) {
@@ -24,13 +24,13 @@ export const currentCurrency = writable<SupportedCurrencyCode>(readStored());
 export function setCurrentCurrency(code: SupportedCurrencyCode): void {
   currentCurrency.set(code);
 
-  if (typeof localStorage !== "undefined") {
+  if (typeof localStorage !== "undefined" && typeof localStorage.setItem === "function") {
     localStorage.setItem(STORAGE_KEY, code);
   }
 }
 
 export function initializeCurrentCurrency(defaultFromSettings: string): void {
-  if (typeof localStorage !== "undefined") {
+  if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
     const stored = localStorage.getItem(STORAGE_KEY);
 
     if (stored !== null && isSupportedCurrencyCode(stored)) {
