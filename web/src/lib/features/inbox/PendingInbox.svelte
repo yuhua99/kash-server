@@ -106,8 +106,9 @@
     </ButtonRow>
   </Dialog>
 {:else if head?.kind === "share"}
-  <Dialog {open} onOpenChange={(o) => { if (!o && !busy) dismissHead(); }} title="Record a shared expense" description={head.share.description}>
+  <Dialog {open} onOpenChange={(o) => { if (!o && !busy) dismissHead(); }} title="Record a shared expense">
     <div class="share-form">
+      <p class="share-name">{head.share.description}</p>
       <dl class="share">
         <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
         <div><dt>Date</dt><dd>{head.share.date}</dd></div>
@@ -140,31 +141,46 @@
 <style>
   .share-form {
     display: grid;
-    gap: var(--space-3);
+    gap: var(--space-4);
     margin-top: var(--space-4);
+  }
+
+  .share-name {
+    overflow-wrap: anywhere;
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+    line-height: 1.25;
   }
 
   .share {
     display: grid;
     gap: var(--space-2);
+    padding-block: var(--space-3);
+    border-block: 1px solid var(--border);
   }
 
   .share div {
     display: grid;
-    grid-template-columns: 80px 1fr;
-    gap: var(--space-3);
+    grid-template-columns: max-content minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: var(--space-4);
   }
 
   .share dt {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.1em;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
   .share dd {
+    min-width: 0;
     color: var(--text);
     font-family: var(--font-mono);
+    font-size: var(--font-size-md);
   }
 </style>
