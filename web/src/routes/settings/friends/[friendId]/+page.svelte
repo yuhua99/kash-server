@@ -42,6 +42,26 @@
     return share.direction === "they_owe_you" ? share.amount : -share.amount;
   }
 
+  function netLabel(amount: number): string {
+    if (amount > 0) {
+      return "They owe you";
+    }
+    if (amount < 0) {
+      return "You owe them";
+    }
+    return "Settled up";
+  }
+
+  function netTone(amount: number): "default" | "income" | "danger" {
+    if (amount > 0) {
+      return "income";
+    }
+    if (amount < 0) {
+      return "danger";
+    }
+    return "default";
+  }
+
   const netByCurrency = $derived.by(() => {
     const totals = new Map<string, number>();
     for (const share of shares) {
@@ -173,38 +193,47 @@
       </FormField>
     </Block>
 
+    <Block title="Net">
+      {#if shares.length === 0}
+        <EmptyState message="Settled up." />
+      {:else}
+        {#if mainNet !== null}
+          <div class="net-summary">
+            <span class="net-summary__label">{netLabel(mainNet)}</span>
+            <MoneyAmount
+              amount={mainNet}
+              currency={mainCurrency}
+              signed
+              tone={netTone(mainNet)}
+            />
+          </div>
+        {/if}
+        {#if mainNet === null || netByCurrency.length > 1 || netByCurrency[0]?.[0] !== mainCurrency}
+          <div class="net-breakdown">
+            {#each netByCurrency as [currency, amount] (currency)}
+              <div class="net-breakdown__row">
+                <span class="net-breakdown__label">{currency} / {netLabel(amount)}</span>
+                <MoneyAmount {amount} {currency} signed tone={netTone(amount)} />
+              </div>
+            {/each}
+          </div>
+        {/if}
+      {/if}
+    </Block>
+
     <Block title="Unsettled">
       {#if shares.length === 0}
         <EmptyState message="Nothing to settle." />
       {:else}
-        <div class="totals">
-          {#if mainNet !== null}
-            <div class="totals__row">
-              <span class="totals__label">Net</span>
-              <MoneyAmount
-                amount={mainNet}
-                currency={mainCurrency}
-                signed
-                tone={mainNet < 0 ? "danger" : "income"}
-              />
-            </div>
-          {/if}
-          {#if netByCurrency.length > 1 || netByCurrency[0]?.[0] !== mainCurrency}
-            {#each netByCurrency as [currency, amount] (currency)}
-              <div class="totals__row">
-                <span class="totals__label">{currency}</span>
-                <MoneyAmount {amount} {currency} signed tone={amount < 0 ? "danger" : "income"} />
-              </div>
-            {/each}
-          {/if}
-        </div>
         <div class="shares">
           {#each shares as share (share.participant_id)}
             <LedgerRow
               title={share.description}
-              meta={`${share.date} / ${share.direction}`}
-              amount={share.amount}
+              meta={share.date}
+              amount={signedAmount(share)}
               currency={share.currency}
+              signed
+              tone={share.direction === "they_owe_you" ? "income" : "danger"}
             />
           {/each}
         </div>
@@ -236,23 +265,40 @@
     margin-bottom: var(--space-3);
   }
 
-  .totals {
-    display: grid;
-    gap: var(--space-1);
-    margin-bottom: var(--space-3);
-  }
-
-  .totals__row {
+  .net-summary {
     display: flex;
+    align-items: baseline;
     justify-content: space-between;
+    gap: var(--space-3);
   }
 
-  .totals__label {
+  .net-summary :global(.money-amount) {
+    font-size: var(--font-size-lg);
+  }
+
+  .net-summary__label,
+  .net-breakdown__label {
     color: var(--text-muted);
     font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .net-breakdown {
+    display: grid;
+    gap: var(--space-2);
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+  }
+
+  .net-breakdown__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
   }
 
 </style>
