@@ -57,7 +57,7 @@
     />
   </FormField>
 
-  <Button variant="primary" type="submit" disabled={pending}>{pending ? pendingLabel : submitLabel}</Button>
+  <Button variant="primary" type="submit" busy={pending} busyLabel={pendingLabel}>{submitLabel}</Button>
 </form>
 
 <a class="text-link" href={alternateHref}>{alternateText}</a>

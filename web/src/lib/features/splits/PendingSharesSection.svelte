@@ -14,7 +14,7 @@
 
 {#if shares.length > 0}
   <Block title="You owe">
-    <div class="pending">
+    <div class="list-frame">
       {#each shares as share (share.participant_id)}
         <LedgerRow
           title={share.description}
@@ -28,9 +28,3 @@
   </Block>
 {/if}
 
-<style>
-  .pending {
-    border: 1px solid var(--border);
-  }
-
-</style>

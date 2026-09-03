@@ -74,7 +74,8 @@
     bottom: 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
     gap: 1px;
     border-top: 1px solid var(--border-strong);
     background: var(--border);

@@ -72,7 +72,7 @@
     <FormField id="friend-search-query" label="Username" error={error || undefined}>
       <div class="friend-search__controls">
         <input id="friend-search-query" type="search" bind:value={query} autocomplete="off" />
-        <Button type="submit" disabled={searching}>{searching ? "Searching" : "Search"}</Button>
+        <Button type="submit" busy={searching} busyLabel="Searching">Search</Button>
       </div>
     </FormField>
   </form>
@@ -80,14 +80,15 @@
   <div class="friend-search__results" role="list">
     {#each results as result (result.id)}
       <ListRow>
-        <div class="friend-search__row">
+        <div class="friend-search__row row-split">
           <span class="friend-search__username">{result.username}</span>
           <Button
             size="compact"
-            disabled={sendingId === result.id}
+            busy={sendingId === result.id}
+            busyLabel="Sending"
             onclick={() => handleSendRequest(result)}
           >
-            {sendingId === result.id ? "Sending" : "Add"}
+            Add
           </Button>
         </div>
       </ListRow>
@@ -107,15 +108,7 @@
     border-top: 1px solid var(--border);
   }
 
-  .friend-search__row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
   .friend-search__username {
     color: var(--text);
-    font-size: var(--font-size-md);
   }
 </style>

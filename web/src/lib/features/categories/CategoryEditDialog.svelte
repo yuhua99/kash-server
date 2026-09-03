@@ -70,21 +70,19 @@
 </script>
 
 <Dialog bind:open {onOpenChange} title="Edit category">
-  <form class="edit-form" onsubmit={save}>
+  <form class="edit-form form-stack" onsubmit={save}>
     <FormField id="edit-category-name" label="Name" {error}>
       <input id="edit-category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
     </FormField>
     <ButtonRow>
       <Button variant="secondary" type="button" disabled={pending} onclick={closeDialog}>Cancel</Button>
-      <Button type="submit" disabled={pending || !category}>{pending ? "Saving" : "Save"}</Button>
+      <Button type="submit" disabled={!category} busy={pending} busyLabel="Saving">Save</Button>
     </ButtonRow>
   </form>
 </Dialog>
 
 <style>
   .edit-form {
-    display: grid;
-    gap: var(--space-3);
     margin-top: var(--space-4);
   }
 </style>

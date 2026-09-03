@@ -71,7 +71,7 @@
     gap: var(--space-2);
   }
 
-  @media (max-width: 560px) {
+  @media (max-width: 520px) {
     .ledger-row.has-actions {
       grid-template-columns: minmax(0, 1fr) auto;
     }

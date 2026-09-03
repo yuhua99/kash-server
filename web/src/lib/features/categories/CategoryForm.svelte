@@ -51,7 +51,7 @@
 </script>
 
 <Block title="New category">
-  <form class="category-form" onsubmit={submit}>
+  <form class="form-stack" onsubmit={submit}>
     <FormField id="category-name" label="Name" {error}>
       <input id="category-name" bind:value={name} oninput={() => (error = "")} disabled={pending} autocomplete="off" />
     </FormField>
@@ -66,13 +66,7 @@
       disabled={pending}
     />
 
-    <Button type="submit" disabled={pending}>{pending ? "Creating" : "Create category"}</Button>
+    <Button type="submit" busy={pending} busyLabel="Creating">Create category</Button>
   </form>
 </Block>
 
-<style>
-  .category-form {
-    display: grid;
-    gap: var(--space-3);
-  }
-</style>

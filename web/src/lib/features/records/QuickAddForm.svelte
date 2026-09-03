@@ -6,6 +6,7 @@
   import { todayIso } from "$lib/date";
   import { validateAmount, validateDate, validateRecordName } from "$lib/validation";
   import Button from "$lib/ui/Button.svelte";
+  import Chip from "$lib/ui/Chip.svelte";
   import DatePickerField from "$lib/ui/DatePickerField.svelte";
   import FormField from "$lib/ui/FormField.svelte";
   import SegmentedControl from "$lib/ui/SegmentedControl.svelte";
@@ -225,7 +226,7 @@
     {#if suggestions.length > 0}
       <div class="suggestions">
         {#each suggestions as suggestion (suggestion)}
-          <button type="button" class="suggestion" onclick={() => (name = suggestion)}>{suggestion}</button>
+          <Chip onclick={() => (name = suggestion)}>{suggestion}</Chip>
         {/each}
       </div>
     {/if}
@@ -244,8 +245,8 @@
     <StatusMessage kind="error" message={error} />
   {/if}
 
-  <Button variant="primary" type="submit" disabled={pending}>
-    {pending ? "Saving" : splitEnabled ? "Create split" : "Add record"}
+  <Button variant="primary" type="submit" busy={pending} busyLabel="Saving">
+    {splitEnabled ? "Create split" : "Add record"}
   </Button>
 </form>
 
@@ -259,16 +260,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-  }
-
-  .suggestion {
-    padding: var(--space-1) var(--space-2);
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-muted);
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    letter-spacing: 0.04em;
   }
 
   :global(.split-toggle) {

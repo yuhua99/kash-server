@@ -114,7 +114,7 @@
 </script>
 
 <Dialog bind:open {onOpenChange} title="Edit record">
-  <form class="edit-form" onsubmit={(event) => event.preventDefault()}>
+  <form class="edit-form form-stack" onsubmit={(event) => event.preventDefault()}>
     <FormField id="edit-record-name" label="Name">
       <input id="edit-record-name" bind:value={name} autocomplete="off" />
     </FormField>
@@ -155,17 +155,12 @@
       <StatusMessage kind="error" message={error} />
     {/if}
 
-    <Button variant="primary" disabled={pending} onclick={save}>
-      {pending ? "Saving" : "Save"}
-    </Button>
+    <Button variant="primary" busy={pending} busyLabel="Saving" onclick={save}>Save</Button>
   </form>
 </Dialog>
 
 <style>
   .edit-form {
-    display: grid;
-    gap: var(--space-3);
     margin-top: var(--space-4);
   }
-
 </style>

@@ -72,8 +72,8 @@
     <EmptyState variant="boxed" message="No records in this period." />
   {:else}
     {#each renderedGroups as group (group.date)}
-      <section class="group">
-        <header class="group__header">
+      <section class="group list-frame">
+        <header class="group__header meta-label">
           <span class="group__date">{group.date}</span>
           <span class="group__spend">
             {#each group.spendSummaries as summary (summary.currency)}
@@ -103,7 +103,6 @@
 
 <style>
   .group {
-    border: 1px solid var(--border);
     margin-bottom: var(--space-3);
   }
 
@@ -115,10 +114,7 @@
     padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border);
     background: var(--surface);
-    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   .group__date {

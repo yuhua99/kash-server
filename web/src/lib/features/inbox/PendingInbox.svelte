@@ -5,6 +5,7 @@
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
   import Dialog from "$lib/ui/Dialog.svelte";
   import SelectField from "$lib/ui/SelectField.svelte";
+  import StatusMessage from "$lib/ui/StatusMessage.svelte";
   import { toast } from "$lib/ui/toast";
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
@@ -110,12 +111,12 @@
     <div class="share-form">
       <p class="share-name">{head.share.description}</p>
       <dl class="share">
-        <div><dt>From</dt><dd>{head.share.creditor_name}</dd></div>
-        <div><dt>Date</dt><dd>{head.share.date}</dd></div>
-        <div><dt>Amount</dt><dd><MoneyAmount amount={head.share.amount} currency={head.share.currency} /></dd></div>
+        <div><dt class="meta-label">From</dt><dd>{head.share.creditor_name}</dd></div>
+        <div><dt class="meta-label">Date</dt><dd>{head.share.date}</dd></div>
+        <div><dt class="meta-label">Amount</dt><dd><MoneyAmount amount={head.share.amount} currency={head.share.currency} /></dd></div>
       </dl>
       {#if categories.length === 0}
-        <p role="alert">No categories available. Create one first.</p>
+        <StatusMessage kind="error" message="No categories available. Create one first." />
       {:else}
         <SelectField
           id="inbox-share-category"
@@ -128,10 +129,12 @@
       <ButtonRow>
         <Button
           variant="primary"
-          disabled={busy || categories.length === 0 || !selectedCategoryId}
+          disabled={categories.length === 0 || !selectedCategoryId}
+          busy={busy}
+          busyLabel="Saving"
           onclick={() => saveShareItem(head.share.participant_id)}
         >
-          {busy ? "Saving" : "Save"}
+          Save
         </Button>
       </ButtonRow>
     </div>
@@ -148,9 +151,8 @@
   .share-name {
     overflow-wrap: anywhere;
     color: var(--text);
-    font-family: var(--font-display);
     font-size: var(--font-size-lg);
-    font-weight: 700;
+    font-weight: 600;
     line-height: 1.25;
   }
 
@@ -169,12 +171,7 @@
   }
 
   .share dt {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   .share dd {

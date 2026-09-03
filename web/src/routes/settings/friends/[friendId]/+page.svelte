@@ -188,7 +188,7 @@
       <FormField id="friend-nickname" label="Nickname" error={nicknameError || undefined}>
         <div class="nickname">
           <input id="friend-nickname" bind:value={nickname} autocomplete="off" />
-          <Button variant="primary" disabled={savingNickname} onclick={saveNickname}>Save</Button>
+          <Button variant="primary" busy={savingNickname} busyLabel="Saving" onclick={saveNickname}>Save</Button>
         </div>
       </FormField>
     </Block>
@@ -199,7 +199,7 @@
       {:else}
         {#if mainNet !== null}
           <div class="net-summary">
-            <span class="net-summary__label">{netLabel(mainNet)}</span>
+            <span class="net-summary__label meta-label">{netLabel(mainNet)}</span>
             <MoneyAmount
               amount={mainNet}
               currency={mainCurrency}
@@ -212,7 +212,7 @@
           <div class="net-breakdown">
             {#each netByCurrency as [currency, amount] (currency)}
               <div class="net-breakdown__row">
-                <span class="net-breakdown__label">{currency} / {netLabel(amount)}</span>
+                <span class="net-breakdown__label meta-label">{currency} / {netLabel(amount)}</span>
                 <MoneyAmount {amount} {currency} signed tone={netTone(amount)} />
               </div>
             {/each}
@@ -225,7 +225,7 @@
       {#if shares.length === 0}
         <EmptyState message="Nothing to settle." />
       {:else}
-        <div class="shares">
+        <div class="shares list-frame">
           {#each shares as share (share.participant_id)}
             <LedgerRow
               title={share.description}
@@ -238,16 +238,16 @@
           {/each}
         </div>
         <ButtonRow>
-          <Button variant="primary" disabled={settling} onclick={settleAll}>
-            {settling ? "Settling" : "Settle all"}
+          <Button variant="primary" busy={settling} busyLabel="Settling" onclick={settleAll}>
+            Settle all
           </Button>
         </ButtonRow>
       {/if}
     </Block>
 
     <Block title="Danger zone">
-      <Button variant="danger" disabled={removing} onclick={remove}>
-        {removing ? "Removing" : "Remove friend"}
+      <Button variant="danger" busy={removing} busyLabel="Removing" onclick={remove}>
+        Remove friend
       </Button>
     </Block>
   {/if}
@@ -261,7 +261,6 @@
   }
 
   .shares {
-    border: 1px solid var(--border);
     margin-bottom: var(--space-3);
   }
 
@@ -278,12 +277,7 @@
 
   .net-summary__label,
   .net-breakdown__label {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
   }
 
   .net-breakdown {

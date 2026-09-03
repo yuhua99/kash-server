@@ -74,16 +74,16 @@
   }
 </script>
 
-<div class="category-list">
+<div class="category-list list-frame">
   {#if categories.length === 0}
     <EmptyState message="No categories found." />
   {:else}
     {#each categories as category (category.id)}
       <ListRow>
-        <div class="row">
+        <div class="row row-split">
           <div class="row__main">
             <span class="row__name">{category.name}</span>
-            <samp class:tag--income={category.is_income} class="tag">
+            <samp class:tag--income={category.is_income} class="tag meta-label">
               {category.is_income ? "INCOME" : "EXPENSE"}
             </samp>
           </div>
@@ -116,17 +116,6 @@
 />
 
 <style>
-  .category-list {
-    border: 1px solid var(--border);
-  }
-
-  .row {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    align-items: center;
-    gap: var(--space-3);
-  }
-
   .row__main {
     display: grid;
     gap: var(--space-1);
@@ -141,11 +130,7 @@
   }
 
   .tag {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
-    font-weight: 600;
-    letter-spacing: 0.1em;
   }
 
   .tag--income {

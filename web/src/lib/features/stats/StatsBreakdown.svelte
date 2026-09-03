@@ -35,19 +35,19 @@
   {/if}
 
   <Block title="Totals">
-    <dl class="totals">
+    <dl class="totals list-frame">
       <div class="totals__cell">
-        <dt>Net</dt>
+        <dt class="meta-label">Net</dt>
         <dd>
           <MoneyAmount amount={totals.netTotal} {currency} signed plain tone={totals.netTotal < 0 ? "danger" : "default"} />
         </dd>
       </div>
       <div class="totals__cell">
-        <dt>Income</dt>
+        <dt class="meta-label">Income</dt>
         <dd><MoneyAmount amount={totals.incomeTotal} {currency} plain tone="income" /></dd>
       </div>
       <div class="totals__cell">
-        <dt>Expense</dt>
+        <dt class="meta-label">Expense</dt>
         <dd><MoneyAmount amount={totals.expenseTotal} {currency} plain tone="danger" /></dd>
       </div>
     </dl>
@@ -93,7 +93,6 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 1px;
     background: var(--border);
-    border: 1px solid var(--border);
   }
 
   .totals__cell {
@@ -104,11 +103,7 @@
   }
 
   .totals dt {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
     font-size: var(--font-size-xs);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
   }
 
   .totals dd {
