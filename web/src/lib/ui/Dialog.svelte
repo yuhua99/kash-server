@@ -40,7 +40,6 @@
     left: 50%;
     z-index: 51;
     width: min(92vw, 480px);
-    max-width: 480px;
     transform: translate(-50%, -50%);
     border: 1px solid var(--border-strong);
     background: var(--panel);
@@ -50,9 +49,9 @@
   :global(.kash-dialog-title) {
     margin: 0;
     color: var(--text);
-    font-family: var(--font-display);
-    font-size: var(--font-size-lg);
-    font-weight: 800;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
     line-height: 1;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -64,7 +63,5 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     line-height: 1.5;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
   }
 </style>

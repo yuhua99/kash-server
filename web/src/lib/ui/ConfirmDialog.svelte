@@ -34,8 +34,8 @@
 <Dialog bind:open {onOpenChange} {title} {description}>
   <ButtonRow>
     <Button variant="secondary" type="button" onclick={closeDialog}>Cancel</Button>
-    <Button variant="danger" type="button" disabled={busy} onclick={onConfirm}>
-      {busy ? confirmBusyLabel : confirmLabel}
+    <Button variant="danger" type="button" busy={busy} busyLabel={confirmBusyLabel} onclick={onConfirm}>
+      {confirmLabel}
     </Button>
   </ButtonRow>
 </Dialog>

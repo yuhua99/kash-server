@@ -126,6 +126,11 @@ form {
   gap: var(--space-4);
 }
 
+.form-stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
 label {
   display: block;
   font-size: var(--font-size-xs);
@@ -133,6 +138,25 @@ label {
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: var(--space-1);
+}
+
+.meta-label {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.row-split {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.list-frame {
+  border: 1px solid var(--border);
 }
 
 [role="alert"] {

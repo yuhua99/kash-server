@@ -6,6 +6,8 @@
     size?: "compact";
     type?: "button" | "submit" | "reset";
     disabled?: boolean;
+    busy?: boolean;
+    busyLabel?: string;
     onclick?: (event: MouseEvent) => void;
     children?: Snippet;
   };
@@ -15,6 +17,8 @@
     size,
     type = "button",
     disabled = false,
+    busy = false,
+    busyLabel,
     onclick,
     children,
   }: Props = $props();
@@ -23,10 +27,14 @@
 <button
   class={`btn btn-${variant}${size === "compact" ? " btn--compact" : ""}`}
   {type}
-  {disabled}
+  disabled={disabled || busy}
   {onclick}
 >
-  {@render children?.()}
+  {#if busy && busyLabel}
+    {busyLabel}
+  {:else}
+    {@render children?.()}
+  {/if}
 </button>
 
 <style>

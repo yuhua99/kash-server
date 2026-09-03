@@ -92,7 +92,7 @@
   :global(.kash-dp-trigger) {
     display: flex;
     align-items: center;
-    min-height: 42px;
+    min-height: 40px;
     padding: 0 var(--space-3);
     border: 1px solid var(--border);
     background: var(--surface);
@@ -139,6 +139,8 @@
   }
 
   :global(.kash-dp-cal) {
+    --kash-dp-cell: 32px;
+    --kash-dp-headcell: 24px;
     display: grid;
     gap: var(--space-3);
   }
@@ -152,7 +154,7 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     font-weight: 600;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
@@ -161,8 +163,8 @@
   }
 
   :global(.kash-dp-nav) {
-    width: 32px;
-    height: 32px;
+    width: var(--space-8);
+    height: var(--space-8);
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--accent);
@@ -187,14 +189,14 @@
 
   :global(.kash-dp-row) {
     display: grid;
-    grid-template-columns: repeat(7, 32px);
+    grid-template-columns: repeat(7, var(--kash-dp-cell));
   }
 
   :global(.kash-dp-headcell) {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 24px;
+    width: var(--kash-dp-cell);
+    height: var(--kash-dp-headcell);
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
@@ -204,16 +206,16 @@
   }
 
   :global(.kash-dp-cell) {
-    width: 32px;
-    height: 32px;
+    width: var(--kash-dp-cell);
+    height: var(--kash-dp-cell);
     padding: 0;
   }
 
   :global(.kash-dp-day) {
     display: grid;
     place-items: center;
-    width: 32px;
-    height: 32px;
+    width: var(--kash-dp-cell);
+    height: var(--kash-dp-cell);
     border: 1px solid var(--border);
     background: var(--surface);
     color: var(--text);
