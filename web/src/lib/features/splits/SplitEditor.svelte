@@ -120,9 +120,6 @@
   {#if friends.length === 0}
     <EmptyState message="No friends to split with." />
   {:else}
-    <div class="split-actions">
-      <Button variant="secondary" size="compact" onclick={assignMax}>Max to friends</Button>
-    </div>
     <ul class="split-list">
       {#each friends as friend (friend.user_id)}
         <li class="split-row">
@@ -148,7 +145,10 @@
         </li>
       {/each}
     </ul>
-    <p class="split-footer">Your share: <MoneyAmount amount={yourShare} {currency} /></p>
+    <div class="row-split">
+      <p class="split-footer meta-label">Your share: <MoneyAmount amount={yourShare} {currency} /></p>
+      <Button variant="secondary" size="compact" onclick={assignMax}>Max to friends</Button>
+    </div>
   {/if}
 </div>
 
@@ -156,11 +156,6 @@
   .split-editor {
     display: grid;
     gap: var(--space-3);
-  }
-
-  .split-actions {
-    display: flex;
-    justify-content: flex-end;
   }
 
   .split-list {
@@ -171,23 +166,55 @@
 
   .split-row {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
+    min-height: calc(var(--font-size-md) * 1.5 + var(--space-4) + 2px);
     gap: var(--space-3);
   }
 
   .split-check {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     gap: var(--space-2);
     margin: 0;
     color: var(--text);
-    text-transform: none;
+    font-family: inherit;
+    font-size: var(--font-size-md);
     letter-spacing: normal;
+    text-transform: none;
   }
 
   .split-check input {
-    width: auto;
+    position: relative;
+    width: var(--space-4);
+    height: var(--space-4);
+    padding: 0;
+    border: 1px solid var(--border-strong);
+    appearance: none;
+    background: var(--surface);
+    flex: 0 0 var(--space-4);
+  }
+
+  .split-check input:checked {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+
+  .split-check input:checked::after {
+    display: grid;
+    position: absolute;
+    inset: 0;
+    place-items: center;
+    color: var(--bg);
+    content: "✓";
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .split-check input:focus-visible {
+    outline: none;
+    border-color: var(--accent);
   }
 
   .split-amount {
@@ -195,11 +222,7 @@
   }
 
   .split-footer {
-    color: var(--text-muted);
-    font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
   }
 
 </style>
