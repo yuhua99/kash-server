@@ -4,7 +4,7 @@
   type Props = {
     variant?: "primary" | "secondary" | "danger";
     size?: "compact";
-    type?: "button" | "submit" | "reset";
+    type?: "button" | "submit";
     disabled?: boolean;
     busy?: boolean;
     busyLabel?: string;

@@ -3,14 +3,13 @@
 
   type Props = {
     onclick: (event: MouseEvent) => void;
-    disabled?: boolean;
     children?: Snippet;
   };
 
-  let { onclick, disabled = false, children }: Props = $props();
+  let { onclick, children }: Props = $props();
 </script>
 
-<button type="button" class="chip" {disabled} {onclick}>
+<button type="button" class="chip" {onclick}>
   {@render children?.()}
 </button>
 

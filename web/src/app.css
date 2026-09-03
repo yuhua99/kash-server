@@ -12,7 +12,6 @@
   --text-dim: #8a8a8a;
   /* accent (KEPT — not hazard red) */
   --accent: #ffc799;
-  --accent-strong: #ffd8b8;
   /* semantic only */
   --success: #99ffe4;
   --danger: #ff8080;
@@ -184,9 +183,4 @@ label {
 a {
   color: var(--accent);
   text-decoration: none;
-}
-
-hr {
-  border: none;
-  border-top: 1px solid var(--border);
 }

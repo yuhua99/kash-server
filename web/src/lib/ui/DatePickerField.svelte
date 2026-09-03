@@ -7,11 +7,10 @@
     label: string;
     value: string;
     onChange: (iso: string) => void;
-    disabled?: boolean;
     maxIso?: string;
   };
 
-  let { id, label, value, onChange, disabled = false, maxIso }: Props = $props();
+  let { id, label, value, onChange, maxIso }: Props = $props();
 
   const dateValue = $derived(isoToDateValue(value));
   const maxValue = $derived(maxIso ? isoToDateValue(maxIso) : undefined);
@@ -28,7 +27,6 @@
       if (v) onChange(dateValueToIso(v));
     }}
     {maxValue}
-    {disabled}
     weekdayFormat="short"
     fixedWeeks={true}
   >
@@ -106,7 +104,7 @@
     cursor: pointer;
   }
 
-  :global(.kash-dp-trigger:not(:disabled):hover),
+  :global(.kash-dp-trigger:hover),
   :global(.kash-dp-trigger:focus-visible) {
     border-color: var(--accent);
   }
@@ -116,11 +114,6 @@
   :global(.kash-dp-day:focus-visible) {
     outline: 1px solid var(--accent);
     outline-offset: -1px;
-  }
-
-  :global(.kash-dp-trigger:disabled) {
-    color: var(--text-dim);
-    cursor: not-allowed;
   }
 
   :global(.kash-dp-value) {

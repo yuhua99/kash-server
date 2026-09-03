@@ -1,4 +1,3 @@
-import { getApiBaseUrl } from "$lib/config";
 import type { ApiError } from "$lib/api/errors";
 
 type QueryValue = string | number | boolean | undefined | null | Array<string | number>;
@@ -7,7 +6,6 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
   query?: Record<string, QueryValue>;
-  headers?: Record<string, string>;
 };
 
 function buildQueryString(query?: Record<string, QueryValue>): string {
@@ -42,10 +40,10 @@ async function parseErrorMessage(res: Response): Promise<string> {
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> =
     options.body !== undefined ? { "Content-Type": "application/json" } : {};
-  const res = await fetch(`${getApiBaseUrl()}${path}${buildQueryString(options.query)}`, {
+  const res = await fetch(`/api${path}${buildQueryString(options.query)}`, {
     method: options.method,
     credentials: "include",
-    headers: { ...headers, ...options.headers },
+    headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
@@ -69,19 +67,19 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 }
 
 export const client = {
-  get<T>(path: string, query?: Record<string, QueryValue>, headers?: Record<string, string>) {
-    return request<T>(path, { method: "GET", query, headers });
+  get<T>(path: string, query?: Record<string, QueryValue>) {
+    return request<T>(path, { method: "GET", query });
   },
-  post<T>(path: string, body?: unknown, headers?: Record<string, string>) {
-    return request<T>(path, { method: "POST", body, headers });
+  post<T>(path: string, body?: unknown) {
+    return request<T>(path, { method: "POST", body });
   },
-  put<T>(path: string, body?: unknown, headers?: Record<string, string>) {
-    return request<T>(path, { method: "PUT", body, headers });
+  put<T>(path: string, body?: unknown) {
+    return request<T>(path, { method: "PUT", body });
   },
-  patch<T>(path: string, body?: unknown, headers?: Record<string, string>) {
-    return request<T>(path, { method: "PATCH", body, headers });
+  patch<T>(path: string, body?: unknown) {
+    return request<T>(path, { method: "PATCH", body });
   },
-  del<T>(path: string, headers?: Record<string, string>) {
-    return request<T>(path, { method: "DELETE", headers });
+  del<T>(path: string) {
+    return request<T>(path, { method: "DELETE" });
   },
 };

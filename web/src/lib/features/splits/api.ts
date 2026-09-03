@@ -4,7 +4,6 @@ import type { components } from "$lib/api/schema";
 type CreateSplitPayload = components["schemas"]["CreateSplitPayload"];
 type SplitCreatedResponse = components["schemas"]["SplitCreatedResponse"];
 type RecordItem = components["schemas"]["Record"];
-type ShareStatusResponse = components["schemas"]["ShareStatusResponse"];
 type PendingShare = components["schemas"]["PendingShare"];
 type UnsettledShare = components["schemas"]["UnsettledShare"];
 type PendingShareListResponse = components["schemas"]["PendingShareListResponse"];
@@ -19,10 +18,6 @@ export function finalizeShare(participantId: string, categoryId: string): Promis
   return client.post<RecordItem>(`/splits/participants/${participantId}/finalize`, {
     category_id: categoryId,
   });
-}
-
-export function settleShare(participantId: string): Promise<ShareStatusResponse> {
-  return client.put<ShareStatusResponse>(`/splits/participants/${participantId}/settle`);
 }
 
 export function listPendingShares(
