@@ -40,6 +40,8 @@
     left: 50%;
     z-index: 51;
     width: min(92vw, 480px);
+    max-height: 90dvh;
+    overflow-y: auto;
     transform: translate(-50%, -50%);
     border: 1px solid var(--border-strong);
     background: var(--panel);

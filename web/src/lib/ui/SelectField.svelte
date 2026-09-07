@@ -33,15 +33,17 @@
     <Select.Trigger {id} class="kash-select-trigger">{selectedLabel || "Select"}</Select.Trigger>
     <Select.Portal>
       <Select.Content class="kash-select-content">
-        {#each items as item, i (i)}
-          {#if "kind" in item}
-            <div class="kash-select-sep" role="separator"></div>
-          {:else}
-            <Select.Item value={item.value} label={item.label} class="kash-select-item">
-              {item.label}
-            </Select.Item>
-          {/if}
-        {/each}
+        <Select.Viewport class="kash-select-viewport">
+          {#each items as item, i (i)}
+            {#if "kind" in item}
+              <div class="kash-select-sep" role="separator"></div>
+            {:else}
+              <Select.Item value={item.value} label={item.label} class="kash-select-item">
+                {item.label}
+              </Select.Item>
+            {/if}
+          {/each}
+        </Select.Viewport>
       </Select.Content>
     </Select.Portal>
   </Select.Root>
@@ -94,29 +96,33 @@
   :global(.kash-select-content) {
     z-index: 60;
     min-width: var(--bits-select-anchor-width);
-    max-height: min(320px, var(--bits-select-content-available-height, 320px));
-    overflow-y: auto;
     border: 1px solid var(--border);
     background: var(--panel);
     padding: var(--space-1);
-    scrollbar-width: thin;
+  }
+
+  :global(.kash-select-viewport[data-select-viewport]) {
+    max-height: min(320px, var(--bits-select-content-available-height, 320px));
+    overflow-y: auto;
+    scrollbar-width: thin !important;
     scrollbar-color: var(--border-strong) transparent;
   }
 
-  :global(.kash-select-content::-webkit-scrollbar) {
+  :global(.kash-select-viewport[data-select-viewport]::-webkit-scrollbar) {
+    display: block !important;
     width: 8px;
   }
 
-  :global(.kash-select-content::-webkit-scrollbar-track) {
+  :global(.kash-select-viewport::-webkit-scrollbar-track) {
     background: transparent;
   }
 
-  :global(.kash-select-content::-webkit-scrollbar-thumb) {
+  :global(.kash-select-viewport::-webkit-scrollbar-thumb) {
     background: var(--border-strong);
     border: 2px solid var(--panel);
   }
 
-  :global(.kash-select-content::-webkit-scrollbar-thumb:hover) {
+  :global(.kash-select-viewport::-webkit-scrollbar-thumb:hover) {
     background: var(--text-dim);
   }
 
