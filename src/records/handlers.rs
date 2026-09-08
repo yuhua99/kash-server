@@ -404,33 +404,8 @@ pub async fn update_record(
                 .inspect_err(|e| tracing::error!("failed to query existing record: {e}"))
                 .map_err(|_| UpdateRecordError::Db("failed to query existing record"))?
             {
-                let amount_cents: i64 = row
-                    .get(2)
-                    .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                    .map_err(|_| UpdateRecordError::Db("invalid record data"))?;
-                Record {
-                    id: row
-                        .get(0)
-                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
-                    name: row
-                        .get(1)
-                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
-                    amount: to_decimal(amount_cents),
-                    currency: row
-                        .get(3)
-                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
-                    category_id: row
-                        .get(4)
-                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
-                    date: row
-                        .get(5)
-                        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
-                        .map_err(|_| UpdateRecordError::Db("invalid record data"))?,
-                }
+                extract_record_from_row(row)
+                    .map_err(|_| UpdateRecordError::Db("invalid record data"))?
             } else {
                 return Err(UpdateRecordError::RecordNotFound);
             };

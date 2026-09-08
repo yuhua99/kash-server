@@ -32,12 +32,5 @@ pub const MINOR_UNITS_PER_MAJOR: i64 = 100;
 pub const SUPPORTED_CURRENCIES: &[&str] = &["TWD", "USD", "JPY", "EUR", "CNY"];
 pub const FX_ANCHOR_BASE_CURRENCY: &str = "USD";
 
-// Split Status
-pub const SPLIT_STATUS_INITIATED: &str = "initiated";
-pub const SPLIT_STATUS_COMPLETED: &str = "completed";
-
 // Error messages
-pub const ERR_DATABASE_ACCESS: &str = "Database access error";
 pub const ERR_DATABASE_OPERATION: &str = "Database operation failed";
-pub const ERR_INVALID_SESSION: &str = "Invalid session";
-pub const ERR_UNAUTHORIZED: &str = "Not logged in";
