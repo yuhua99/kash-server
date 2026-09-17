@@ -5,7 +5,7 @@ Personal budget tracker. Rust (Axum + libsql + tower-sessions) API in `src/` and
 ## Invariants
 
 - Every `records`, `categories`, `splits`, `friends` SQL query must filter on `owner_user_id = ?` (or the equivalent ownership column). Multi-tenancy has no exceptions.
-- `Db = Arc<RwLock<Connection>>`: `.read().await` for SELECT, `.write().await` for writes. Never hold a read lock while acquiring a write lock in the same scope (deadlock).
+- `Db = Arc<Database>`: obtain connections through `db_conn(db).await` (`src/database.rs`), which enables foreign keys and sets the busy timeout. Inside transactions, use the supplied `conn` for all statements.
 - Multi-statement writes go through `with_transaction(db, |conn| Box::pin(async move { ... }))`.
 - All new tables are created in `init_main_db()` (`src/database.rs`) with `CREATE TABLE IF NOT EXISTS`. Domain modules never run DDL.
 - Split idempotency: reserve with NULL body → fan out inside the transaction → commit body. Delete the reservation if fanout fails.
