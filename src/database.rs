@@ -208,30 +208,29 @@ pub async fn init_main_db(data_dir: &str) -> Result<Db> {
     let mut journal_rows = conn.query("PRAGMA journal_mode = WAL", ()).await?;
     while journal_rows.next().await?.is_some() {}
 
-    conn.execute(CREATE_USERS_TABLE, ()).await?;
-    conn.execute(CREATE_RECORDS_TABLE, ()).await?;
-    conn.execute(CREATE_CATEGORIES_TABLE, ()).await?;
-    conn.execute(CREATE_SPLITS_TABLE, ()).await?;
-    conn.execute(CREATE_SPLIT_PARTICIPANTS_TABLE, ()).await?;
-    conn.execute(CREATE_RECORDS_OWNER_DATE_INDEX, ()).await?;
-    conn.execute(CREATE_CATEGORIES_OWNER_LOWER_NAME_INDEX, ())
-        .await?;
-    conn.execute(CREATE_SPLIT_PARTICIPANTS_DEBTOR_INDEX, ())
-        .await?;
-    conn.execute(CREATE_SPLIT_PARTICIPANTS_SPLIT_INDEX, ())
-        .await?;
-    conn.execute(CREATE_SPLITS_CREDITOR_INDEX, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_TABLE, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_NICKNAMES_TABLE, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_LOW_INDEX, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_HIGH_INDEX, ()).await?;
-    conn.execute(CREATE_FRIENDSHIP_NICKNAMES_OWNER_INDEX, ())
-        .await?;
-    conn.execute(CREATE_IDEMPOTENCY_KEYS_TABLE, ()).await?;
-    conn.execute(CREATE_IDEMPOTENCY_USER_INDEX, ()).await?;
-    conn.execute(CREATE_EXCHANGE_RATES_DAILY_TABLE, ()).await?;
-    conn.execute(CREATE_EXCHANGE_RATES_CURRENCY_DATE_INDEX, ())
-        .await?;
+    for sql in [
+        CREATE_USERS_TABLE,
+        CREATE_RECORDS_TABLE,
+        CREATE_CATEGORIES_TABLE,
+        CREATE_SPLITS_TABLE,
+        CREATE_SPLIT_PARTICIPANTS_TABLE,
+        CREATE_RECORDS_OWNER_DATE_INDEX,
+        CREATE_CATEGORIES_OWNER_LOWER_NAME_INDEX,
+        CREATE_SPLIT_PARTICIPANTS_DEBTOR_INDEX,
+        CREATE_SPLIT_PARTICIPANTS_SPLIT_INDEX,
+        CREATE_SPLITS_CREDITOR_INDEX,
+        CREATE_FRIENDSHIP_TABLE,
+        CREATE_FRIENDSHIP_NICKNAMES_TABLE,
+        CREATE_FRIENDSHIP_LOW_INDEX,
+        CREATE_FRIENDSHIP_HIGH_INDEX,
+        CREATE_FRIENDSHIP_NICKNAMES_OWNER_INDEX,
+        CREATE_IDEMPOTENCY_KEYS_TABLE,
+        CREATE_IDEMPOTENCY_USER_INDEX,
+        CREATE_EXCHANGE_RATES_DAILY_TABLE,
+        CREATE_EXCHANGE_RATES_CURRENCY_DATE_INDEX,
+    ] {
+        conn.execute(sql, ()).await?;
+    }
 
     Ok(db)
 }

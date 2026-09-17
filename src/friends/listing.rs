@@ -131,35 +131,18 @@ pub async fn list_friends(
 
     // pending=true  → incoming only (requester_user_id != current user)
     // pending=false or omitted → accepted friends (pending = 0)
-    let show_pending_incoming = query.pending.unwrap_or(false);
-
-    let total_count: i64 = if show_pending_incoming {
-        let mut rows = conn
-            .query(
-                "SELECT COUNT(*) FROM friendship WHERE (user_low_id = ? OR user_high_id = ?) AND pending = 1 AND requester_user_id != ?",
-                (user_id.as_str(), user_id.as_str(), user_id.as_str()),
-            )
-            .await
-            .inspect_err(|e| tracing::error!("failed to count friends: {e}"))
-            .map_err(|_| db_error_with_context("failed to count friends"))?;
-
-        if let Some(row) = rows
-            .next()
-            .await
-            .inspect_err(|e| tracing::error!("failed to count friends: {e}"))
-            .map_err(|_| db_error_with_context("failed to count friends"))?
-        {
-            row.get(0)
-                .inspect_err(|e| tracing::error!("failed to count friends: {e}"))
-                .map_err(|_| db_error_with_context("failed to count friends"))?
-        } else {
-            0
-        }
+    let status_filter = if query.pending.unwrap_or(false) {
+        "f.pending = 1 AND f.requester_user_id != ?1"
     } else {
+        "f.pending = 0"
+    };
+    let predicate = format!("(f.user_low_id = ?1 OR f.user_high_id = ?1) AND {status_filter}");
+
+    let total_count: i64 = {
         let mut rows = conn
             .query(
-                "SELECT COUNT(*) FROM friendship WHERE (user_low_id = ? OR user_high_id = ?) AND pending = 0",
-                (user_id.as_str(), user_id.as_str()),
+                &format!("SELECT COUNT(*) FROM friendship f WHERE {predicate}"),
+                [user_id.as_str()],
             )
             .await
             .inspect_err(|e| tracing::error!("failed to count friends: {e}"))
@@ -179,48 +162,21 @@ pub async fn list_friends(
         }
     };
 
-    let mut rows = if show_pending_incoming {
-        conn.query(
-            "SELECT f.id, CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END AS user_id, f.pending, COALESCE(n.nickname, u.name) AS nickname
-             FROM friendship f
-             JOIN users u ON u.id = CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END
-             LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?
-             WHERE (f.user_low_id = ? OR f.user_high_id = ?) AND f.pending = 1 AND f.requester_user_id != ?
-             ORDER BY nickname LIMIT ? OFFSET ?",
-            (
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                limit,
-                offset,
+    let mut rows = conn
+        .query(
+            &format!(
+                "SELECT f.id, CASE WHEN f.user_low_id = ?1 THEN f.user_high_id ELSE f.user_low_id END AS user_id, f.pending, COALESCE(n.nickname, u.name) AS nickname
+                 FROM friendship f
+                 JOIN users u ON u.id = CASE WHEN f.user_low_id = ?1 THEN f.user_high_id ELSE f.user_low_id END
+                 LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?1
+                 WHERE {predicate}
+                 ORDER BY nickname LIMIT ?2 OFFSET ?3"
             ),
+            (user_id.as_str(), limit, offset),
         )
         .await
-    } else {
-        conn.query(
-            "SELECT f.id, CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END AS user_id, f.pending, COALESCE(n.nickname, u.name) AS nickname
-             FROM friendship f
-             JOIN users u ON u.id = CASE WHEN f.user_low_id = ? THEN f.user_high_id ELSE f.user_low_id END
-             LEFT JOIN friendship_nicknames n ON n.friendship_id = f.id AND n.owner_user_id = ?
-             WHERE (f.user_low_id = ? OR f.user_high_id = ?) AND f.pending = 0
-             ORDER BY nickname LIMIT ? OFFSET ?",
-            (
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                user_id.as_str(),
-                limit,
-                offset,
-            ),
-        )
-        .await
-    }
-    .inspect_err(|e| tracing::error!("failed to query friends: {e}"))
-    .map_err(|_| db_error_with_context("failed to query friends"))?;
+        .inspect_err(|e| tracing::error!("failed to query friends: {e}"))
+        .map_err(|_| db_error_with_context("failed to query friends"))?;
 
     let mut friends = Vec::new();
     while let Some(row) = rows
