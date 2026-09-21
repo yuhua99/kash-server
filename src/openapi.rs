@@ -48,6 +48,7 @@ impl Modify for SessionCookie {
         crate::friends::accept_friend,
         crate::friends::remove_friend,
         crate::splits::create_split,
+        crate::splits::revoke_split,
         crate::splits::list_pending_shares,
         crate::splits::list_unsettled_shares,
         crate::splits::finalize_share,

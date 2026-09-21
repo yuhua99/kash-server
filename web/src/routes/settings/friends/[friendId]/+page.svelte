@@ -9,6 +9,7 @@
   import Button from "$lib/ui/Button.svelte";
   import ButtonRow from "$lib/ui/ButtonRow.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
+  import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import FormField from "$lib/ui/FormField.svelte";
   import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
@@ -20,7 +21,7 @@
   import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import { convertRecords } from "$lib/features/money/conversion";
   import { getSettingsCached } from "$lib/features/settings/cache";
-  import { listUnsettledShares, settleAllWithFriend } from "$lib/features/splits/api";
+  import { listUnsettledShares, revokeSplit, settleAllWithFriend } from "$lib/features/splits/api";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
   type UnsettledShare = components["schemas"]["UnsettledShare"];
@@ -34,6 +35,9 @@
   let loading = $state(true);
   let savingNickname = $state(false);
   let settling = $state(false);
+  let revokeTarget = $state<UnsettledShare | null>(null);
+  let revokeOpen = $state(false);
+  let revoking = $state(false);
   let removing = $state(false);
   let mainCurrency = $state("");
   let mainNet = $state<number | null>(null);
@@ -156,6 +160,23 @@
     }
   }
 
+  async function revoke() {
+    if (!revokeTarget || revoking) return;
+    revoking = true;
+    try {
+      await revokeSplit(revokeTarget.split_id);
+      revokeOpen = false;
+      revokeTarget = null;
+      toast.success("Split revoked. Existing records were kept.");
+      await load();
+    } catch (e) {
+      const message = await handleApiError(e, "Could not revoke split");
+      if (message) toast.error(message);
+    } finally {
+      revoking = false;
+    }
+  }
+
   async function remove() {
     removing = true;
     try {
@@ -234,11 +255,24 @@
               currency={share.currency}
               signed
               tone={share.direction === "they_owe_you" ? "income" : "danger"}
-            />
+            >
+              {#snippet actions()}
+                {#if share.direction === "they_owe_you"}
+                  <Button
+                    variant="danger"
+                    disabled={settling || revoking}
+                    onclick={() => {
+                      revokeTarget = share;
+                      revokeOpen = true;
+                    }}
+                  >Revoke entire split</Button>
+                {/if}
+              {/snippet}
+            </LedgerRow>
           {/each}
         </div>
         <ButtonRow>
-          <Button variant="primary" busy={settling} busyLabel="Settling" onclick={settleAll}>
+          <Button variant="primary" busy={settling} busyLabel="Settling" disabled={revoking} onclick={settleAll}>
             Settle all
           </Button>
         </ButtonRow>
@@ -252,6 +286,16 @@
     </Block>
   {/if}
 </section>
+
+<ConfirmDialog
+  bind:open={revokeOpen}
+  title="Revoke entire split?"
+  description={`This cancels “${revokeTarget?.description ?? ""}” for all participants, not just this friend. Existing records on both sides are kept unchanged. No notification is sent. A split cannot be revoked if any share has been settled.`}
+  confirmLabel="Revoke entire split"
+  confirmBusyLabel="Revoking"
+  busy={revoking}
+  onConfirm={revoke}
+/>
 
 <style>
   .nickname {

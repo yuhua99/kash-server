@@ -3,6 +3,7 @@ mod create;
 mod finalize;
 mod idempotency;
 mod listing;
+mod revoke;
 mod settlement;
 
 pub use crate::models::SplitCreatedResponse;
@@ -13,6 +14,7 @@ pub use listing::{
     __path_list_pending_shares, __path_list_unsettled_shares, list_pending_shares,
     list_unsettled_shares,
 };
+pub use revoke::{__path_revoke_split, revoke_split};
 pub use settlement::{
     __path_settle_all_with_friend, __path_settle_share, settle_all_with_friend, settle_share,
 };

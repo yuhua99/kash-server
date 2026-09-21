@@ -59,7 +59,7 @@ pub async fn create_split(
         get_existing_idempotency_response(&app_state, &current_user.id, &payload.idempotency_key)
             .await?
     {
-        return cached_split_response(cached, &payload_hash);
+        return cached_split_response(&app_state, &current_user.id, cached, &payload_hash).await;
     }
 
     let split_id = Uuid::new_v4().to_string();
@@ -88,7 +88,8 @@ pub async fn create_split(
             )
             .await?
             {
-                return cached_split_response(cached, &payload_hash);
+                return cached_split_response(&app_state, &current_user.id, cached, &payload_hash)
+                    .await;
             }
 
             return Err(db_error_with_context("failed to reserve idempotency key"));
@@ -121,7 +122,9 @@ pub async fn create_split(
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-fn cached_split_response(
+async fn cached_split_response(
+    app_state: &AppState,
+    user_id: &str,
     cached: super::idempotency::CachedIdempotency,
     payload_hash: &str,
 ) -> Result<(StatusCode, Json<SplitCreatedResponse>), (StatusCode, String)> {
@@ -139,6 +142,24 @@ fn cached_split_response(
                 "Failed to deserialize idempotency response".to_string(),
             )
         })?;
+
+    let conn = crate::database::db_conn(&app_state.main_db)
+        .await
+        .map_err(|_| db_error())?;
+    let mut rows = conn
+        .query(
+            "SELECT id FROM splits WHERE id = ? AND creditor_user_id = ?",
+            (response.split_id.as_str(), user_id),
+        )
+        .await
+        .map_err(|_| db_error_with_context("failed to check cached split"))?;
+    if rows.next().await.map_err(|_| db_error())?.is_none() {
+        return Err((
+            StatusCode::CONFLICT,
+            "This split has been revoked; use a new idempotency key to create another split"
+                .to_string(),
+        ));
+    }
 
     let status = StatusCode::from_u16(cached.response_status as u16).map_err(|_| {
         (

@@ -120,6 +120,10 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             axum::routing::post(kash_server::splits::create_split),
         )
         .route(
+            "/splits/{id}",
+            axum::routing::delete(kash_server::splits::revoke_split),
+        )
+        .route(
             "/splits/pending",
             axum::routing::get(kash_server::splits::list_pending_shares),
         )

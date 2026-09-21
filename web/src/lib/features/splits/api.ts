@@ -14,6 +14,10 @@ export function createSplit(payload: CreateSplitPayload): Promise<SplitCreatedRe
   return client.post<SplitCreatedResponse>("/splits", payload);
 }
 
+export function revokeSplit(splitId: string): Promise<null> {
+  return client.del<null>(`/splits/${splitId}`);
+}
+
 export function finalizeShare(participantId: string, categoryId: string): Promise<RecordItem> {
   return client.post<RecordItem>(`/splits/participants/${participantId}/finalize`, {
     category_id: categoryId,

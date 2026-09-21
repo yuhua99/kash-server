@@ -118,6 +118,7 @@ async fn main() -> Result<()> {
         .route("/friends/accept", post(friends::accept_friend))
         .route("/friends/remove", post(friends::remove_friend))
         .route("/splits", post(splits::create_split))
+        .route("/splits/{id}", axum::routing::delete(splits::revoke_split))
         .route("/splits/pending", get(splits::list_pending_shares))
         .route("/splits/unsettled", get(splits::list_unsettled_shares))
         .route(
