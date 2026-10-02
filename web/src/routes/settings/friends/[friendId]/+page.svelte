@@ -248,6 +248,17 @@
       {:else}
         <div class="shares list-frame">
           {#each shares as share (share.participant_id)}
+            {#snippet actions()}
+              <Button
+                variant="danger"
+                size="compact"
+                disabled={settling || revoking}
+                onclick={() => {
+                  revokeTarget = share;
+                  revokeOpen = true;
+                }}
+              >Delete</Button>
+            {/snippet}
             <LedgerRow
               title={share.description}
               meta={share.date}
@@ -255,20 +266,8 @@
               currency={share.currency}
               signed
               tone={share.direction === "they_owe_you" ? "income" : "danger"}
-            >
-              {#snippet actions()}
-                {#if share.direction === "they_owe_you"}
-                  <Button
-                    variant="danger"
-                    disabled={settling || revoking}
-                    onclick={() => {
-                      revokeTarget = share;
-                      revokeOpen = true;
-                    }}
-                  >Revoke entire split</Button>
-                {/if}
-              {/snippet}
-            </LedgerRow>
+              actions={share.direction === "they_owe_you" ? actions : undefined}
+            />
           {/each}
         </div>
         <ButtonRow>

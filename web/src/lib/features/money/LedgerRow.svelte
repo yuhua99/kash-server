@@ -71,6 +71,34 @@
     gap: var(--space-2);
   }
 
+  @media (hover: hover) and (pointer: fine) {
+    .ledger-row.has-actions {
+      position: relative;
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .ledger-row__actions {
+      position: absolute;
+      right: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    :global(.list-row:hover) > .ledger-row .ledger-row__actions,
+    .ledger-row:focus-within .ledger-row__actions {
+      position: static;
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) and (min-width: 521px) {
+    :global(.list-row:hover) > .ledger-row.has-actions,
+    .ledger-row.has-actions:focus-within {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+    }
+  }
+
   @media (max-width: 520px) {
     .ledger-row.has-actions {
       grid-template-columns: minmax(0, 1fr) auto;
