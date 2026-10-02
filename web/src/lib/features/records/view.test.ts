@@ -51,8 +51,11 @@ describe("matchesRecordFilters", () => {
     ).toBe(false);
   });
 
-  it("null category_id excluded by category filter", () => {
-    const r = rec({ id: "1", amount: -5, category_id: null });
+  it("filters uncategorized records", () => {
+    const r = { ...rec({ id: "1" }), category_id: null };
+    expect(matchesRecordFilters(r, { normalizedSearch: "", categoryFilter: "category:" })).toBe(
+      true,
+    );
     expect(matchesRecordFilters(r, { normalizedSearch: "", categoryFilter: "category:food" })).toBe(
       false,
     );

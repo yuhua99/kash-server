@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import type { components } from "$lib/api/schema";
   import { handleApiError } from "$lib/api/errors";
-  import { periodFromPreset, type PeriodPreset } from "$lib/date";
+  import { isoToDateValue, periodFromPreset, type PeriodPreset } from "$lib/date";
   import ConfirmDialog from "$lib/ui/ConfirmDialog.svelte";
   import PageHeader from "$lib/ui/PageHeader.svelte";
   import StatusMessage from "$lib/ui/StatusMessage.svelte";
@@ -177,6 +177,18 @@
   }
 
   onMount(async () => {
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get("start");
+    const to = params.get("end");
+    if (from && to && isoToDateValue(from) && isoToDateValue(to) && from <= to) {
+      preset = "custom";
+      start = from;
+      end = to;
+    }
+    if (params.has("category")) {
+      categoryFilter = `category:${params.get("category")}`;
+    }
+
     const [cats, settings] = await Promise.all([
       getCategoriesCached().catch(() => [] as Category[]),
       getSettingsCached()

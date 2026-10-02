@@ -30,7 +30,7 @@ export function matchesRecordFilters(
   if (categoryFilter === "all_incomes") {
     return record.amount > 0;
   }
-  return record.category_id === categoryFilter.slice("category:".length);
+  return (record.category_id ?? "") === categoryFilter.slice("category:".length);
 }
 
 function convertedAbs(record: RecordItem, convertedById: Map<string, number>): number {

@@ -8,10 +8,12 @@
     totals: Totals;
     breakdown: BreakdownItem[];
     currency: string;
+    start: string;
+    end: string;
     note?: string | null;
   };
 
-  let { totals, breakdown, currency, note }: Props = $props();
+  let { totals, breakdown, currency, start, end, note }: Props = $props();
 
   let percentages = $derived.by(() => {
     const raw = breakdown.map((item) => item.share * 100);
@@ -61,7 +63,10 @@
         {#each breakdown as item, i (item.categoryId)}
           <li class="breakdown__row">
             <div class="breakdown__head">
-              <span class="breakdown__name">{item.name}</span>
+              <a
+                class="breakdown__name"
+                href={`/records?${new URLSearchParams({ start, end, category: item.categoryId })}`}
+              >{item.name}</a>
               <MoneyAmount amount={item.total} {currency} signed tone={item.isIncome ? "income" : "default"} />
             </div>
             <div class="breakdown__bar" aria-hidden="true">
@@ -138,6 +143,9 @@
     white-space: nowrap;
   }
 
+  .breakdown__name:hover {
+    text-decoration: underline;
+  }
 
   .breakdown__bar {
     grid-column: 1 / -1;

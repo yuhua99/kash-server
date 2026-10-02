@@ -110,7 +110,7 @@
   {:else if error}
     <StatusMessage kind="error" message={error} />
   {:else}
-    <StatsBreakdown {totals} {breakdown} currency={statsCurrency} {note} />
+    <StatsBreakdown {totals} {breakdown} currency={statsCurrency} {start} {end} {note} />
   {/if}
 </section>
 

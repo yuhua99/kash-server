@@ -44,6 +44,7 @@
     { value: "all_incomes", label: "All incomes" },
     { kind: "separator" as const },
     ...categories.map((category) => ({ value: `category:${category.id}`, label: category.name })),
+    { value: "category:", label: "Uncategorized" },
   ]);
 
   const sortItems = [
