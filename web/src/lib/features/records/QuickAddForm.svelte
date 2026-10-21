@@ -237,7 +237,9 @@
   <Collapsible.Root bind:open={splitEnabled}>
     <Collapsible.Trigger class="split-toggle">{splitEnabled ? "Disable split" : "Split with friends"}</Collapsible.Trigger>
     <Collapsible.Content class="split-content">
-      <SplitEditor {friends} {total} mode={$amountDisplayMode} currency={$currentCurrency} bind:result={splitResult} />
+      {#if splitEnabled}
+        <SplitEditor {friends} {total} mode={$amountDisplayMode} currency={$currentCurrency} bind:result={splitResult} />
+      {/if}
     </Collapsible.Content>
   </Collapsible.Root>
 
