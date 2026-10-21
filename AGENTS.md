@@ -9,6 +9,7 @@ Personal budget tracker. Rust (Axum + libsql + tower-sessions) API in `src/` and
 - Multi-statement writes go through `with_transaction(db, |conn| Box::pin(async move { ... }))`.
 - All new tables are created in `init_main_db()` (`src/database.rs`) with `CREATE TABLE IF NOT EXISTS`. Domain modules never run DDL.
 - Split idempotency: reserve with NULL body → fan out inside the transaction → commit body. Delete the reservation if fanout fails.
+- A split's creditor record (`splits.record_id`) stores the full total paid in `records.amount`. Spending math (stats, summaries, filters, FX) uses `Record.my_amount`, computed in SQL as `amount` + friends' shares; `amount` is only what was paid.
 - No `.unwrap()` in `src/`. Use `?` or `.map_err(db_error)` / `db_error_with_context("...")` from `src/errors.rs`.
 - Handlers return `Result<(StatusCode, Json<T>), (StatusCode, String)>`. Status codes: 400 input, 401 missing session, 404 missing resource, 409 uniqueness violation.
 - Validation runs before any DB write. Reuse helpers in `src/validation.rs` (`validate_string_length`, `validate_date`, `validate_limit`, `validate_offset`, `validate_category_exists`).

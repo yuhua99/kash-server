@@ -289,7 +289,7 @@
 <ConfirmDialog
   bind:open={revokeOpen}
   title="Revoke entire split?"
-  description={`This cancels “${revokeTarget?.description ?? ""}” for all participants, not just this friend. Existing records on both sides are kept unchanged. No notification is sent. A split cannot be revoked if any share has been settled.`}
+  description={`This cancels “${revokeTarget?.description ?? ""}” for all participants, not just this friend. Existing records on both sides are kept; your record then counts its full amount as your own spending. No notification is sent. A split cannot be revoked if any share has been settled.`}
   confirmLabel="Revoke entire split"
   confirmBusyLabel="Revoking"
   busy={revoking}

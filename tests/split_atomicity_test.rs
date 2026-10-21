@@ -205,7 +205,7 @@ async fn create_split_writes_split_creditor_record_and_participants_only() {
     assert_eq!(count_records_for_user(&app, &bob_id).await, 0);
     assert_eq!(
         creditor_record_amount(&app, creditor_record_id, &alice_id).await,
-        -3000
+        -6000
     );
 }
 

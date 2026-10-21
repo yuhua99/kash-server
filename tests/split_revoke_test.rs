@@ -176,8 +176,19 @@ async fn revoke_preserves_records_and_removes_all_shares() {
         StatusCode::OK
     );
 
-    for (index, original) in before.iter().enumerate() {
-        assert_eq!(&f.records(index).await, original);
+    // The creditor's record is kept but is no longer split: its full amount is now theirs.
+    let mut creditor_after = before[0].clone();
+    for record in creditor_after["records"]
+        .as_array_mut()
+        .expect("creditor records")
+    {
+        assert!(record["split_id"].is_string());
+        record["my_amount"] = record["amount"].clone();
+        record["split_id"] = Value::Null;
+    }
+    assert_eq!(f.records(0).await, creditor_after);
+    for index in [1, 2] {
+        assert_eq!(f.records(index).await, before[index]);
     }
     for index in [1, 2] {
         let pending = request(&f.app, &f.cookies[index], "GET", "/splits/pending", None).await;
@@ -221,7 +232,7 @@ async fn revoke_preserves_records_and_removes_all_shares() {
         .0,
         StatusCode::CONFLICT
     );
-    assert_eq!(f.records(0).await, before[0]);
+    assert_eq!(f.records(0).await, creditor_after);
 
     // Retained records remain independently editable and deletable.
     let record_uri = format!("/records/{}", finalized["id"].as_str().expect("record id"));

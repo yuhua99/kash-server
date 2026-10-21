@@ -267,5 +267,5 @@ async fn full_split_lifecycle_uses_participants_pending_finalize_unsettled_and_s
         row.get::<String>(0).expect("creditor record"),
         creditor_record_id
     );
-    assert_eq!(row.get::<i64>(1).expect("creditor amount"), -6000);
+    assert_eq!(row.get::<i64>(1).expect("creditor amount"), -10000);
 }

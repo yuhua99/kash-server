@@ -61,10 +61,14 @@ pub struct LoginPayload {
 pub struct Record {
     pub id: String,
     pub name: String,
+    /// What the owner paid. For a split's creditor record this is the full total.
     pub amount: f64,
+    /// The owner's own share: `amount` plus friends' split shares. Use for spending math.
+    pub my_amount: f64,
     pub currency: String,
     pub category_id: Option<String>,
     pub date: String,
+    pub split_id: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]

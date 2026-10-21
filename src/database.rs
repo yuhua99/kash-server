@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS splits (
     currency         TEXT    NOT NULL,
     date             TEXT    NOT NULL CHECK (date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     total_amount     INTEGER NOT NULL CHECK (total_amount > 0),
-    created_at       TEXT    NOT NULL
+    created_at       TEXT    NOT NULL,
+    record_id        TEXT    NOT NULL UNIQUE REFERENCES records(id) ON DELETE CASCADE
 );
 "#;
 

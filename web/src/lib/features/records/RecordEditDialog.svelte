@@ -119,7 +119,7 @@
       <input id="edit-record-name" bind:value={name} autocomplete="off" />
     </FormField>
 
-    <FormField id="edit-record-amount" label="Amount">
+    <FormField id="edit-record-amount" label={record?.split_id ? "Total paid (split)" : "Amount"}>
       <input
         id="edit-record-amount"
         type="number"
@@ -129,12 +129,14 @@
       />
     </FormField>
 
-    <SegmentedControl
-      items={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]}
-      value={isIncome ? "income" : "expense"}
-      onValueChange={(value) => (isIncome = value === "income")}
-      ariaLabel="Record type"
-    />
+    {#if !record?.split_id}
+      <SegmentedControl
+        items={[{ value: "expense", label: "Expense" }, { value: "income", label: "Income" }]}
+        value={isIncome ? "income" : "expense"}
+        onValueChange={(value) => (isIncome = value === "income")}
+        ariaLabel="Record type"
+      />
+    {/if}
 
     <SelectField
       id="edit-record-category"

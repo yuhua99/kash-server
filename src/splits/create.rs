@@ -270,12 +270,6 @@ async fn create_split_records(
     validate_category_exists(&app_state.main_db, initiator_user_id, &payload.category_id).await?;
 
     let creditor_record_id = Uuid::new_v4().to_string();
-    let initiator_share = calculated
-        .iter()
-        .find(|(user_id, _)| user_id == initiator_user_id)
-        .map(|(_, amount)| *amount)
-        .ok_or_else(|| db_error_with_context("split calculation missing initiator share"))?;
-    let creditor_amount = -initiator_share.abs();
 
     let participants: Vec<(String, String, i64)> = calculated
         .iter()
@@ -328,7 +322,23 @@ async fn create_split_records(
 
             Box::pin(async move {
                 conn.execute(
-                    "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        creditor_record_id.as_str(),
+                        initiator_id.as_str(),
+                        description.as_str(),
+                        -total_amount,
+                        currency.as_str(),
+                        category_id.as_str(),
+                        date.as_str(),
+                    ),
+                )
+                .await
+                .inspect_err(|e| tracing::error!("split record write failed: {e}"))
+                .map_err(|_| SplitRecordError::Db)?;
+
+                conn.execute(
+                    "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at, record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         split_id.as_str(),
                         initiator_id.as_str(),
@@ -337,22 +347,7 @@ async fn create_split_records(
                         date.as_str(),
                         total_amount,
                         created_at.as_str(),
-                    ),
-                )
-                .await
-                .inspect_err(|e| tracing::error!("split record write failed: {e}"))
-                .map_err(|_| SplitRecordError::Db)?;
-
-                conn.execute(
-                    "INSERT INTO records (id, owner_user_id, name, amount, currency, category_id, date) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (
                         creditor_record_id.as_str(),
-                        initiator_id.as_str(),
-                        description.as_str(),
-                        creditor_amount,
-                        currency.as_str(),
-                        category_id.as_str(),
-                        date.as_str(),
                     ),
                 )
                 .await

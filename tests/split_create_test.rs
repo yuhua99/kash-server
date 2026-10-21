@@ -287,7 +287,7 @@ async fn split_create_happy_path_creates_split_participants_and_creditor_record(
         .expect("creditor record exists");
     assert_eq!(record_row.get::<String>(0).expect("owner"), alice_id);
     assert_eq!(record_row.get::<String>(1).expect("name"), "Dinner split");
-    assert_eq!(record_row.get::<i64>(2).expect("amount"), -4000);
+    assert_eq!(record_row.get::<i64>(2).expect("amount"), -10000);
     assert_eq!(record_row.get::<String>(3).expect("currency"), "TWD");
     assert_eq!(
         record_row.get::<String>(4).expect("category"),

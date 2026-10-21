@@ -483,13 +483,22 @@ export interface components {
       username: string;
     };
     Record: {
-      /** Format: double */
+      /**
+       * Format: double
+       * @description What the owner paid. For a split's creditor record this is the full total.
+       */
       amount: number;
       category_id?: string | null;
       currency: string;
       date: string;
       id: string;
+      /**
+       * Format: double
+       * @description The owner's own share: `amount` plus friends' split shares. Use for spending math.
+       */
+      my_amount: number;
       name: string;
+      split_id?: string | null;
     };
     RegisterPayload: {
       password: string;
@@ -1424,7 +1433,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Record deleted */
+      /** @description Record deleted; an unsettled linked split is revoked with it */
       204: {
         headers: {
           [name: string]: unknown;
@@ -1440,6 +1449,13 @@ export interface operations {
       };
       /** @description Not found */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Linked split has settled shares */
+      409: {
         headers: {
           [name: string]: unknown;
         };

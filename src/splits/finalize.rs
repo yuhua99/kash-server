@@ -207,9 +207,11 @@ pub async fn finalize_share(
                 id: record_id,
                 name: share.description,
                 amount: to_decimal(amount_cents),
+                my_amount: to_decimal(amount_cents),
                 currency: share.currency,
                 category_id: Some(category_id),
                 date: share.date,
+                split_id: None,
             })
         })
     })

@@ -5,8 +5,17 @@ import { buildBreakdown, calculateTotals } from "./query";
 type RecordItem = components["schemas"]["Record"];
 type Category = components["schemas"]["Category"];
 
-function rec(id: string, amount: number, categoryId: string | null): RecordItem {
-  return { id, name: id, amount, currency: "USD", category_id: categoryId, date: "2024-01-01" };
+function rec(id: string, amount: number, categoryId: string | null, myAmount = amount): RecordItem {
+  return {
+    id,
+    name: id,
+    amount,
+    my_amount: myAmount,
+    currency: "USD",
+    category_id: categoryId,
+    date: "2024-01-01",
+    split_id: myAmount === amount ? null : "split-1",
+  };
 }
 
 const categories: Category[] = [
@@ -18,6 +27,11 @@ describe("calculateTotals", () => {
   it("computes net, income, and expense totals", () => {
     const records = [rec("1", 100, "salary"), rec("2", -30, "food"), rec("3", -20, "food")];
     expect(calculateTotals(records)).toEqual({ netTotal: 50, incomeTotal: 100, expenseTotal: 50 });
+  });
+
+  it("counts only the owner's share of split records", () => {
+    const records = [rec("1", -100, "food", -40)];
+    expect(calculateTotals(records)).toEqual({ netTotal: -40, incomeTotal: 0, expenseTotal: 40 });
   });
 
   it("returns zeros for no records", () => {

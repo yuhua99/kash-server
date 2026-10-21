@@ -23,10 +23,10 @@ export function calculateTotals(records: RecordItem[]): Totals {
   let expenseTotal = 0;
 
   for (const record of records) {
-    if (record.amount > 0) {
-      incomeTotal += record.amount;
-    } else if (record.amount < 0) {
-      expenseTotal += Math.abs(record.amount);
+    if (record.my_amount > 0) {
+      incomeTotal += record.my_amount;
+    } else if (record.my_amount < 0) {
+      expenseTotal += Math.abs(record.my_amount);
     }
   }
 
@@ -40,8 +40,8 @@ export function buildBreakdown(records: RecordItem[], categories: Category[]): B
   for (const record of records) {
     const key = record.category_id ?? "";
     const group = groups.get(key) ?? { total: 0, absoluteTotal: 0 };
-    group.total += record.amount;
-    group.absoluteTotal += Math.abs(record.amount);
+    group.total += record.my_amount;
+    group.absoluteTotal += Math.abs(record.my_amount);
     groups.set(key, group);
   }
 

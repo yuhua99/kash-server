@@ -61,7 +61,7 @@
       const lookup = buildRateLookup(rates);
       statsRecords = records.map((record) => ({
         ...record,
-        amount: convertAmountToMainCurrency(record.amount, record.currency, mainCurrency, record.date, lookup),
+        my_amount: convertAmountToMainCurrency(record.my_amount, record.currency, mainCurrency, record.date, lookup),
       }));
       statsCurrency = mainCurrency;
       note = null;

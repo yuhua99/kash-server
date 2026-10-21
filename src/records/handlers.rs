@@ -61,6 +61,8 @@ enum UpdateRecordError {
     CategoryMissing,
     AmountWithoutCategory,
     NoChanges,
+    SplitRecordIncome,
+    SplitRecordBelowShares,
 }
 
 impl From<TransactionError> for UpdateRecordError {
@@ -94,16 +96,71 @@ impl From<UpdateRecordError> for (StatusCode, String) {
                 StatusCode::NOT_FOUND,
                 "Record not found or no changes made".to_string(),
             ),
+            UpdateRecordError::SplitRecordIncome => (
+                StatusCode::BAD_REQUEST,
+                "A split record must stay an expense".to_string(),
+            ),
+            UpdateRecordError::SplitRecordBelowShares => (
+                StatusCode::BAD_REQUEST,
+                "Amount cannot be less than the friends' split shares".to_string(),
+            ),
         }
     }
 }
+
+enum DeleteRecordError {
+    Transaction(TransactionError),
+    Db,
+    RecordNotFound,
+    SplitSettled,
+}
+
+impl From<TransactionError> for DeleteRecordError {
+    fn from(value: TransactionError) -> Self {
+        Self::Transaction(value)
+    }
+}
+
+impl From<libsql::Error> for DeleteRecordError {
+    fn from(error: libsql::Error) -> Self {
+        tracing::error!("failed to delete record: {error}");
+        Self::Db
+    }
+}
+
+impl From<DeleteRecordError> for (StatusCode, String) {
+    fn from(value: DeleteRecordError) -> Self {
+        match value {
+            DeleteRecordError::Transaction(TransactionError::Begin) => {
+                db_error_with_context("failed to begin transaction")
+            }
+            DeleteRecordError::Transaction(TransactionError::Commit) => {
+                db_error_with_context("failed to commit transaction")
+            }
+            DeleteRecordError::Db => db_error_with_context("failed to delete record"),
+            DeleteRecordError::RecordNotFound => {
+                (StatusCode::NOT_FOUND, "Record not found".to_string())
+            }
+            DeleteRecordError::SplitSettled => (
+                StatusCode::CONFLICT,
+                "Cannot delete a split record with settled shares".to_string(),
+            ),
+        }
+    }
+}
+
+/// Record columns plus the linked split and the owner's share
+/// (`amount` + friends' shares). Callers add the WHERE clause on alias `r`.
+const SELECT_RECORDS: &str = "SELECT r.id, r.name, r.amount, r.currency, r.category_id, r.date, s.id, \
+     r.amount + COALESCE((SELECT SUM(p.amount) FROM split_participants p WHERE p.split_id = s.id), 0) \
+     FROM records r LEFT JOIN splits s ON s.record_id = r.id AND s.creditor_user_id = r.owner_user_id";
 
 fn build_records_where_clause(
     user_id: &str,
     start_date: &str,
     end_date: &str,
 ) -> (String, Vec<Value>) {
-    let where_clause = "owner_user_id = ? AND date BETWEEN ? AND ?".to_string();
+    let where_clause = "r.owner_user_id = ? AND r.date BETWEEN ? AND ?".to_string();
     let params = vec![user_id.into(), start_date.into(), end_date.into()];
 
     (where_clause, params)
@@ -134,14 +191,24 @@ fn extract_record_from_row(row: Row) -> Result<Record, (StatusCode, String)> {
         .get(5)
         .inspect_err(|e| tracing::error!("invalid record data: {e}"))
         .map_err(|_| db_error_with_context("invalid record data"))?;
+    let split_id: Option<String> = row
+        .get(6)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
+        .map_err(|_| db_error_with_context("invalid record data"))?;
+    let my_amount_cents: i64 = row
+        .get(7)
+        .inspect_err(|e| tracing::error!("invalid record data: {e}"))
+        .map_err(|_| db_error_with_context("invalid record data"))?;
 
     Ok(Record {
         id,
         name,
         amount: to_decimal(amount_cents),
+        my_amount: to_decimal(my_amount_cents),
         currency,
         category_id,
         date,
+        split_id,
     })
 }
 
@@ -203,9 +270,11 @@ async fn create_record_for_user(
                 id: record_id,
                 name,
                 amount: to_decimal(normalized_amount),
+                my_amount: to_decimal(normalized_amount),
                 currency,
                 category_id: Some(category_id),
                 date,
+                split_id: None,
             })
         })
     })
@@ -274,7 +343,7 @@ pub async fn get_records(
     let (where_clause, base_params) =
         build_records_where_clause(user.id.as_str(), start_date.as_str(), end_date.as_str());
 
-    let count_sql = format!("SELECT COUNT(*) FROM records WHERE {where_clause}");
+    let count_sql = format!("SELECT COUNT(*) FROM records r WHERE {where_clause}");
     let mut count_rows = conn
         .query(&count_sql, base_params.clone())
         .await
@@ -298,9 +367,8 @@ pub async fn get_records(
     select_params.push(limit.into());
     select_params.push(offset.into());
 
-    let select_sql = format!(
-        "SELECT id, name, amount, currency, category_id, date FROM records WHERE {where_clause} ORDER BY date DESC LIMIT ? OFFSET ?"
-    );
+    let select_sql =
+        format!("{SELECT_RECORDS} WHERE {where_clause} ORDER BY r.date DESC LIMIT ? OFFSET ?");
     let mut rows = conn
         .query(&select_sql, select_params)
         .await
@@ -391,7 +459,7 @@ pub async fn update_record(
         Box::pin(async move {
             let mut existing_rows = conn
                 .query(
-                    "SELECT id, name, amount, currency, category_id, date FROM records WHERE id = ? AND owner_user_id = ?",
+                    &format!("{SELECT_RECORDS} WHERE r.id = ? AND r.owner_user_id = ?"),
                     (record_id.as_str(), owner_user_id.as_str()),
                 )
                 .await
@@ -426,6 +494,9 @@ pub async fn update_record(
                                 UpdateRecordError::Db("failed to query category type")
                             }
                         })?;
+                    if is_income && existing_record.split_id.is_some() {
+                        return Err(UpdateRecordError::SplitRecordIncome);
+                    }
                     normalize_amount_by_category(to_cents(amount), is_income)
                 } else {
                     return Err(UpdateRecordError::AmountWithoutCategory);
@@ -434,6 +505,27 @@ pub async fn update_record(
                 to_cents(existing_record.amount)
             };
             let updated_date = date.unwrap_or(existing_record.date);
+            let shares_cents =
+                to_cents(existing_record.my_amount) - to_cents(existing_record.amount);
+
+            if let Some(ref split_id) = existing_record.split_id {
+                if -updated_amount < shares_cents {
+                    return Err(UpdateRecordError::SplitRecordBelowShares);
+                }
+                conn.execute(
+                    "UPDATE splits SET description = ?, date = ?, total_amount = ? WHERE id = ? AND creditor_user_id = ?",
+                    (
+                        updated_name.as_str(),
+                        updated_date.as_str(),
+                        -updated_amount,
+                        split_id.as_str(),
+                        owner_user_id.as_str(),
+                    ),
+                )
+                .await
+                .inspect_err(|e| tracing::error!("failed to update split: {e}"))
+                .map_err(|_| UpdateRecordError::Db("failed to update split"))?;
+            }
 
             let affected_rows = conn
                 .execute(
@@ -459,9 +551,11 @@ pub async fn update_record(
                 id: record_id,
                 name: updated_name,
                 amount: to_decimal(updated_amount),
+                my_amount: to_decimal(updated_amount + shares_cents),
                 currency: existing_record.currency,
                 category_id: updated_category_id,
                 date: updated_date,
+                split_id: existing_record.split_id,
             })
         })
     })
@@ -477,9 +571,10 @@ pub async fn update_record(
     tag = "records",
     params(("id" = String, Path, description = "record id")),
     responses(
-        (status = 204, description = "Record deleted"),
+        (status = 204, description = "Record deleted; an unsettled linked split is revoked with it"),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Not found"),
+        (status = 409, description = "Linked split has settled shares"),
         (status = 500, description = "Internal server error"),
     ),
 )]
@@ -489,23 +584,41 @@ pub async fn delete_record(
     Path(record_id): Path<String>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let user = get_current_user(&session).await?;
-    let conn = crate::database::db_conn(&app_state.main_db)
-        .await
-        .inspect_err(|e| tracing::error!("failed to connect to database: {e}"))
-        .map_err(|_| db_error())?;
 
-    let affected_rows = conn
-        .execute(
-            "DELETE FROM records WHERE id = ? AND owner_user_id = ?",
-            (record_id.as_str(), user.id.as_str()),
-        )
-        .await
-        .inspect_err(|e| tracing::error!("failed to delete record: {e}"))
-        .map_err(|_| db_error_with_context("failed to delete record"))?;
+    with_transaction(&app_state.main_db, |conn| {
+        Box::pin(async move {
+            let settled = {
+                let mut rows = conn
+                    .query(
+                        "SELECT EXISTS (SELECT 1 FROM splits s JOIN split_participants p ON p.split_id = s.id \
+                         WHERE s.record_id = ? AND s.creditor_user_id = ? AND p.settled = 1)",
+                        (record_id.as_str(), user.id.as_str()),
+                    )
+                    .await?;
+                match rows.next().await? {
+                    Some(row) => row.get::<bool>(0)?,
+                    None => false,
+                }
+            };
+            if settled {
+                return Err(DeleteRecordError::SplitSettled);
+            }
 
-    if affected_rows == 0 {
-        return Err((StatusCode::NOT_FOUND, "Record not found".to_string()));
-    }
+            // An unsettled linked split and its shares cascade away with the record.
+            let affected_rows = conn
+                .execute(
+                    "DELETE FROM records WHERE id = ? AND owner_user_id = ?",
+                    (record_id.as_str(), user.id.as_str()),
+                )
+                .await?;
+            if affected_rows == 0 {
+                return Err(DeleteRecordError::RecordNotFound);
+            }
+            Ok(())
+        })
+    })
+    .await
+    .map_err(<(StatusCode, String)>::from)?;
 
     Ok(StatusCode::NO_CONTENT)
 }

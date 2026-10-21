@@ -25,17 +25,17 @@ export function matchesRecordFilters(
   }
 
   if (categoryFilter === "all_expenses") {
-    return record.amount < 0;
+    return record.my_amount < 0;
   }
   if (categoryFilter === "all_incomes") {
-    return record.amount > 0;
+    return record.my_amount > 0;
   }
   return (record.category_id ?? "") === categoryFilter.slice("category:".length);
 }
 
 function convertedAbs(record: RecordItem, convertedById: Map<string, number>): number {
   const converted = convertedById.get(record.id);
-  return Math.abs(converted ?? record.amount);
+  return Math.abs(converted ?? record.my_amount);
 }
 
 export function compareRecords(
@@ -51,11 +51,11 @@ export function compareRecords(
       return a.date < b.date ? 1 : a.date > b.date ? -1 : 0;
     case "amount_asc": {
       const diff = convertedAbs(a, convertedById) - convertedAbs(b, convertedById);
-      return diff !== 0 ? diff : a.amount - b.amount;
+      return diff !== 0 ? diff : a.my_amount - b.my_amount;
     }
     case "amount_desc": {
       const diff = convertedAbs(b, convertedById) - convertedAbs(a, convertedById);
-      return diff !== 0 ? diff : b.amount - a.amount;
+      return diff !== 0 ? diff : b.my_amount - a.my_amount;
     }
   }
 }
@@ -65,22 +65,25 @@ export function summarizeDailySpend(
   convertedSpendById: Map<string, number>,
   mainCurrency: string,
 ): SpendSummary[] {
-  const expenses = records.filter((record) => record.amount < 0);
+  const expenses = records.filter((record) => record.my_amount < 0);
 
   if (mainCurrency) {
     let total = 0;
     for (const record of expenses) {
       total +=
         record.currency === mainCurrency
-          ? Math.abs(record.amount)
-          : (convertedSpendById.get(record.id) ?? Math.abs(record.amount));
+          ? Math.abs(record.my_amount)
+          : (convertedSpendById.get(record.id) ?? Math.abs(record.my_amount));
     }
     return total > 0 ? [{ currency: mainCurrency, amount: total }] : [];
   }
 
   const subtotals = new Map<string, number>();
   for (const record of expenses) {
-    subtotals.set(record.currency, (subtotals.get(record.currency) ?? 0) + Math.abs(record.amount));
+    subtotals.set(
+      record.currency,
+      (subtotals.get(record.currency) ?? 0) + Math.abs(record.my_amount),
+    );
   }
   return [...subtotals.entries()]
     .map(([currency, amount]) => ({ currency, amount }))

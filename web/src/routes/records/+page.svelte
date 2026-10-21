@@ -101,7 +101,11 @@
   async function convert(list: RecordItem[]) {
     const seq = ++convertSeq;
     try {
-      const result = await convertRecords(list, mainCurrency, { from: start, to: end });
+      const result = await convertRecords(
+        list.map((record) => ({ ...record, amount: record.my_amount })),
+        mainCurrency,
+        { from: start, to: end },
+      );
       if (seq !== convertSeq) return;
       convertedById = result.convertedById;
       convertedSpendById = result.convertedSpendById;
@@ -249,7 +253,9 @@
   bind:open={deleteOpen}
   onOpenChange={(open) => !open && (pendingDelete = null)}
   title="Delete record"
-  description={pendingDelete ? `Delete ${pendingDelete.name}?` : "Delete this record?"}
+  description={pendingDelete
+    ? `Delete ${pendingDelete.name}?${pendingDelete.split_id ? " This also revokes its split with friends." : ""}`
+    : "Delete this record?"}
   confirmLabel="Delete"
   confirmBusyLabel="Deleting"
   busy={deleting}

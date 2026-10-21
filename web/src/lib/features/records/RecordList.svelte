@@ -2,6 +2,7 @@
   import type { components } from "$lib/api/schema";
   import Button from "$lib/ui/Button.svelte";
   import EmptyState from "$lib/ui/EmptyState.svelte";
+  import { amountDisplayMode, formatMoney } from "$lib/features/money/amount-display";
   import LedgerRow from "$lib/features/money/LedgerRow.svelte";
   import MoneyAmount from "$lib/features/money/MoneyAmount.svelte";
   import type { DateGroup } from "$lib/features/records/view";
@@ -43,16 +44,24 @@
     }
     return categoryNames.get(record.category_id) ?? "Uncategorized";
   }
+
+  function recordMeta(record: RecordItem): string {
+    const meta = `${categoryLabel(record)} / ${record.date}`;
+    if (!record.split_id) {
+      return meta;
+    }
+    return `${meta} / split, paid ${formatMoney(Math.abs(record.amount), $amountDisplayMode, record.currency)}`;
+  }
 </script>
 
 {#snippet row(record: RecordItem)}
   <LedgerRow
     title={record.name}
-    meta={`${categoryLabel(record)} / ${record.date}`}
-    amount={record.amount}
+    meta={recordMeta(record)}
+    amount={record.my_amount}
     currency={record.currency}
     signed
-    tone={record.amount > 0 ? "income" : "default"}
+    tone={record.my_amount > 0 ? "income" : "default"}
   >
     {#snippet actions()}
       <Button variant="secondary" size="compact" onclick={() => onEdit(record)}>Edit</Button>

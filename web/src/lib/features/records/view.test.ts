@@ -14,11 +14,30 @@ function rec(partial: Partial<RecordItem> & { id: string }): RecordItem {
     id: partial.id,
     name: partial.name ?? "Item",
     amount: partial.amount ?? -10,
+    my_amount: partial.my_amount ?? partial.amount ?? -10,
     currency: partial.currency ?? "USD",
     category_id: partial.category_id ?? "c1",
     date: partial.date ?? "2024-01-01",
+    split_id: partial.split_id ?? null,
   };
 }
+
+describe("split records", () => {
+  const split = rec({ id: "s", amount: -100, my_amount: -40, split_id: "split-1" });
+  const fullShare = rec({ id: "f", amount: -50, my_amount: 0, split_id: "split-2" });
+
+  it("counts only the owner's share as spending", () => {
+    expect(summarizeDailySpend([split, fullShare], new Map(), "")).toEqual([
+      { currency: "USD", amount: 40 },
+    ]);
+  });
+
+  it("hides fully shared records from the expense filter", () => {
+    const filters = { normalizedSearch: "", categoryFilter: "all_expenses" as const };
+    expect(matchesRecordFilters(split, filters)).toBe(true);
+    expect(matchesRecordFilters(fullShare, filters)).toBe(false);
+  });
+});
 
 describe("matchesRecordFilters", () => {
   it("filters by case-insensitive name search", () => {

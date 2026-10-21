@@ -883,13 +883,16 @@
         ],
         "responses": {
           "204": {
-            "description": "Record deleted"
+            "description": "Record deleted; an unsettled linked split is revoked with it"
           },
           "401": {
             "description": "Unauthorized"
           },
           "404": {
             "description": "Not found"
+          },
+          "409": {
+            "description": "Linked split has settled shares"
           },
           "500": {
             "description": "Internal server error"
@@ -1703,13 +1706,15 @@
           "id",
           "name",
           "amount",
+          "my_amount",
           "currency",
           "date"
         ],
         "properties": {
           "amount": {
             "type": "number",
-            "format": "double"
+            "format": "double",
+            "description": "What the owner paid. For a split's creditor record this is the full total."
           },
           "category_id": {
             "type": [
@@ -1726,8 +1731,19 @@
           "id": {
             "type": "string"
           },
+          "my_amount": {
+            "type": "number",
+            "format": "double",
+            "description": "The owner's own share: `amount` plus friends' split shares. Use for spending math."
+          },
           "name": {
             "type": "string"
+          },
+          "split_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

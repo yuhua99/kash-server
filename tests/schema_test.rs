@@ -266,7 +266,21 @@ async fn a5_split_participants_constraints_are_enforced_in_db() {
         .expect("connect db");
 
     conn.execute(
-        "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO records (id, owner_user_id, name, amount, currency, date) VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "record-a5",
+            user_id.as_str(),
+            "Dinner",
+            -100i64,
+            "TWD",
+            "2026-01-01",
+        ),
+    )
+    .await
+    .expect("insert split record");
+
+    conn.execute(
+        "INSERT INTO splits (id, creditor_user_id, description, currency, date, total_amount, created_at, record_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "split-a5",
             user_id.as_str(),
@@ -275,6 +289,7 @@ async fn a5_split_participants_constraints_are_enforced_in_db() {
             "2026-01-01",
             100i64,
             "2026-01-01T00:00:00Z",
+            "record-a5",
         ),
     )
     .await
