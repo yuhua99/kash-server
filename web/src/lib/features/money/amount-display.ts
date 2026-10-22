@@ -5,6 +5,7 @@ export type AmountDisplayMode = "cents" | "whole";
 
 const STORAGE_KEY = "kash_amount_display_mode";
 const DEFAULT_MODE: AmountDisplayMode = "cents";
+const formatters = new Map<number, Intl.NumberFormat>();
 
 function readStored(): AmountDisplayMode {
   if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
@@ -72,10 +73,14 @@ export function formatMoney(
 ): string {
   const fractionDigits = fractionDigitsFor(mode, currency);
   const amount = mode === "whole" ? Math.trunc(value) || 0 : value;
-  const formatter = new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: fractionDigits,
-    maximumFractionDigits: fractionDigits,
-  });
+  let formatter = formatters.get(fractionDigits);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    });
+    formatters.set(fractionDigits, formatter);
+  }
   const parts = formatter.formatToParts(amount);
   const isZero = parts
     .filter((part) => part.type === "integer" || part.type === "fraction")

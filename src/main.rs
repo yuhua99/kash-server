@@ -37,7 +37,10 @@ async fn main() -> Result<()> {
         .map_err(|e| format!("Failed to initialize main database: {}", e))?;
 
     // Create application state
-    let app_state = AppState { main_db };
+    let app_state = AppState {
+        main_db,
+        http_client: reqwest::Client::builder().build()?,
+    };
 
     // Create session store
     let store = MemoryStore::default();

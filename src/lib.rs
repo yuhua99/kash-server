@@ -20,4 +20,5 @@ pub use crate::database::{Db, TransactionError, init_main_db, with_transaction};
 #[derive(Clone)]
 pub struct AppState {
     pub main_db: Db,
+    pub http_client: reqwest::Client,
 }

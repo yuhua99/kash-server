@@ -42,7 +42,10 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize main database: {}", e))?;
 
-    let app_state = AppState { main_db };
+    let app_state = AppState {
+        main_db,
+        http_client: reqwest::Client::builder().build()?,
+    };
 
     let store = MemoryStore::default();
 

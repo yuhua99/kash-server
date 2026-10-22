@@ -66,8 +66,13 @@ pub async fn get_fx_rates(
         let cached_rates =
             load_cached_rates(&app_state, &query.from, &query.to, &lookup_currencies).await?;
         if is_missing_any_rate(&cached_rates, &dates, &lookup_currencies) {
-            let fetched_rates =
-                fetch_frankfurter_rates(&query.from, &query.to, &lookup_currencies).await?;
+            let fetched_rates = fetch_frankfurter_rates(
+                &app_state.http_client,
+                &query.from,
+                &query.to,
+                &lookup_currencies,
+            )
+            .await?;
             upsert_exchange_rates(&app_state, &fetched_rates).await?;
         }
     }
@@ -290,11 +295,11 @@ fn first_weekday_in_range(dates: &[String]) -> Option<&str> {
 }
 
 async fn fetch_frankfurter_rates(
+    client: &Client,
     from: &str,
     to: &str,
     currencies: &[String],
 ) -> Result<Vec<ExchangeRateRow>, (StatusCode, String)> {
-    let client = Client::new();
     let quotes = currencies.join(",");
     let response = client
         .get(FRANKFURTER_RATES_URL)

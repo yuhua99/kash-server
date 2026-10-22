@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   amountInputStep,
   formatAmountInput,
@@ -49,6 +49,27 @@ describe("formatAmountInput", () => {
 });
 
 describe("formatMoney", () => {
+  it("reuses formatters by fraction digits across currencies and modes", async () => {
+    vi.resetModules();
+    const { formatMoney } = await import("./amount-display");
+    const NumberFormat = Intl.NumberFormat;
+    const constructor = vi
+      .spyOn(Intl, "NumberFormat")
+      .mockImplementation(function (locales, options) {
+        return new NumberFormat(locales, options);
+      });
+    try {
+      expect(formatMoney(1234.5, "cents", "USD")).toBe("1,234.50");
+      expect(formatMoney(1234.5, "cents", "EUR")).toBe("1,234.50");
+      expect(formatMoney(1234, "cents", "JPY")).toBe("1,234");
+      expect(formatMoney(1234.9, "whole", "USD")).toBe("1,234");
+      expect(formatMoney(-0.001, "cents", "USD", { signed: true })).toBe("0.00");
+      expect(constructor).toHaveBeenCalledTimes(2);
+    } finally {
+      constructor.mockRestore();
+    }
+  });
+
   it("formats whole mode with grouping", () => {
     expect(formatMoney(1234.9, "whole", "USD")).toBe("1,234");
   });
