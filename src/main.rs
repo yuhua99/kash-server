@@ -18,7 +18,7 @@ type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables
-    dotenv::dotenv().ok();
+    dotenvy::dotenv().ok();
 
     // Initialize structured logging
     tracing_subscriber::fmt()
