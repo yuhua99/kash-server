@@ -6,6 +6,7 @@ type RequestOptions = {
   method?: string;
   body?: unknown;
   query?: Record<string, QueryValue>;
+  signal?: AbortSignal;
 };
 
 function buildQueryString(query?: Record<string, QueryValue>): string {
@@ -38,13 +39,20 @@ async function parseErrorMessage(res: Response): Promise<string> {
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const body =
+    options.body instanceof FormData
+      ? options.body
+      : options.body !== undefined
+        ? JSON.stringify(options.body)
+        : undefined;
   const headers: Record<string, string> =
-    options.body !== undefined ? { "Content-Type": "application/json" } : {};
+    typeof body === "string" ? { "Content-Type": "application/json" } : {};
   const res = await fetch(`/api${path}${buildQueryString(options.query)}`, {
     method: options.method,
     credentials: "include",
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body,
+    signal: options.signal,
   });
 
   if (!res.ok) {
@@ -70,8 +78,8 @@ export const client = {
   get<T>(path: string, query?: Record<string, QueryValue>) {
     return request<T>(path, { method: "GET", query });
   },
-  post<T>(path: string, body?: unknown) {
-    return request<T>(path, { method: "POST", body });
+  post<T>(path: string, body?: unknown, signal?: AbortSignal) {
+    return request<T>(path, { method: "POST", body, signal });
   },
   put<T>(path: string, body?: unknown) {
     return request<T>(path, { method: "PUT", body });

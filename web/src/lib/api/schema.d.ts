@@ -228,6 +228,22 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/records/voice": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: operations["create_voice_draft"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/records/{id}": {
     parameters: {
       query?: never;
@@ -573,6 +589,27 @@ export interface components {
     UserSettings: {
       main_currency: string;
     };
+    VoiceEntryPayload: {
+      /** Format: binary */
+      audio: string;
+      currency: string;
+      reference_date: string;
+    };
+    VoiceEntryResponse: {
+      category_id: string;
+      date: string;
+      /** @description Only populated for explicit splits. */
+      friend_amounts: components["schemas"]["SplitParticipant"][];
+      /** @description All selected friends; equal shares are calculated by the existing split editor. */
+      friend_ids: string[];
+      name: string;
+      split_mode: components["schemas"]["VoiceSplitMode"];
+      /** Format: double */
+      total_amount: number;
+      transcript: string;
+    };
+    /** @enum {string} */
+    VoiceSplitMode: "none" | "equal" | "explicit";
   };
   responses: never;
   parameters: never;
@@ -1359,6 +1396,65 @@ export interface operations {
       };
       /** @description Internal server error */
       500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  create_voice_draft: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": components["schemas"]["VoiceEntryPayload"];
+      };
+    };
+    responses: {
+      /** @description Voice draft; no records are written */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["VoiceEntryResponse"];
+        };
+      };
+      /** @description Invalid or incomplete recording */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Unauthorized */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Recording exceeds 10 MiB */
+      413: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description AI provider unavailable */
+      502: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Voice entry is not configured */
+      503: {
         headers: {
           [name: string]: unknown;
         };

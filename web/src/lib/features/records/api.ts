@@ -24,6 +24,19 @@ export function createRecord(body: CreateRecordPayload): Promise<RecordItem> {
   return client.post<RecordItem>("/records", body);
 }
 
+export function createVoiceDraft(
+  audio: Blob,
+  referenceDate: string,
+  currency: string,
+  signal?: AbortSignal,
+): Promise<components["schemas"]["VoiceEntryResponse"]> {
+  const body = new FormData();
+  body.append("audio", audio, audio.type.startsWith("audio/mp4") ? "voice.mp4" : "voice.webm");
+  body.append("reference_date", referenceDate);
+  body.append("currency", currency);
+  return client.post<components["schemas"]["VoiceEntryResponse"]>("/records/voice", body, signal);
+}
+
 export function updateRecord(id: string, body: UpdateRecordPayload): Promise<RecordItem> {
   return client.put<RecordItem>(`/records/${id}`, body);
 }

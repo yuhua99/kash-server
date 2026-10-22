@@ -813,6 +813,51 @@
         }
       }
     },
+    "/records/voice": {
+      "post": {
+        "tags": [
+          "records"
+        ],
+        "operationId": "create_voice_draft",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceEntryPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Voice draft; no records are written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VoiceEntryResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or incomplete recording"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "413": {
+            "description": "Recording exceeds 10 MiB"
+          },
+          "502": {
+            "description": "AI provider unavailable"
+          },
+          "503": {
+            "description": "Voice entry is not configured"
+          }
+        }
+      }
+    },
     "/records/{id}": {
       "put": {
         "tags": [
@@ -2020,6 +2065,82 @@
             "type": "string"
           }
         }
+      },
+      "VoiceEntryPayload": {
+        "type": "object",
+        "required": [
+          "audio",
+          "reference_date",
+          "currency"
+        ],
+        "properties": {
+          "audio": {
+            "type": "string",
+            "format": "binary"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "reference_date": {
+            "type": "string"
+          }
+        }
+      },
+      "VoiceEntryResponse": {
+        "type": "object",
+        "required": [
+          "transcript",
+          "name",
+          "total_amount",
+          "date",
+          "category_id",
+          "split_mode",
+          "friend_ids",
+          "friend_amounts"
+        ],
+        "properties": {
+          "category_id": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "friend_amounts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SplitParticipant"
+            },
+            "description": "Only populated for explicit splits."
+          },
+          "friend_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "All selected friends; equal shares are calculated by the existing split editor."
+          },
+          "name": {
+            "type": "string"
+          },
+          "split_mode": {
+            "$ref": "#/components/schemas/VoiceSplitMode"
+          },
+          "total_amount": {
+            "type": "number",
+            "format": "double"
+          },
+          "transcript": {
+            "type": "string"
+          }
+        }
+      },
+      "VoiceSplitMode": {
+        "type": "string",
+        "enum": [
+          "none",
+          "equal",
+          "explicit"
+        ]
       }
     },
     "securitySchemes": {

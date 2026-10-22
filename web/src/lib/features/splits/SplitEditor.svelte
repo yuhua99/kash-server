@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import type { components } from "$lib/api/schema";
   import {
     validateSplitParticipantAmount,
@@ -15,6 +16,7 @@
     assignAllToFriends,
     buildParticipantSplits,
     computeAutoShares,
+    type SplitPrefill,
   } from "$lib/features/splits/allocation";
 
   type FriendshipRelation = components["schemas"]["FriendshipRelation"];
@@ -30,6 +32,7 @@
     mode: AmountDisplayMode;
     currency: string;
     result: SplitResult;
+    prefill?: SplitPrefill;
   };
 
   let {
@@ -37,6 +40,7 @@
     total,
     mode,
     currency,
+    prefill,
     result = $bindable({ participants: [], valid: false, error: null }),
   }: Props = $props();
 
@@ -44,6 +48,17 @@
   let amounts = $state<Record<string, string>>({});
   let lockedAmounts = $state<Record<string, number>>({});
   let touched = $state<Record<string, boolean>>({});
+
+  $effect(() => {
+    const initial = prefill;
+    if (!initial) return;
+    untrack(() => {
+      selectedIds = [...initial.friendIds];
+      lockedAmounts = { ...initial.amounts };
+      touched = Object.fromEntries(Object.keys(initial.amounts).map((id) => [id, true]));
+      recompute();
+    });
+  });
 
   function touchedSet(): Set<string> {
     return new Set(Object.keys(touched).filter((id) => touched[id]));

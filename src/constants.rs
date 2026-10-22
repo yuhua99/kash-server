@@ -15,6 +15,8 @@ pub const DEFAULT_CATEGORIES_LIMIT: u32 = 100;
 pub const DEFAULT_RECORDS_LIMIT: u32 = 500;
 pub const MAX_LIMIT: u32 = 1000;
 pub const MAX_OFFSET: u32 = 1_000_000;
+// Jev Choice accepts at most 255 options.
+pub const MAX_VOICE_CATEGORIES: u32 = 255;
 
 // Validation limits
 pub const MAX_CATEGORY_NAME_LENGTH: usize = 100;

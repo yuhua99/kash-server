@@ -40,6 +40,7 @@ async fn main() -> Result<()> {
     let app_state = AppState {
         main_db,
         http_client: reqwest::Client::builder().build()?,
+        voice_providers: records::voice::VoiceProviders::from_env(),
     };
 
     // Create session store
@@ -102,6 +103,7 @@ async fn main() -> Result<()> {
             "/records",
             post(records::create_record).get(records::get_records),
         )
+        .route("/records/voice", records::voice::route())
         .route(
             "/records/{id}",
             put(records::update_record).delete(records::delete_record),

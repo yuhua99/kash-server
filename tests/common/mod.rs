@@ -33,6 +33,12 @@ pub struct TestApp {
 }
 
 pub async fn setup_test_app() -> anyhow::Result<TestApp> {
+    setup_test_app_with_voice(None).await
+}
+
+pub async fn setup_test_app_with_voice(
+    voice_providers: Option<kash_server::records::voice::VoiceProviders>,
+) -> anyhow::Result<TestApp> {
     let test_config = TestConfig::new()?;
 
     let data_path = test_config.data_path();
@@ -45,6 +51,7 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
     let app_state = AppState {
         main_db,
         http_client: reqwest::Client::builder().build()?,
+        voice_providers,
     };
 
     let store = MemoryStore::default();
@@ -79,6 +86,7 @@ pub async fn setup_test_app() -> anyhow::Result<TestApp> {
             axum::routing::post(kash_server::records::create_record)
                 .get(kash_server::records::get_records),
         )
+        .route("/records/voice", kash_server::records::voice::route())
         .route(
             "/records/{id}",
             axum::routing::put(kash_server::records::update_record)

@@ -6,6 +6,11 @@ import {
   type AmountDisplayMode,
 } from "$lib/features/money/amount-display";
 
+export type SplitPrefill = {
+  friendIds: string[];
+  amounts: Record<string, number>;
+};
+
 function unitFor(mode: AmountDisplayMode, currency?: string): number {
   return Number(amountInputStep(mode, currency));
 }

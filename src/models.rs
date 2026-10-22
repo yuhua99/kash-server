@@ -80,6 +80,36 @@ pub struct CreateRecordPayload {
     pub date: String,
 }
 
+#[derive(ToSchema)]
+pub struct VoiceEntryPayload {
+    #[schema(value_type = String, format = Binary)]
+    pub audio: Vec<u8>,
+    pub reference_date: String,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceSplitMode {
+    None,
+    Equal,
+    Explicit,
+}
+
+#[derive(Serialize, Deserialize, ToSchema)]
+pub struct VoiceEntryResponse {
+    pub transcript: String,
+    pub name: String,
+    pub total_amount: f64,
+    pub date: String,
+    pub category_id: String,
+    pub split_mode: VoiceSplitMode,
+    /// All selected friends; equal shares are calculated by the existing split editor.
+    pub friend_ids: Vec<String>,
+    /// Only populated for explicit splits.
+    pub friend_amounts: Vec<SplitParticipant>,
+}
+
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateRecordPayload {
     pub name: Option<String>,

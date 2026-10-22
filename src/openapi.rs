@@ -34,6 +34,7 @@ impl Modify for SessionCookie {
         crate::settings::update_settings,
         crate::fx::get_fx_rates,
         crate::records::create_record,
+        crate::records::voice::create_voice_draft,
         crate::records::get_records,
         crate::records::update_record,
         crate::records::delete_record,

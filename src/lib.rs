@@ -21,4 +21,5 @@ pub use crate::database::{Db, TransactionError, init_main_db, with_transaction};
 pub struct AppState {
     pub main_db: Db,
     pub http_client: reqwest::Client,
+    pub voice_providers: Option<records::voice::VoiceProviders>,
 }

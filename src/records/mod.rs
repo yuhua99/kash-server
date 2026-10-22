@@ -1,5 +1,6 @@
 mod handlers;
 mod validation;
+pub mod voice;
 
 pub use self::handlers::{
     __path_create_record, __path_delete_record, __path_get_records, __path_update_record,

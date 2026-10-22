@@ -17,10 +17,14 @@
     amountDisplayMode,
     amountInputStep,
     normalizeAmountInputValue,
+    type AmountDisplayMode,
   } from "$lib/features/money/amount-display";
   import { currentCurrency } from "$lib/features/money/current-currency";
   import { getCategoriesCached } from "$lib/features/categories/cache";
   import { getAcceptedFriendsCached } from "$lib/features/friends/cache";
+  import VoiceEntry from "./VoiceEntry.svelte";
+  import { voiceDraftFields } from "./voice-draft";
+  import type { SplitPrefill } from "$lib/features/splits/allocation";
   import { createRecord } from "$lib/features/records/api";
   import { getRecentRecordsCached, invalidateRecordsCache } from "$lib/features/records/cache";
   import { createSplit } from "$lib/features/splits/api";
@@ -42,8 +46,11 @@
   let date = $state(todayIso());
   let error = $state("");
   let pending = $state(false);
+  let voiceBusy = $state(false);
+  let voiceContext: { currency: string; mode: AmountDisplayMode } | undefined;
 
   let splitEnabled = $state(false);
+  let splitPrefill = $state<SplitPrefill>();
   let splitResult = $state<SplitResult>({ participants: [], valid: false, error: null });
   let idempotencyKey = generateIdempotencyKey();
 
@@ -90,6 +97,29 @@
     return names;
   });
 
+  function setVoiceBusy(busy: boolean) {
+    if (busy && !voiceBusy) {
+      voiceContext = { currency: $currentCurrency, mode: $amountDisplayMode };
+    }
+    voiceBusy = busy;
+  }
+
+  function applyVoiceDraft(draft: components["schemas"]["VoiceEntryResponse"]) {
+    if (voiceContext?.currency !== $currentCurrency || voiceContext?.mode !== $amountDisplayMode) {
+      throw new Error("Currency or amount display mode changed. Please record again.");
+    }
+    const fields = voiceDraftFields(draft, categories, friends, $amountDisplayMode, $currentCurrency);
+    name = fields.name;
+    amountInput = fields.amountInput;
+    isIncome = fields.isIncome;
+    categoryId = fields.categoryId;
+    date = fields.date;
+    splitPrefill = fields.splitPrefill;
+    splitEnabled = fields.splitEnabled;
+    error = "";
+    idempotencyKey = generateIdempotencyKey();
+  }
+
   function selectType(income: boolean) {
     isIncome = income;
     categoryId = "";
@@ -101,6 +131,7 @@
     categoryId = "";
     date = todayIso();
     splitEnabled = false;
+    splitPrefill = undefined;
     idempotencyKey = generateIdempotencyKey();
   }
 
@@ -125,6 +156,7 @@
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
+    if (pending || voiceBusy) return;
     const baseError = validateBase();
     if (baseError) {
       error = baseError;
@@ -196,6 +228,7 @@
 </script>
 
 <form class="quick-add" onsubmit={submit}>
+  <fieldset disabled={pending || voiceBusy}>
   <FormField id="quick-amount" label="Amount ({$currentCurrency})">
     <input
       id="quick-amount"
@@ -238,16 +271,23 @@
     <Collapsible.Trigger class="split-toggle">{splitEnabled ? "Disable split" : "Split with friends"}</Collapsible.Trigger>
     <Collapsible.Content class="split-content">
       {#if splitEnabled}
-        <SplitEditor {friends} {total} mode={$amountDisplayMode} currency={$currentCurrency} bind:result={splitResult} />
+        <SplitEditor {friends} {total} mode={$amountDisplayMode} currency={$currentCurrency} prefill={splitPrefill} bind:result={splitResult} />
       {/if}
     </Collapsible.Content>
   </Collapsible.Root>
+  </fieldset>
 
   {#if error}
     <StatusMessage kind="error" message={error} />
   {/if}
 
-  <Button variant="primary" type="submit" busy={pending} busyLabel="Saving">
+  <VoiceEntry
+    disabled={pending || categories.length === 0}
+    currency={$currentCurrency}
+    onBusyChange={setVoiceBusy}
+    onDraft={applyVoiceDraft}
+  />
+  <Button variant="primary" type="submit" disabled={voiceBusy} busy={pending} busyLabel="Saving">
     {splitEnabled ? "Create split" : "Add record"}
   </Button>
 </form>
@@ -256,6 +296,15 @@
   .quick-add {
     display: grid;
     gap: var(--space-4);
+  }
+
+  fieldset {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
   }
 
   .suggestions {
