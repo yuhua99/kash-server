@@ -68,24 +68,42 @@ pub(super) fn decision_from_answers(
     let split = probability(&answers, "split")? > 0.5;
     let mut selected = Vec::new();
     if split {
-        for friend in friends {
-            if probability(&answers, &format!("friend_{}", friend.user_id))? > 0.5 {
-                selected.push(SelectedFriend {
-                    id: friend.user_id.clone(),
-                    nickname: friend.nickname.clone(),
-                });
-            }
-        }
+        let scored = friends
+            .iter()
+            .map(|friend| {
+                Ok((
+                    probability(&answers, &format!("friend_{}", friend.user_id))?,
+                    friend,
+                ))
+            })
+            .collect::<Result<Vec<_>, (StatusCode, String)>>()?;
+        selected = scored
+            .iter()
+            .filter(|(p, _)| *p > 0.5)
+            .map(|(_, f)| *f)
+            .collect();
+        // Jev scores split and each friend independently, so split can win while no friend
+        // clears the midpoint; fall back to the likeliest friend for the user to confirm.
         if selected.is_empty() {
-            return Err(bad_input(
-                "No matching friend was found for this split. Please name an existing friend or enter it manually.",
-            ));
+            let (_, likeliest) = scored
+                .iter()
+                .max_by(|a, b| a.0.total_cmp(&b.0))
+                .ok_or_else(|| {
+                    bad_input("Add a friend before splitting, or enter the split manually.")
+                })?;
+            selected.push(*likeliest);
         }
     }
     Ok(Decision {
         category_id,
         split,
-        friends: selected,
+        friends: selected
+            .into_iter()
+            .map(|friend| SelectedFriend {
+                id: friend.user_id.clone(),
+                nickname: friend.nickname.clone(),
+            })
+            .collect(),
     })
 }
 

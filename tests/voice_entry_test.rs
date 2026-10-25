@@ -18,6 +18,7 @@ use tower::util::ServiceExt;
 struct Mock {
     requests: Vec<(String, Value)>,
     split: bool,
+    low_friend_scores: bool,
     category_override: Option<String>,
     extraction: Value,
     fail_transcription: bool,
@@ -63,10 +64,19 @@ async fn judge(State(state): State<MockState>, Json(body): Json<Value>) -> Json<
         "split".into(),
         json!({"type":"noul","noul":if mock.split {0.99} else {0.01}}),
     );
-    for key in body["questions"].as_object().expect("questions").keys() {
-        if key.starts_with("friend_") {
-            answers.insert(key.clone(), json!({"type":"noul","noul":0.99}));
-        }
+    let friend_keys = body["questions"]
+        .as_object()
+        .expect("questions")
+        .keys()
+        .filter(|key| key.starts_with("friend_"));
+    for (i, key) in friend_keys.enumerate() {
+        // Low scores rise with order, so the last friend question is the likeliest.
+        let noul = if mock.low_friend_scores {
+            0.1 * (i + 1) as f64
+        } else {
+            0.99
+        };
+        answers.insert(key.clone(), json!({"type":"noul","noul":noul}));
     }
     mock.requests.push(("jev".into(), body));
     Json(json!({"answers": answers}))
@@ -399,6 +409,23 @@ async fn voice_pipeline_is_scoped_and_does_not_write_records() {
     );
     drop(mock);
     fixture.assert_no_records().await;
+}
+
+#[tokio::test]
+async fn voice_split_falls_back_to_likeliest_friend() {
+    let fixture = Fixture::new(true).await;
+    fixture.mock.lock().await.low_friend_scores = true;
+    let (status, body) = fixture.draft().await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mock = fixture.mock.lock().await;
+    let likeliest = mock.requests[1].1["questions"]
+        .as_object()
+        .expect("questions")
+        .keys()
+        .filter_map(|key| key.strip_prefix("friend_"))
+        .next_back()
+        .expect("friend question");
+    assert_eq!(body["friend_ids"], json!([likeliest]));
 }
 
 #[tokio::test]
